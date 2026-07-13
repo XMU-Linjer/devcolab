@@ -4,6 +4,7 @@ docs/91-local-interview-knowledge-map-v0.2.md
 docs/92-local-frontend-technology-adr-v0.1.md
 docs/93-local-authentication-interview-guide-v0.2.md
 docs/94-local-workspace-document-interview-guide-v0.1.md
+docs/95-local-document-block-learning-guide-v0.2.md
 
 # Environment variables and local secrets
 .env
