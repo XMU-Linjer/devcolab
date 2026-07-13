@@ -71,31 +71,20 @@
         </aside>
 
         <section class="document-main">
-          <el-skeleton v-if="documentLoading" :rows="5" animated />
+          <el-skeleton v-if="documentLoading" :rows="8" animated />
 
           <div v-else-if="selectedDocument" class="document-preview">
-            <p class="eyebrow">Document</p>
-            <h2>{{ selectedDocument.title }}</h2>
-            <dl class="document-meta">
+            <div class="document-editor-heading">
               <div>
-                <dt>文档 ID</dt>
-                <dd>{{ selectedDocument.id }}</dd>
+                <p class="eyebrow">Document</p>
+                <h2>{{ selectedDocument.title }}</h2>
               </div>
-              <div>
-                <dt>创建时间</dt>
-                <dd>{{ formatTime(selectedDocument.createdAt) }}</dd>
-              </div>
-              <div>
-                <dt>更新时间</dt>
-                <dd>{{ formatTime(selectedDocument.updatedAt) }}</dd>
-              </div>
-            </dl>
-            <el-alert
-              title="下一批会在这里接入 Block 编辑器"
-              type="info"
-              show-icon
-              :closable="false"
-            />
+              <el-tag effect="light">
+                更新于 {{ formatTime(selectedDocument.updatedAt) }}
+              </el-tag>
+            </div>
+
+            <BlockEditor :document-id="selectedDocument.id" />
           </div>
 
           <el-empty
@@ -129,6 +118,7 @@ import {
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
 import DocumentTree from '@/components/document/DocumentTree.vue';
+import BlockEditor from '@/components/editor/BlockEditor.vue';
 import { readableError } from '@/utils/error';
 
 const route = useRoute();
@@ -217,4 +207,3 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 </script>
-
