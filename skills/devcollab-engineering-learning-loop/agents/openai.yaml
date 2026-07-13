@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevCollab Engineering Learning Loop"
+  short_description: "Sync implementation, notes, and validation."
+  default_prompt: "Use $devcollab-engineering-learning-loop after each DevCollab implementation step to update learning notes and validation evidence."
