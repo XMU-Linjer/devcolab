@@ -1,4 +1,4 @@
-# DevCollab 登录与会话设计 V0.3
+# DevCollab 登录与会话设计 V0.4
 
 ## 文档信息
 
@@ -6,7 +6,7 @@
 |---|---|
 | 文档类型 | 认证专项设计 |
 | 文档状态 | 生效，作为阶段一登录实现基线 |
-| 版本 | V0.3 |
+| 版本 | V0.4 |
 | 编制日期 | 2026-07-12 |
 | 确认日期 | 2026-07-13 |
 | 适用范围 | 阶段一切片 A：注册、登录、刷新、当前用户和退出 |
@@ -407,6 +407,8 @@ jti  Token 唯一 ID
 
 不包含密码、邮箱、工作空间角色和完整用户资料。签名基线采用非对称算法，使后续 Gateway、MCP 等服务可以只持有公钥验证 Token，而不持有签发私钥。算法和密钥轮换在实现 ADR 中最终确认。
 
+阶段一学习实现使用 HMAC256 验证完整认证链路，并通过环境变量提供密钥；该实现不作为多服务生产密钥分发方案。Gateway、MCP 等独立验证方接入前，须迁移到非对称签名并补充密钥轮换 ADR。
+
 ### 8.2 Refresh Token
 
 建议格式：
@@ -656,7 +658,8 @@ auth/api/
 ├─ LoginRequest.java
 ├─ RegisterRequest.java
 ├─ AuthResponse.java
-└─ CurrentUserResponse.java
+├─ CurrentUserResponse.java
+└─ RefreshCookieManager.java
 
 auth/application/
 ├─ AuthenticationApplicationService.java
@@ -667,11 +670,17 @@ auth/application/
 auth/domain/
 ├─ UserAccount.java
 ├─ UserStatus.java
-└─ UserRepository.java
+├─ UserRepository.java
+├─ RefreshSession.java
+└─ RefreshSessionRepository.java
 
 auth/infrastructure/
 ├─ InMemoryUserRepository.java
+├─ InMemoryRefreshSessionRepository.java
+├─ JwtProperties.java
 ├─ JwtTokenService.java
+├─ RefreshTokenProperties.java
+├─ RefreshTokenService.java
 └─ PasswordConfig.java
 
 security/
@@ -692,9 +701,9 @@ common/api/
 |---|---|---|
 | `POST` | `/api/v1/auth/register` | 注册用户并返回 Token |
 | `POST` | `/api/v1/auth/login` | 登录并返回 Token |
-| `POST` | `/api/v1/auth/refresh` | 基于当前有效 Token 重新签发 Token |
+| `POST` | `/api/v1/auth/refresh` | 校验 Refresh/CSRF Cookie 与 Origin，轮换会话并签发新 Access Token |
 | `GET` | `/api/v1/auth/me` | 返回当前登录用户 |
-| `POST` | `/api/v1/auth/logout` | 第一版幂等返回成功，前端清理 Token |
+| `POST` | `/api/v1/auth/logout` | 撤销当前 Refresh Session、清除 Cookie 并返回 `204` |
 
 ### 16.5 实现约束
 
@@ -704,7 +713,12 @@ common/api/
 - JWT 签发和解析集中在 `JwtTokenService`，业务代码不拼接 Token。
 - 第一版用户仓储可使用内存实现，但接口命名必须允许后续替换为 PostgreSQL。
 - Access Token 不写入 localStorage、sessionStorage、URL、日志或错误响应。
-- 退出登录第一版只要求前端清理 Token；服务端可撤销会话在 Refresh Session 版本补齐。
+- Refresh Token 使用安全随机值，服务端只保存 SHA-256 哈希，原值不得进入 JSON、日志和仓储。
+- Refresh 和 Logout 必须同时校验允许的 Origin、CSRF Cookie 与 `X-CSRF-Token` Header。
+- 刷新成功后旧 Refresh Token 必须失效，并创建新的 Session、Refresh Token 和 CSRF Token。
+- 退出登录撤销当前 Refresh Session 并清除 Refresh/CSRF Cookie；已经签发的 Access Token 在阶段一存活至自身过期。
+- 本地开发 Cookie 名称和 `Secure` 属性允许通过环境配置调整；生产配置必须使用 HTTPS、`Secure=true` 和受控 Cookie 作用域。
+- 阶段一密码实现使用 BCrypt；迁移 Argon2id 前须完成目标机器参数和延迟验证。
 
 ## 17. 官方依据
 

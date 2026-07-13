@@ -2,7 +2,7 @@
 docs/90-local-development-plan-v0.2.md
 docs/91-local-interview-knowledge-map-v0.2.md
 docs/92-local-frontend-technology-adr-v0.1.md
-docs/93-local-refresh-token-cookie-learning-v0.1.md
+docs/93-local-authentication-interview-guide-v0.2.md
 
 # Environment variables and local secrets
 .env
