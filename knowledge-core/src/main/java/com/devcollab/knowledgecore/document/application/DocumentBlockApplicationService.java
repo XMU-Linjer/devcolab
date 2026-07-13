@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.document.application;
 
+import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import org.springframework.stereotype.Service;
@@ -52,5 +53,23 @@ public class DocumentBlockApplicationService {
     ) {
         documentService.get(documentId, currentUserId);
         return blockRepository.findAllByDocumentId(documentId);
+    }
+
+    public DocumentBlock updateContent(
+            UUID documentId,
+            UUID blockId,
+            UUID currentUserId,
+            UpdateDocumentBlockCommand command
+    ) {
+        documentService.get(documentId, currentUserId);
+
+        DocumentBlock block = blockRepository.findById(blockId)
+                .filter(found -> found.documentId().equals(documentId))
+                .orElseThrow(DocumentBlockNotFoundException::new);
+        DocumentBlock updated = block.updateText(
+                command.text().trim(),
+                Instant.now()
+        );
+        return blockRepository.save(updated);
     }
 }

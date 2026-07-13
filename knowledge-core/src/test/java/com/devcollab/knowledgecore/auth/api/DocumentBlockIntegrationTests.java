@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -85,6 +86,92 @@ class DocumentBlockIntegrationTests {
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
 
+    @Test
+    void shouldUpdateParagraphContentWithoutChangingIdentityOrOrder()
+            throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        JsonNode block = createBlock(token, documentId, "Original content");
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        block.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBlockBody("  Updated content  ")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(block.get("id").asText()))
+                .andExpect(jsonPath("$.documentId").value(documentId))
+                .andExpect(jsonPath("$.type").value("PARAGRAPH"))
+                .andExpect(jsonPath("$.content.text")
+                        .value("Updated content"))
+                .andExpect(jsonPath("$.sortOrder").value(0));
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content.text")
+                        .value("Updated content"));
+    }
+
+    @Test
+    void shouldRejectBlockUpdateFromWorkspaceOutsider() throws Exception {
+        String ownerToken = registerAndGetAccessToken();
+        String outsiderToken = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(ownerToken).get("id").asText();
+        String documentId = createDocument(ownerToken, workspaceId)
+                .get("id")
+                .asText();
+        String blockId = createBlock(ownerToken, documentId, "Private")
+                .get("id")
+                .asText();
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBlockBody("Forbidden update")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKSPACE_ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldRejectBlockThatDoesNotBelongToPathDocument()
+            throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String firstDocumentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        String secondDocumentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        String blockId = createBlock(token, firstDocumentId, "First document")
+                .get("id")
+                .asText();
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        secondDocumentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBlockBody("Wrong document")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_BLOCK_NOT_FOUND"));
+    }
+
     private JsonNode createWorkspace(String token) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/workspaces")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
@@ -130,6 +217,12 @@ class DocumentBlockIntegrationTests {
         );
     }
 
+    private String updateBlockBody(String text) throws Exception {
+        return objectMapper.writeValueAsString(
+                new UpdateBlockBody(new BlockContentBody(text))
+        );
+    }
+
     private String registerAndGetAccessToken() throws Exception {
         String username = "block_" + UUID.randomUUID()
                 .toString()
@@ -157,6 +250,9 @@ class DocumentBlockIntegrationTests {
     }
 
     private record BlockContentBody(String text) {
+    }
+
+    private record UpdateBlockBody(BlockContentBody content) {
     }
 
     private record RegisterBody(

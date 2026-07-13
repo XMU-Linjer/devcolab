@@ -13,4 +13,16 @@ public record DocumentBlock(
         Instant createdAt,
         Instant updatedAt
 ) {
+    public DocumentBlock updateText(String newText, Instant now) {
+        return new DocumentBlock(
+                id,
+                documentId,
+                type,
+                newText,
+                sortOrder,
+                createdBy,
+                createdAt,
+                now
+        );
+    }
 }

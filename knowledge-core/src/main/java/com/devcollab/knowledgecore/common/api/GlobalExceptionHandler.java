@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenEx
 import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
@@ -74,6 +75,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "DOCUMENT_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(DocumentBlockNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentBlockNotFound(
+            DocumentBlockNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "DOCUMENT_BLOCK_NOT_FOUND",
                 exception.getMessage(),
                 request
         );

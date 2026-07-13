@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -21,6 +22,11 @@ public class InMemoryDocumentBlockRepository
     public DocumentBlock save(DocumentBlock block) {
         blocks.put(block.id(), block);
         return block;
+    }
+
+    @Override
+    public Optional<DocumentBlock> findById(UUID blockId) {
+        return Optional.ofNullable(blocks.get(blockId));
     }
 
     @Override
