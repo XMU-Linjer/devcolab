@@ -4,6 +4,10 @@ import com.devcollab.knowledgecore.auth.application.exception.InvalidCredentials
 import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,8 +33,60 @@ public class GlobalExceptionHandler {
 
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
-                "AUTH_INVALID_INPUT",
+                inputErrorCode(request),
                 message,
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceNotFound(
+            WorkspaceNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "WORKSPACE_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceAccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceAccessDenied(
+            WorkspaceAccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.FORBIDDEN,
+                "WORKSPACE_ACCESS_DENIED",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentNotFound(
+            DocumentNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "DOCUMENT_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidDocumentParentException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidDocumentParent(
+            InvalidDocumentParentException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.BAD_REQUEST,
+                "DOCUMENT_PARENT_INVALID",
+                exception.getMessage(),
                 request
         );
     }
@@ -94,10 +150,16 @@ public class GlobalExceptionHandler {
     ) {
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
-                "AUTH_INVALID_INPUT",
+                inputErrorCode(request),
                 exception.getMessage(),
                 request
         );
+    }
+
+    private String inputErrorCode(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/v1/auth/")
+                ? "AUTH_INVALID_INPUT"
+                : "INVALID_INPUT";
     }
 
     @ExceptionHandler(Exception.class)
