@@ -7,6 +7,7 @@ import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExi
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockVersionConflictException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
@@ -172,6 +173,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
                 "DOCUMENT_PARENT_INVALID",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(DocumentParentCycleException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentParentCycle(
+            DocumentParentCycleException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.BAD_REQUEST,
+                "DOCUMENT_PARENT_CYCLE",
                 exception.getMessage(),
                 request
         );

@@ -1,10 +1,19 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="创建文档"
+    :title="dialogTitle"
     width="420px"
     destroy-on-close
   >
+    <el-alert
+      v-if="parentDocumentTitle"
+      class="dialog-alert"
+      :title="`将创建在「${parentDocumentTitle}」下`"
+      type="info"
+      show-icon
+      :closable="false"
+    />
+
     <el-form
       ref="formRef"
       :model="form"
@@ -33,11 +42,15 @@
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 interface DocumentForm {
   title: string;
 }
+
+defineProps<{
+  parentDocumentTitle?: string;
+}>();
 
 const visible = defineModel<boolean>({ required: true });
 const emit = defineEmits<{
@@ -57,6 +70,8 @@ const rules: FormRules<DocumentForm> = {
     { max: 200, message: '文档标题不能超过 200 个字符', trigger: 'blur' },
   ],
 };
+
+const dialogTitle = computed(() => '创建文档');
 
 watch(visible, (isVisible) => {
   if (!isVisible) {

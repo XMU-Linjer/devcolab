@@ -15,6 +15,7 @@ const MESSAGE_BY_CODE: Record<string, string> = {
   WORKSPACE_MEMBER_EXISTS: '该用户已经是工作区成员',
   WORKSPACE_LAST_ADMIN: '工作区至少需要保留一名管理员',
   DOCUMENT_NOT_FOUND: '文档不存在或已被删除',
+  DOCUMENT_PARENT_CYCLE: '不能将文档移动到自身或自己的子文档下',
   DOCUMENT_BLOCK_NOT_FOUND: '内容块不存在或已被删除',
   DOCUMENT_BLOCK_VERSION_CONFLICT: '内容已被其他操作修改，请刷新后再编辑',
   VALIDATION_FAILED: '请求内容不完整，请检查后重试',

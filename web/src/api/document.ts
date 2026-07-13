@@ -48,3 +48,28 @@ export async function getDocument(
   return data;
 }
 
+export async function updateDocument(
+  documentId: string,
+  payload: { title: string },
+): Promise<DocumentSummary> {
+  const { data } = await http.patch<DocumentSummary>(
+    `/documents/${documentId}`,
+    payload,
+  );
+  return data;
+}
+
+export async function moveDocument(
+  documentId: string,
+  payload: { parentDocumentId: string | null },
+): Promise<DocumentSummary> {
+  const { data } = await http.patch<DocumentSummary>(
+    `/documents/${documentId}/parent`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await http.delete(`/documents/${documentId}`);
+}

@@ -305,6 +305,10 @@ h1 {
   width: 100%;
 }
 
+.dialog-alert {
+  margin-bottom: 16px;
+}
+
 .document-sidebar,
 .document-main {
   min-height: 520px;
@@ -339,7 +343,7 @@ h1 {
   gap: 4px;
 }
 
-.document-tree-item {
+.document-tree-row {
   display: flex;
   align-items: center;
   min-height: 38px;
@@ -348,17 +352,45 @@ h1 {
   border-radius: 8px;
   background: transparent;
   color: #53627a;
-  cursor: pointer;
   padding-bottom: 0;
-  padding-right: 10px;
+  padding-right: 6px;
   padding-top: 0;
+}
+
+.document-tree-row:hover,
+.document-tree-row.is-active {
+  background: #eef3ff;
+  color: #2454d6;
+}
+
+.document-tree-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 10px 0 0;
   text-align: left;
 }
 
-.document-tree-item:hover,
-.document-tree-item.is-active {
-  background: #eef3ff;
-  color: #2454d6;
+.document-tree-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-tree-action {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+
+.document-tree-row:hover .document-tree-action,
+.document-tree-row.is-active .document-tree-action {
+  opacity: 1;
 }
 
 .document-tree-icon {

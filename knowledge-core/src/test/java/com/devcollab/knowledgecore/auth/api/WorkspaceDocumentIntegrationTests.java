@@ -14,6 +14,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,6 +122,73 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code")
                         .value("DOCUMENT_PARENT_INVALID"));
+    }
+
+    @Test
+    void shouldUpdateMoveAndDeleteDocuments() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "文档增强空间"
+        ).get("id").asText();
+        JsonNode root = createDocument(
+                token, workspaceId, null, "根文档"
+        );
+        JsonNode child = createDocument(
+                token, workspaceId, root.get("id").asText(), "子文档"
+        );
+        JsonNode anotherRoot = createDocument(
+                token, workspaceId, null, "另一个根文档"
+        );
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{id}",
+                        child.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"子文档改名\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("子文档改名"));
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{id}/parent",
+                        child.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentDocumentId":"%s"}
+                                """.formatted(anotherRoot.get("id").asText())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parentDocumentId")
+                        .value(anotherRoot.get("id").asText()));
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{id}/parent",
+                        anotherRoot.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentDocumentId":"%s"}
+                                """.formatted(child.get("id").asText())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_PARENT_CYCLE"));
+
+        mockMvc.perform(delete(
+                        "/api/v1/documents/{id}",
+                        anotherRoot.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}",
+                        child.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
     }
 
     @Test

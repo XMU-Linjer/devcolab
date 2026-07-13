@@ -36,4 +36,14 @@ public class InMemoryDocumentRepository implements DocumentRepository {
                 .sorted(Comparator.comparing(Document::createdAt))
                 .toList();
     }
+
+    @Override
+    public void deleteById(UUID documentId) {
+        List<UUID> children = documents.values().stream()
+                .filter(document -> documentId.equals(document.parentDocumentId()))
+                .map(Document::id)
+                .toList();
+        children.forEach(this::deleteById);
+        documents.remove(documentId);
+    }
 }

@@ -2,12 +2,16 @@ package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.application.CreateDocumentCommand;
 import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
+import com.devcollab.knowledgecore.document.application.MoveDocumentCommand;
+import com.devcollab.knowledgecore.document.application.UpdateDocumentCommand;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -66,5 +70,40 @@ public class DocumentController {
         return DocumentResponse.from(
                 documentService.get(documentId, currentUser.userId())
         );
+    }
+
+    @PatchMapping("/api/v1/documents/{documentId}")
+    public DocumentResponse update(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody UpdateDocumentRequest request
+    ) {
+        return DocumentResponse.from(documentService.update(
+                documentId,
+                currentUser.userId(),
+                new UpdateDocumentCommand(request.title())
+        ));
+    }
+
+    @PatchMapping("/api/v1/documents/{documentId}/parent")
+    public DocumentResponse move(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @RequestBody MoveDocumentRequest request
+    ) {
+        return DocumentResponse.from(documentService.move(
+                documentId,
+                currentUser.userId(),
+                new MoveDocumentCommand(request.parentDocumentId())
+        ));
+    }
+
+    @DeleteMapping("/api/v1/documents/{documentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        documentService.delete(documentId, currentUser.userId());
     }
 }

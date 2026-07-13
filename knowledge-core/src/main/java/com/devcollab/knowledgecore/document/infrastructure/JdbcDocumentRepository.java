@@ -76,4 +76,12 @@ public class JdbcDocumentRepository implements DocumentRepository {
                 workspaceId
         );
     }
+
+    @Override
+    public void deleteById(UUID documentId) {
+        jdbcTemplate.update(
+                "DELETE FROM documents WHERE id = ?",
+                documentId
+        );
+    }
 }

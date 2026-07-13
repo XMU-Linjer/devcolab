@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.application;
 
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
@@ -63,6 +64,63 @@ public class DocumentApplicationService {
         return document;
     }
 
+    public Document update(
+            UUID documentId,
+            UUID currentUserId,
+            UpdateDocumentCommand command
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+
+        Document updated = new Document(
+                document.id(),
+                document.workspaceId(),
+                document.parentDocumentId(),
+                command.title().trim(),
+                document.createdBy(),
+                document.createdAt(),
+                Instant.now()
+        );
+        return documentRepository.save(updated);
+    }
+
+    public Document move(
+            UUID documentId,
+            UUID currentUserId,
+            MoveDocumentCommand command
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        validateParent(document.workspaceId(), command.parentDocumentId());
+        validateNoCycle(document, command.parentDocumentId());
+
+        Document moved = new Document(
+                document.id(),
+                document.workspaceId(),
+                command.parentDocumentId(),
+                document.title(),
+                document.createdBy(),
+                document.createdAt(),
+                Instant.now()
+        );
+        return documentRepository.save(moved);
+    }
+
+    public void delete(UUID documentId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        documentRepository.deleteById(documentId);
+    }
+
     private void validateParent(
             UUID workspaceId,
             UUID parentDocumentId
@@ -74,6 +132,31 @@ public class DocumentApplicationService {
         Document parent = requireDocument(parentDocumentId);
         if (!parent.workspaceId().equals(workspaceId)) {
             throw new InvalidDocumentParentException();
+        }
+    }
+
+    private void validateNoCycle(Document document, UUID parentDocumentId) {
+        if (parentDocumentId == null) {
+            return;
+        }
+        if (document.id().equals(parentDocumentId)) {
+            throw new DocumentParentCycleException();
+        }
+
+        List<Document> documents = documentRepository.findAllByWorkspaceId(
+                document.workspaceId()
+        );
+        UUID cursor = parentDocumentId;
+        while (cursor != null) {
+            UUID current = cursor;
+            if (document.id().equals(current)) {
+                throw new DocumentParentCycleException();
+            }
+            Document parent = documents.stream()
+                    .filter(candidate -> candidate.id().equals(current))
+                    .findFirst()
+                    .orElse(null);
+            cursor = parent == null ? null : parent.parentDocumentId();
         }
     }
 
