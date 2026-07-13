@@ -11,6 +11,7 @@ import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService;
 import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService.RefreshCredentials;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Locale;
@@ -36,6 +37,7 @@ public class AuthenticationApplicationService {
         this.refreshTokenService = refreshTokenService;
     }
 
+    @Transactional
     public AuthenticatedUser register(RegisterCommand command) {
         String normalizedUsername = normalizeUsername(command.username());
 
@@ -77,6 +79,7 @@ public class AuthenticationApplicationService {
         return createAuthenticatedUser(userAccount);
     }
 
+    @Transactional
     public AuthenticatedUser refresh(
             String refreshToken,
             String csrfToken

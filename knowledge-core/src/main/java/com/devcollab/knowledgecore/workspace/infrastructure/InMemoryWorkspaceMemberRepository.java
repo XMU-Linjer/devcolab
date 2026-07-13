@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.workspace.infrastructure;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Profile;
 
 import java.util.Map;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
+@Profile("in-memory")
 public class InMemoryWorkspaceMemberRepository
         implements WorkspaceMemberRepository {
 

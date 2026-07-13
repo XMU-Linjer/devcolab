@@ -1,0 +1,25 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: jdbc:h2:mem:devcollab;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  flyway:
+    enabled: true
+
+devcollab:
+  security:
+    jwt:
+      issuer: devcollab-test
+      audience: devcollab-test-web
+      secret: devcollab-test-secret-must-be-at-least-32-bytes
+      access-token-ttl: PT30M
+    refresh:
+      ttl: P7D
+      refresh-cookie-name: dc_refresh
+      csrf-cookie-name: dc_csrf
+      csrf-header-name: X-CSRF-Token
+      allowed-origin: http://localhost:5173
+      secure: false

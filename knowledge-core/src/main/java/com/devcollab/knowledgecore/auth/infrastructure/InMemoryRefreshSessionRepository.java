@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.auth.infrastructure;
 import com.devcollab.knowledgecore.auth.domain.RefreshSession;
 import com.devcollab.knowledgecore.auth.domain.RefreshSessionRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Profile;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
+@Profile("in-memory")
 public class InMemoryRefreshSessionRepository
         implements RefreshSessionRepository {
 

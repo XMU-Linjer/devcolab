@@ -4,6 +4,7 @@ import com.devcollab.knowledgecore.workspace.domain.Workspace;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Profile;
 
 import java.util.Comparator;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
+@Profile("in-memory")
 public class InMemoryWorkspaceRepository implements WorkspaceRepository {
 
     private final Map<UUID, Workspace> workspaces = new ConcurrentHashMap<>();

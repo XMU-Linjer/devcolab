@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.document.application.exception.InvalidDocumen
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ public class DocumentBlockApplicationService {
         this.documentService = documentService;
     }
 
+    @Transactional
     public synchronized DocumentBlock create(
             UUID documentId,
             UUID currentUserId,
@@ -57,6 +59,7 @@ public class DocumentBlockApplicationService {
         return blockRepository.findAllByDocumentId(documentId);
     }
 
+    @Transactional
     public synchronized DocumentBlock updateContent(
             UUID documentId,
             UUID blockId,
@@ -73,6 +76,7 @@ public class DocumentBlockApplicationService {
         return blockRepository.save(updated);
     }
 
+    @Transactional
     public synchronized void delete(
             UUID documentId,
             UUID blockId,
@@ -85,6 +89,7 @@ public class DocumentBlockApplicationService {
         normalizeSortOrder(documentId);
     }
 
+    @Transactional
     public synchronized List<DocumentBlock> move(
             UUID documentId,
             UUID blockId,

@@ -8,6 +8,7 @@ import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +28,7 @@ public class WorkspaceApplicationService {
         this.memberRepository = memberRepository;
     }
 
+    @Transactional
     public WorkspaceView create(
             UUID currentUserId,
             CreateWorkspaceCommand command

@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.document.infrastructure;
 import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Profile;
 
 import java.util.Comparator;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
+@Profile("in-memory")
 public class InMemoryDocumentRepository implements DocumentRepository {
 
     private final Map<UUID, Document> documents = new ConcurrentHashMap<>();

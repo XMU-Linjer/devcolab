@@ -1,6 +1,12 @@
 spring:
   application:
     name: devcollab-knowledge-core
+  datasource:
+    url: ${DEVCOLLAB_DB_URL:jdbc:postgresql://localhost:5432/devcollab}
+    username: ${DEVCOLLAB_DB_USERNAME:devcollab}
+    password: ${DEVCOLLAB_DB_PASSWORD:devcollab}
+  flyway:
+    enabled: true
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
