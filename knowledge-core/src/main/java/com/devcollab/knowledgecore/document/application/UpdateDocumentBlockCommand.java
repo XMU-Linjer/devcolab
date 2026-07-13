@@ -1,4 +1,4 @@
 package com.devcollab.knowledgecore.document.application;
 
-public record UpdateDocumentBlockCommand(String text) {
+public record UpdateDocumentBlockCommand(String text, long expectedVersion) {
 }

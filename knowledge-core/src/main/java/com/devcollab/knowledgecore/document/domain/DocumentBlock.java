@@ -9,6 +9,7 @@ public record DocumentBlock(
         DocumentBlockType type,
         String text,
         int sortOrder,
+        long version,
         UUID createdBy,
         Instant createdAt,
         Instant updatedAt
@@ -20,6 +21,7 @@ public record DocumentBlock(
                 type,
                 newText,
                 sortOrder,
+                version + 1,
                 createdBy,
                 createdAt,
                 now
@@ -33,6 +35,7 @@ public record DocumentBlock(
                 type,
                 text,
                 newSortOrder,
+                version + 1,
                 createdBy,
                 createdAt,
                 now

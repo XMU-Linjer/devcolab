@@ -70,7 +70,10 @@ public class DocumentBlockController {
                 documentId,
                 blockId,
                 currentUser.userId(),
-                new UpdateDocumentBlockCommand(request.content().text())
+                new UpdateDocumentBlockCommand(
+                        request.content().text(),
+                        request.expectedVersion()
+                )
         ));
     }
 

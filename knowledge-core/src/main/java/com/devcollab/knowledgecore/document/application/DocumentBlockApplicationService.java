@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.application;
 
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentBlockVersionConflictException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
@@ -44,6 +45,7 @@ public class DocumentBlockApplicationService {
                 command.type(),
                 command.text().trim(),
                 sortOrder,
+                0,
                 currentUserId,
                 now,
                 now
@@ -68,12 +70,19 @@ public class DocumentBlockApplicationService {
     ) {
         documentService.get(documentId, currentUserId);
 
-        DocumentBlock block = requireBlock(documentId, blockId);
-        DocumentBlock updated = block.updateText(
-                command.text().trim(),
-                Instant.now()
-        );
-        return blockRepository.save(updated);
+        requireBlock(documentId, blockId);
+        return blockRepository.updateTextIfVersionMatches(
+                        blockId,
+                        command.text().trim(),
+                        Instant.now(),
+                        command.expectedVersion()
+                )
+                .filter(found -> found.documentId().equals(documentId))
+                .orElseThrow(() -> blockRepository.findById(blockId)
+                        .filter(found -> found.documentId().equals(documentId))
+                        .isPresent()
+                        ? new DocumentBlockVersionConflictException()
+                        : new DocumentBlockNotFoundException());
     }
 
     @Transactional

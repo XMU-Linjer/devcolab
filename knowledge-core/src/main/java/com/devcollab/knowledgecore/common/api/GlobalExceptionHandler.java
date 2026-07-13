@@ -6,6 +6,7 @@ import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshToke
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentBlockVersionConflictException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
@@ -89,6 +90,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "DOCUMENT_BLOCK_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(DocumentBlockVersionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentBlockVersionConflict(
+            DocumentBlockVersionConflictException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "DOCUMENT_BLOCK_VERSION_CONFLICT",
                 exception.getMessage(),
                 request
         );

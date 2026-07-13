@@ -46,6 +46,23 @@ public class InMemoryDocumentBlockRepository
     }
 
     @Override
+    public Optional<DocumentBlock> updateTextIfVersionMatches(
+            UUID blockId,
+            String text,
+            java.time.Instant updatedAt,
+            long expectedVersion
+    ) {
+        DocumentBlock current = blocks.get(blockId);
+        if (current == null || current.version() != expectedVersion) {
+            return Optional.empty();
+        }
+
+        DocumentBlock updated = current.updateText(text, updatedAt);
+        blocks.put(blockId, updated);
+        return Optional.of(updated);
+    }
+
+    @Override
     public void deleteById(UUID blockId) {
         blocks.remove(blockId);
     }

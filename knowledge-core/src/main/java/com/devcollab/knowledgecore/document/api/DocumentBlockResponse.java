@@ -12,6 +12,7 @@ public record DocumentBlockResponse(
         DocumentBlockType type,
         DocumentBlockContentResponse content,
         int sortOrder,
+        long version,
         UUID createdBy,
         Instant createdAt,
         Instant updatedAt
@@ -23,6 +24,7 @@ public record DocumentBlockResponse(
                 block.type(),
                 new DocumentBlockContentResponse(block.text()),
                 block.sortOrder(),
+                block.version(),
                 block.createdBy(),
                 block.createdAt(),
                 block.updatedAt()

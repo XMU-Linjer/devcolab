@@ -49,8 +49,10 @@ class DocumentBlockIntegrationTests {
                 .andExpect(jsonPath("$[0].content.text")
                         .value("First paragraph"))
                 .andExpect(jsonPath("$[0].sortOrder").value(0))
+                .andExpect(jsonPath("$[0].version").value(0))
                 .andExpect(jsonPath("$[1].id").value(second.get("id").asText()))
-                .andExpect(jsonPath("$[1].sortOrder").value(1));
+                .andExpect(jsonPath("$[1].sortOrder").value(1))
+                .andExpect(jsonPath("$[1].version").value(0));
     }
 
     @Test
@@ -111,13 +113,49 @@ class DocumentBlockIntegrationTests {
                 .andExpect(jsonPath("$.type").value("PARAGRAPH"))
                 .andExpect(jsonPath("$.content.text")
                         .value("Updated content"))
-                .andExpect(jsonPath("$.sortOrder").value(0));
+                .andExpect(jsonPath("$.sortOrder").value(0))
+                .andExpect(jsonPath("$.version").value(1));
 
         mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].content.text")
-                        .value("Updated content"));
+                        .value("Updated content"))
+                .andExpect(jsonPath("$[0].version").value(1));
+    }
+
+    @Test
+    void shouldRejectStaleBlockContentUpdate() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        JsonNode block = createBlock(token, documentId, "Original content");
+        String blockId = block.get("id").asText();
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBlockBody("First update", 0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBlockBody("Stale update", 0)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_BLOCK_VERSION_CONFLICT"));
     }
 
     @Test
@@ -323,8 +361,16 @@ class DocumentBlockIntegrationTests {
     }
 
     private String updateBlockBody(String text) throws Exception {
+        return updateBlockBody(text, 0);
+    }
+
+    private String updateBlockBody(String text, long expectedVersion)
+            throws Exception {
         return objectMapper.writeValueAsString(
-                new UpdateBlockBody(new BlockContentBody(text))
+                new UpdateBlockBody(
+                        new BlockContentBody(text),
+                        expectedVersion
+                )
         );
     }
 
@@ -363,7 +409,10 @@ class DocumentBlockIntegrationTests {
     private record BlockContentBody(String text) {
     }
 
-    private record UpdateBlockBody(BlockContentBody content) {
+    private record UpdateBlockBody(
+            BlockContentBody content,
+            long expectedVersion
+    ) {
     }
 
     private record MoveBlockBody(int targetIndex) {
