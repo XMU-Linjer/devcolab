@@ -9,7 +9,7 @@
       <div class="auth-heading">
         <p class="eyebrow">Knowledge Core</p>
         <h1>创建账号</h1>
-        <p>注册后会自动进入工作台，后续工作区和文档都归属于当前账号。</p>
+        <p>注册后会自动进入工作台，后续工作区、文档和内容块都归属于当前账号。</p>
       </div>
 
       <el-form

@@ -9,7 +9,7 @@
       <div class="auth-heading">
         <p class="eyebrow">Knowledge Core</p>
         <h1>登录工作台</h1>
-        <p>进入你的协作文档空间，继续整理需求、接口和工程知识。</p>
+        <p>进入协作文档空间，继续整理需求、接口、工程知识和后续评审记录。</p>
       </div>
 
       <el-form

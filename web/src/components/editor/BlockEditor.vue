@@ -4,6 +4,9 @@
       <div>
         <p class="eyebrow">Blocks</p>
         <h3>内容块</h3>
+        <p class="section-hint">
+          当前 MVP 支持段落块的新增、编辑、删除和排序；保存时会携带版本号做并发校验。
+        </p>
       </div>
       <el-button
         type="primary"
@@ -21,10 +24,24 @@
       :title="conflictMessage"
       type="warning"
       show-icon
-      :closable="false"
+      :closable="true"
+      @close="conflictMessage = ''"
     >
       <template #default>
         <el-button text type="primary" @click="loadBlocks">刷新内容</el-button>
+      </template>
+    </el-alert>
+
+    <el-alert
+      v-if="errorMessage"
+      class="block-alert"
+      :title="errorMessage"
+      type="error"
+      show-icon
+      :closable="false"
+    >
+      <template #default>
+        <el-button text type="primary" @click="loadBlocks">重新加载</el-button>
       </template>
     </el-alert>
 
@@ -32,7 +49,7 @@
 
     <el-empty
       v-else-if="blocks.length === 0"
-      description="还没有内容块"
+      description="这篇文档还没有内容块"
     >
       <el-button type="primary" :icon="Plus" @click="handleCreate">
         创建第一个段落
@@ -69,7 +86,7 @@ import {
   updateBlock,
   type DocumentBlock,
 } from '@/api/block';
-import { readableError } from '@/utils/error';
+import { isConflictError, readableError } from '@/utils/error';
 
 const props = defineProps<{
   documentId: string;
@@ -80,6 +97,7 @@ const loading = ref(false);
 const creating = ref(false);
 const busyBlockId = ref<string | null>(null);
 const conflictMessage = ref('');
+const errorMessage = ref('');
 
 onMounted(() => {
   void loadBlocks();
@@ -95,11 +113,12 @@ watch(
 async function loadBlocks() {
   loading.value = true;
   conflictMessage.value = '';
+  errorMessage.value = '';
 
   try {
     blocks.value = await listBlocks(props.documentId);
   } catch (error) {
-    ElMessage.error(readableError(error, '内容块加载失败'));
+    errorMessage.value = readableError(error, '内容块加载失败');
   } finally {
     loading.value = false;
   }
@@ -139,8 +158,8 @@ async function handleSave(block: DocumentBlock, text: string) {
     ElMessage.success('已保存');
   } catch (error) {
     const message = readableError(error, '段落保存失败');
-    if (message.includes('changed by another request')) {
-      conflictMessage.value = '当前段落已被其他请求修改，请刷新后再编辑。';
+    if (isConflictError(error)) {
+      conflictMessage.value = '当前段落已被其他操作修改，请刷新内容后再继续编辑。';
     }
     ElMessage.error(message);
   } finally {
@@ -149,15 +168,19 @@ async function handleSave(block: DocumentBlock, text: string) {
 }
 
 async function handleDelete(block: DocumentBlock) {
-  await ElMessageBox.confirm(
-    '删除后该段落会从当前文档移除。',
-    '删除段落',
-    {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    },
-  );
+  try {
+    await ElMessageBox.confirm(
+      '删除后该段落会从当前文档移除，此操作暂不支持撤销。',
+      '删除段落',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
 
   busyBlockId.value = block.id;
   try {
@@ -197,4 +220,3 @@ function replaceBlock(block: DocumentBlock) {
   ));
 }
 </script>
-

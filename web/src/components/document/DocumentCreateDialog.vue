@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import { reactive, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
 
 interface DocumentForm {
   title: string;
@@ -58,6 +58,13 @@ const rules: FormRules<DocumentForm> = {
   ],
 };
 
+watch(visible, (isVisible) => {
+  if (!isVisible) {
+    form.title = '';
+    formRef.value?.clearValidate();
+  }
+});
+
 async function submit() {
   if (submitting.value) {
     return;
@@ -71,10 +78,8 @@ async function submit() {
   submitting.value = true;
   try {
     emit('create', form.title);
-    form.title = '';
   } finally {
     submitting.value = false;
   }
 }
 </script>
-

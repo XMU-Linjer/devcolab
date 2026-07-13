@@ -80,6 +80,11 @@ button {
   text-align: left;
 }
 
+.nav-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .nav-item.is-active {
   background: #eef3ff;
   color: #2454d6;
@@ -234,6 +239,14 @@ h1 {
   font-size: 13px;
 }
 
+.card-link {
+  display: inline-flex;
+  margin-top: 8px;
+  color: #2454d6;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .document-workspace {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -261,6 +274,13 @@ h1 {
 .document-sidebar-header h2 {
   margin-bottom: 0;
   font-size: 18px;
+}
+
+.section-hint {
+  margin: 6px 0 0;
+  color: #748198;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .document-tree {
@@ -368,11 +388,22 @@ h1 {
   padding: 14px;
 }
 
+.paragraph-block.is-dirty {
+  border-color: #f2b84b;
+  background: #fffdf7;
+}
+
 .block-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.block-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .block-index,
@@ -395,6 +426,14 @@ h1 {
   min-height: 34px;
   color: #748198;
   font-size: 13px;
+}
+
+.text-muted {
+  color: #748198;
+}
+
+.text-warning {
+  color: #b7791f;
 }
 
 .auth-page {

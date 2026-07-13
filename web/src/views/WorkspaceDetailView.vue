@@ -37,9 +37,12 @@
       <section class="document-workspace">
         <aside class="document-sidebar">
           <div class="document-sidebar-header">
-            <h2>文档树</h2>
+            <div>
+              <h2>文档树</h2>
+              <p class="section-hint">当前 MVP 支持根文档创建和文档内容编辑。</p>
+            </div>
             <el-tag v-if="workspace" size="small" effect="light">
-              {{ workspace.currentUserRole }}
+              {{ roleText(workspace.currentUserRole) }}
             </el-tag>
           </div>
 
@@ -51,7 +54,13 @@
             type="error"
             show-icon
             :closable="false"
-          />
+          >
+            <template #default>
+              <el-button text type="primary" @click="loadWorkspacePage">
+                重新加载
+              </el-button>
+            </template>
+          </el-alert>
 
           <el-empty
             v-else-if="documentTree.length === 0"
@@ -78,6 +87,9 @@
               <div>
                 <p class="eyebrow">Document</p>
                 <h2>{{ selectedDocument.title }}</h2>
+                <p class="section-hint">
+                  这里是 Block 编辑器雏形，保存会直接写入 Knowledge Core。
+                </p>
               </div>
               <el-tag effect="light">
                 更新于 {{ formatTime(selectedDocument.updatedAt) }}
@@ -90,7 +102,11 @@
           <el-empty
             v-else
             description="选择或创建一篇文档"
-          />
+          >
+            <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
+              创建文档
+            </el-button>
+          </el-empty>
         </section>
       </section>
     </section>
@@ -115,7 +131,7 @@ import {
   type DocumentSummary,
   type DocumentTreeNode,
 } from '@/api/document';
-import { getWorkspace, type Workspace } from '@/api/workspace';
+import { getWorkspace, type Workspace, type WorkspaceRole } from '@/api/workspace';
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
 import DocumentTree from '@/components/document/DocumentTree.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
@@ -153,6 +169,10 @@ async function loadWorkspacePage() {
     ]);
     workspace.value = workspaceData;
     documentTree.value = treeData;
+
+    if (!selectedDocument.value && treeData[0]) {
+      await openDocument(treeData[0].id);
+    }
   } catch (error) {
     errorMessage.value = readableError(error, '工作区加载失败');
   } finally {
@@ -198,6 +218,10 @@ async function openDocument(documentId: string) {
 function currentWorkspaceId() {
   const workspaceId = route.params.workspaceId;
   return typeof workspaceId === 'string' ? workspaceId : null;
+}
+
+function roleText(role: WorkspaceRole) {
+  return role === 'OWNER' ? '负责人' : '成员';
 }
 
 function formatTime(value: string) {

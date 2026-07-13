@@ -11,11 +11,11 @@
           <House class="nav-icon" />
           <span>工作区</span>
         </button>
-        <button class="nav-item" type="button">
+        <button class="nav-item" type="button" disabled>
           <Document class="nav-icon" />
           <span>文档</span>
         </button>
-        <button class="nav-item" type="button">
+        <button class="nav-item" type="button" disabled>
           <Connection class="nav-icon" />
           <span>协作</span>
         </button>
@@ -35,7 +35,7 @@
           <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
             创建工作区
           </el-button>
-          <el-button :icon="SwitchButton" @click="handleLogout">
+          <el-button :icon="SwitchButton" :loading="loggingOut" @click="handleLogout">
             退出
           </el-button>
         </div>
@@ -45,7 +45,7 @@
         <div class="panel-header">
           <div>
             <h2>我的工作区</h2>
-            <p>工作区是后续文档树、Block 编辑和协作权限的业务入口。</p>
+            <p>工作区是文档树、Block 编辑和协作权限的业务入口。先创建工作区，再在里面维护项目知识。</p>
           </div>
           <el-tag type="success" effect="light">
             {{ workspaces.length }} 个工作区
@@ -59,7 +59,11 @@
           type="error"
           show-icon
           :closable="false"
-        />
+        >
+          <template #default>
+            <el-button text type="primary" @click="loadWorkspaces">重新加载</el-button>
+          </template>
+        </el-alert>
 
         <div v-if="loading" class="workspace-loading">
           <el-skeleton :rows="4" animated />
@@ -84,11 +88,12 @@
             <div class="workspace-card-header">
               <h3>{{ workspaceItem.name }}</h3>
               <el-tag size="small" effect="light">
-                {{ workspaceItem.currentUserRole }}
+                {{ roleText(workspaceItem.currentUserRole) }}
               </el-tag>
             </div>
             <p>创建时间：{{ formatTime(workspaceItem.createdAt) }}</p>
             <p>更新时间：{{ formatTime(workspaceItem.updatedAt) }}</p>
+            <span class="card-link">进入工作区 →</span>
           </article>
         </div>
       </section>
@@ -117,6 +122,7 @@ import {
   createWorkspace,
   listWorkspaces,
   type Workspace,
+  type WorkspaceRole,
 } from '@/api/workspace';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -127,6 +133,7 @@ const router = useRouter();
 
 const workspaces = ref<Workspace[]>([]);
 const loading = ref(false);
+const loggingOut = ref(false);
 const dialogVisible = ref(false);
 const errorMessage = ref('');
 
@@ -163,9 +170,18 @@ async function openWorkspace(workspaceId: string) {
 }
 
 async function handleLogout() {
-  await authStore.logout();
-  ElMessage.success('已退出登录');
-  await router.push('/login');
+  loggingOut.value = true;
+  try {
+    await authStore.logout();
+    ElMessage.success('已退出登录');
+    await router.push('/login');
+  } finally {
+    loggingOut.value = false;
+  }
+}
+
+function roleText(role: WorkspaceRole) {
+  return role === 'OWNER' ? '负责人' : '成员';
 }
 
 function formatTime(value: string) {

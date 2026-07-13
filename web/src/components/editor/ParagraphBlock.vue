@@ -1,8 +1,11 @@
 <template>
-  <article class="paragraph-block">
+  <article class="paragraph-block" :class="{ 'is-dirty': dirty }">
     <div class="block-toolbar">
-      <span class="block-index">#{{ block.sortOrder + 1 }}</span>
-      <span class="block-version">v{{ block.version }}</span>
+      <div class="block-identity">
+        <span class="block-index">#{{ block.sortOrder + 1 }}</span>
+        <span class="block-version">版本 {{ block.version }}</span>
+      </div>
+
       <div class="block-actions">
         <el-tooltip content="上移">
           <el-button
@@ -38,15 +41,16 @@
     <el-input
       v-model="draft"
       type="textarea"
-      :autosize="{ minRows: 3, maxRows: 12 }"
-      placeholder="输入段落内容"
+      :autosize="{ minRows: 3, maxRows: 14 }"
+      placeholder="输入段落内容，离开输入框或点击保存后写入后端"
       :disabled="busy"
       @blur="save"
     />
 
     <div class="block-footer">
-      <span v-if="dirty">未保存</span>
-      <span v-else>已保存</span>
+      <span :class="dirty ? 'text-warning' : 'text-muted'">
+        {{ dirty ? '有未保存修改' : '已保存' }}
+      </span>
       <el-button
         text
         type="primary"
@@ -99,4 +103,3 @@ function save() {
   emit('save', props.block, draft.value);
 }
 </script>
-
