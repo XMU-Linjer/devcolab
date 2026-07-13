@@ -10,7 +10,11 @@ import com.devcollab.knowledgecore.document.application.exception.DocumentBlockV
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceUserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,6 +68,58 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.FORBIDDEN,
                 "WORKSPACE_ACCESS_DENIED",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceUserNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceUserNotFound(
+            WorkspaceUserNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "WORKSPACE_USER_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceMemberNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceMemberNotFound(
+            WorkspaceMemberNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "WORKSPACE_MEMBER_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceMemberAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceMemberAlreadyExists(
+            WorkspaceMemberAlreadyExistsException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "WORKSPACE_MEMBER_EXISTS",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(WorkspaceLastAdminException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceLastAdmin(
+            WorkspaceLastAdminException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "WORKSPACE_LAST_ADMIN",
                 exception.getMessage(),
                 request
         );

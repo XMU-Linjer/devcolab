@@ -181,7 +181,7 @@ async function handleLogout() {
 }
 
 function roleText(role: WorkspaceRole) {
-  return role === 'OWNER' ? '负责人' : '成员';
+  return role === 'ADMIN' ? '管理员' : '普通用户';
 }
 
 function formatTime(value: string) {

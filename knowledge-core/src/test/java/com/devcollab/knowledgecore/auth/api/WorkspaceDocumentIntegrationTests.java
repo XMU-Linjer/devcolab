@@ -42,7 +42,7 @@ class WorkspaceDocumentIntegrationTests {
         mockMvc.perform(get("/api/v1/workspaces/{id}", workspaceId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentUserRole").value("OWNER"));
+                .andExpect(jsonPath("$.currentUserRole").value("ADMIN"));
 
         JsonNode root = createDocument(
                 token, workspaceId, null, "总体架构"
@@ -138,7 +138,7 @@ class WorkspaceDocumentIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"%s\"}".formatted(name)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.currentUserRole").value("ADMIN"))
                 .andReturn();
         return responseJson(result);
     }

@@ -254,6 +254,57 @@ h1 {
   margin-top: 28px;
 }
 
+.members-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.members-panel-header h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+}
+
+.members-table {
+  margin-top: 18px;
+}
+
+.member-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-avatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef3ff;
+  color: #2454d6;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.member-identity strong {
+  display: block;
+  color: #172033;
+  font-size: 14px;
+}
+
+.member-identity p {
+  margin: 2px 0 0;
+  color: #748198;
+  font-size: 12px;
+}
+
+.full-width {
+  width: 100%;
+}
+
 .document-sidebar,
 .document-main {
   min-height: 520px;

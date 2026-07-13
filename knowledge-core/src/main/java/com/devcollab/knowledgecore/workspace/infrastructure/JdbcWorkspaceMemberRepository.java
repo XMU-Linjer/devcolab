@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,5 +64,60 @@ public class JdbcWorkspaceMemberRepository
                 workspaceId,
                 userId
         ).stream().findFirst();
+    }
+
+    @Override
+    public List<WorkspaceMember> findAllByWorkspaceId(UUID workspaceId) {
+        return jdbcTemplate.query("""
+                        SELECT * FROM workspace_members
+                         WHERE workspace_id = ?
+                         ORDER BY joined_at ASC
+                        """,
+                MEMBER_ROW_MAPPER,
+                workspaceId
+        );
+    }
+
+    @Override
+    public boolean existsByWorkspaceIdAndUserId(
+            UUID workspaceId,
+            UUID userId
+    ) {
+        Long count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM workspace_members
+                         WHERE workspace_id = ? AND user_id = ?
+                        """,
+                Long.class,
+                workspaceId,
+                userId
+        );
+        return count != null && count > 0;
+    }
+
+    @Override
+    public long countByWorkspaceIdAndRole(
+            UUID workspaceId,
+            WorkspaceRole role
+    ) {
+        Long count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM workspace_members
+                         WHERE workspace_id = ? AND role = ?
+                        """,
+                Long.class,
+                workspaceId,
+                role.name()
+        );
+        return count == null ? 0 : count;
+    }
+
+    @Override
+    public void deleteByWorkspaceIdAndUserId(UUID workspaceId, UUID userId) {
+        jdbcTemplate.update("""
+                        DELETE FROM workspace_members
+                         WHERE workspace_id = ? AND user_id = ?
+                        """,
+                workspaceId,
+                userId
+        );
     }
 }

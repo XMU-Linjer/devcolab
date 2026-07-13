@@ -44,7 +44,7 @@ public class WorkspaceApplicationService {
         WorkspaceMember owner = new WorkspaceMember(
                 workspace.id(),
                 currentUserId,
-                WorkspaceRole.OWNER,
+                WorkspaceRole.ADMIN,
                 now
         );
 

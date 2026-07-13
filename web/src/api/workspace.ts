@@ -1,6 +1,6 @@
 import { http } from './http';
 
-export type WorkspaceRole = 'OWNER' | 'MEMBER';
+export type WorkspaceRole = 'ADMIN' | 'MEMBER';
 
 export interface Workspace {
   id: string;
@@ -30,4 +30,3 @@ export async function getWorkspace(workspaceId: string): Promise<Workspace> {
   const { data } = await http.get<Workspace>(`/workspaces/${workspaceId}`);
   return data;
 }
-

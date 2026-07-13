@@ -109,6 +109,13 @@
           </el-empty>
         </section>
       </section>
+
+      <section v-if="workspace" class="content-panel">
+        <WorkspaceMembersPanel
+          :workspace-id="workspace.id"
+          :current-user-role="workspace.currentUserRole"
+        />
+      </section>
     </section>
 
     <DocumentCreateDialog
@@ -135,6 +142,7 @@ import { getWorkspace, type Workspace, type WorkspaceRole } from '@/api/workspac
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
 import DocumentTree from '@/components/document/DocumentTree.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
+import WorkspaceMembersPanel from '@/components/workspace/WorkspaceMembersPanel.vue';
 import { readableError } from '@/utils/error';
 
 const route = useRoute();
@@ -221,7 +229,7 @@ function currentWorkspaceId() {
 }
 
 function roleText(role: WorkspaceRole) {
-  return role === 'OWNER' ? '负责人' : '成员';
+  return role === 'ADMIN' ? '管理员' : '普通用户';
 }
 
 function formatTime(value: string) {

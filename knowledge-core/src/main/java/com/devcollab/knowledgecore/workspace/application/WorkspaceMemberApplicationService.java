@@ -1,0 +1,174 @@
+package com.devcollab.knowledgecore.workspace.application;
+
+import com.devcollab.knowledgecore.auth.domain.UserAccount;
+import com.devcollab.knowledgecore.auth.domain.UserRepository;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberNotFoundException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceUserNotFoundException;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class WorkspaceMemberApplicationService {
+
+    private final WorkspaceApplicationService workspaceService;
+    private final WorkspaceMemberRepository memberRepository;
+    private final UserRepository userRepository;
+    private final WorkspacePermissionPolicy permissionPolicy;
+
+    public WorkspaceMemberApplicationService(
+            WorkspaceApplicationService workspaceService,
+            WorkspaceMemberRepository memberRepository,
+            UserRepository userRepository,
+            WorkspacePermissionPolicy permissionPolicy
+    ) {
+        this.workspaceService = workspaceService;
+        this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
+        this.permissionPolicy = permissionPolicy;
+    }
+
+    public List<WorkspaceMemberView> listMembers(
+            UUID workspaceId,
+            UUID currentUserId
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+
+        return memberRepository.findAllByWorkspaceId(workspaceId).stream()
+                .map(member -> WorkspaceMemberView.from(
+                        member,
+                        userRepository.findById(member.userId())
+                                .orElseThrow(WorkspaceUserNotFoundException::new)
+                ))
+                .sorted(Comparator
+                        .comparing(WorkspaceMemberView::role)
+                        .thenComparing(WorkspaceMemberView::username))
+                .toList();
+    }
+
+    @Transactional
+    public WorkspaceMemberView invite(
+            UUID workspaceId,
+            UUID currentUserId,
+            InviteWorkspaceMemberCommand command
+    ) {
+        requireMemberManager(workspaceId, currentUserId);
+        WorkspaceRole role = requireSupportedAssignableRole(command.role());
+        UserAccount targetUser = userRepository
+                .findByNormalizedUsername(normalizeUsername(command.username()))
+                .orElseThrow(WorkspaceUserNotFoundException::new);
+
+        if (memberRepository.existsByWorkspaceIdAndUserId(
+                workspaceId,
+                targetUser.id()
+        )) {
+            throw new WorkspaceMemberAlreadyExistsException();
+        }
+
+        WorkspaceMember member = new WorkspaceMember(
+                workspaceId,
+                targetUser.id(),
+                role,
+                Instant.now()
+        );
+        memberRepository.save(member);
+        return WorkspaceMemberView.from(member, targetUser);
+    }
+
+    @Transactional
+    public WorkspaceMemberView updateRole(
+            UUID workspaceId,
+            UUID targetUserId,
+            UUID currentUserId,
+            UpdateWorkspaceMemberRoleCommand command
+    ) {
+        requireMemberManager(workspaceId, currentUserId);
+        WorkspaceRole role = requireSupportedAssignableRole(command.role());
+        WorkspaceMember target = requireMember(workspaceId, targetUserId);
+
+        if (permissionPolicy.isAdmin(target) && role != WorkspaceRole.ADMIN) {
+            ensureNotLastAdmin(workspaceId);
+        }
+
+        WorkspaceMember updated = new WorkspaceMember(
+                target.workspaceId(),
+                target.userId(),
+                role,
+                target.joinedAt()
+        );
+        memberRepository.save(updated);
+
+        UserAccount user = userRepository.findById(targetUserId)
+                .orElseThrow(WorkspaceUserNotFoundException::new);
+        return WorkspaceMemberView.from(updated, user);
+    }
+
+    @Transactional
+    public void remove(
+            UUID workspaceId,
+            UUID targetUserId,
+            UUID currentUserId
+    ) {
+        requireMemberManager(workspaceId, currentUserId);
+        WorkspaceMember target = requireMember(workspaceId, targetUserId);
+
+        if (permissionPolicy.isAdmin(target)) {
+            ensureNotLastAdmin(workspaceId);
+        }
+
+        memberRepository.deleteByWorkspaceIdAndUserId(workspaceId, targetUserId);
+    }
+
+    private WorkspaceMember requireMemberManager(
+            UUID workspaceId,
+            UUID currentUserId
+    ) {
+        WorkspaceMember currentMember = workspaceService.requireMembership(
+                workspaceId,
+                currentUserId
+        );
+        if (!permissionPolicy.canManageMembers(currentMember)) {
+            throw new WorkspaceAccessDeniedException();
+        }
+        return currentMember;
+    }
+
+    private WorkspaceMember requireMember(UUID workspaceId, UUID userId) {
+        return memberRepository
+                .findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseThrow(WorkspaceMemberNotFoundException::new);
+    }
+
+    private void ensureNotLastAdmin(UUID workspaceId) {
+        if (memberRepository.countByWorkspaceIdAndRole(
+                workspaceId,
+                WorkspaceRole.ADMIN
+        ) <= 1) {
+            throw new WorkspaceLastAdminException();
+        }
+    }
+
+    private WorkspaceRole requireSupportedAssignableRole(WorkspaceRole role) {
+        if (role == null) {
+            throw new IllegalArgumentException("成员角色不能为空");
+        }
+        return role;
+    }
+
+    private String normalizeUsername(String username) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("用户名不能为空");
+        }
+        return username.trim().toLowerCase();
+    }
+}
