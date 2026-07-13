@@ -51,6 +51,14 @@ class AuthControllerIntegrationTests {
 
         assertNotNull(registerResult.getResponse().getCookie("dc_refresh"));
         assertNotNull(registerResult.getResponse().getCookie("dc_csrf"));
+        assertEquals(
+                "/api/v1/auth",
+                registerResult.getResponse().getCookie("dc_refresh").getPath()
+        );
+        assertEquals(
+                "/",
+                registerResult.getResponse().getCookie("dc_csrf").getPath()
+        );
 
         JsonNode responseJson = objectMapper.readTree(
                 registerResult.getResponse().getContentAsString()

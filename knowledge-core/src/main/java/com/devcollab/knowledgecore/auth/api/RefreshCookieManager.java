@@ -20,7 +20,8 @@ import java.util.Optional;
 public class RefreshCookieManager {
 
     private static final String SAME_SITE = "Strict";
-    private static final String COOKIE_PATH = "/api/v1/auth";
+    private static final String AUTH_COOKIE_PATH = "/api/v1/auth";
+    private static final String CSRF_COOKIE_PATH = "/";
 
     private final RefreshTokenProperties properties;
 
@@ -66,6 +67,7 @@ public class RefreshCookieManager {
                 properties.refreshCookieName(),
                 refreshToken,
                 true,
+                AUTH_COOKIE_PATH,
                 properties.ttl()
         );
         addCookie(
@@ -73,6 +75,7 @@ public class RefreshCookieManager {
                 properties.csrfCookieName(),
                 csrfToken,
                 false,
+                CSRF_COOKIE_PATH,
                 properties.ttl()
         );
     }
@@ -83,6 +86,7 @@ public class RefreshCookieManager {
                 properties.refreshCookieName(),
                 "",
                 true,
+                AUTH_COOKIE_PATH,
                 Duration.ZERO
         );
         addCookie(
@@ -90,6 +94,7 @@ public class RefreshCookieManager {
                 properties.csrfCookieName(),
                 "",
                 false,
+                CSRF_COOKIE_PATH,
                 Duration.ZERO
         );
     }
@@ -133,13 +138,14 @@ public class RefreshCookieManager {
             String name,
             String value,
             boolean httpOnly,
+            String path,
             Duration maxAge
     ) {
         ResponseCookie cookie = ResponseCookie.from(name, value)
                 .httpOnly(httpOnly)
                 .secure(properties.secure())
                 .sameSite(SAME_SITE)
-                .path(COOKIE_PATH)
+                .path(path)
                 .maxAge(maxAge)
                 .build();
 

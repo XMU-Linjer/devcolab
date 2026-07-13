@@ -60,6 +60,7 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         this.currentUser = await getCurrentUser();
+        this.accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
         return this.currentUser;
       } catch {
         this.clear();

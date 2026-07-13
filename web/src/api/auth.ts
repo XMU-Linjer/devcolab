@@ -1,4 +1,4 @@
-import { http } from './http';
+import { csrfHeader, http } from './http';
 
 export interface AuthUser {
   userId: string;
@@ -52,5 +52,7 @@ export async function getCurrentUser(): Promise<AuthUser> {
 }
 
 export async function logout(): Promise<void> {
-  await http.post('/auth/logout');
+  await http.post('/auth/logout', undefined, {
+    headers: csrfHeader(),
+  });
 }
