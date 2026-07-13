@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevCollab 文档工作台静态示意</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --text: #172033;
+      --muted: #667085;
+      --border: #e1e6ed;
+      --border-strong: #cfd7e3;
+      --primary: #3157d5;
+      --primary-soft: #eef2ff;
+      --success: #17865f;
+      --success-soft: #e9f8f1;
+      --warning: #9a6700;
+      --warning-soft: #fff6d8;
+      --danger: #b42318;
+      --danger-soft: #fff0ee;
+      --shadow: 0 14px 40px rgba(20, 33, 61, .10);
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1024px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .prototype-note {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 42px;
+      padding: 8px 22px;
+      color: #475467;
+      background: #eef2f6;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .prototype-note strong { color: var(--text); font-weight: 600; }
+
+    .app {
+      display: grid;
+      grid-template-rows: 64px minmax(720px, calc(100vh - 106px));
+      max-width: 1600px;
+      margin: 0 auto;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 260px minmax(300px, 1fr) auto;
+      align-items: center;
+      gap: 24px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--primary);
+      font-weight: 700;
+      letter-spacing: -.5px;
+    }
+    .brand-name { font-weight: 700; font-size: 16px; letter-spacing: -.2px; }
+    .workspace-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--text);
+      background: transparent;
+    }
+    .workspace-switch:hover { background: var(--surface-soft); }
+    .workspace-switch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .search {
+      position: relative;
+      width: min(560px, 100%);
+      margin: 0 auto;
+    }
+    .search svg { position: absolute; left: 13px; top: 11px; color: #98a2b3; }
+    .search input {
+      width: 100%;
+      height: 40px;
+      padding: 0 42px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: var(--surface-soft);
+      color: var(--text);
+    }
+    .search input:focus { border-color: #8fa4ef; box-shadow: 0 0 0 3px var(--primary-soft); }
+    .search kbd {
+      position: absolute;
+      right: 10px;
+      top: 9px;
+      padding: 2px 6px;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 11px;
+    }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .icon-button {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 8px;
+      color: #475467;
+      background: transparent;
+    }
+    .icon-button:hover { background: var(--surface-soft); }
+    .notification-dot {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 7px;
+      height: 7px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: #25405f;
+      background: #dce9f8;
+      font-weight: 700;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 252px minmax(560px, 1fr) 330px;
+      min-height: 0;
+    }
+    .sidebar, .context { background: var(--surface-soft); }
+    .sidebar { border-right: 1px solid var(--border); padding: 18px 12px; }
+    .context { border-left: 1px solid var(--border); }
+    .nav-section + .nav-section { margin-top: 24px; }
+    .section-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 8px;
+      color: #98a2b3;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .nav-item, .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 7px;
+      color: #475467;
+      background: transparent;
+      text-align: left;
+    }
+    .nav-item:hover, .tree-item:hover { background: #eef2f6; color: var(--text); }
+    .nav-item.active { color: var(--primary); background: var(--primary-soft); font-weight: 600; }
+    .nav-item .count {
+      margin-left: auto;
+      min-width: 22px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      color: #475467;
+      background: #e8edf3;
+      font-size: 11px;
+      text-align: center;
+    }
+    .tree-item { min-height: 30px; padding-top: 5px; padding-bottom: 5px; }
+    .tree-item.child { padding-left: 30px; }
+    .tree-item.current { color: var(--primary); background: var(--primary-soft); font-weight: 600; }
+    .tree-chevron { width: 10px; color: #98a2b3; }
+    .sidebar-footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+    .main { min-width: 0; background: var(--surface); }
+    .document-header { padding: 20px 34px 18px; border-bottom: 1px solid var(--border); }
+    .breadcrumbs { display: flex; gap: 7px; color: var(--muted); font-size: 12px; }
+    .breadcrumbs span:not(:last-child)::after { content: "/"; margin-left: 7px; color: #c2c9d3; }
+    .title-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 650; letter-spacing: -.3px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .badge.draft { color: var(--warning); background: var(--warning-soft); }
+    .badge.saved { color: var(--success); background: var(--success-soft); }
+    .meta-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .meta-divider { width: 1px; height: 12px; background: var(--border-strong); }
+    .presence { display: flex; margin-left: 3px; }
+    .presence .mini-avatar {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      margin-left: -5px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      color: #344054;
+      font-size: 9px;
+      font-weight: 700;
+    }
+    .presence .mini-avatar:nth-child(1) { background: #e0e7ff; }
+    .presence .mini-avatar:nth-child(2) { background: #d1fadf; }
+    .presence .mini-avatar:nth-child(3) { background: #fee4e2; }
+    .header-actions { display: flex; gap: 8px; margin-top: 17px; }
+    .button {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      color: #344054;
+      background: var(--surface);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .button:hover { background: var(--surface-soft); }
+    .button.primary { border-color: var(--primary); color: #fff; background: var(--primary); }
+    .button.ghost { border-color: transparent; background: transparent; }
+
+    .editor { padding: 38px 72px 90px; }
+    .editor-canvas { max-width: 760px; margin: 0 auto; }
+    .block { position: relative; margin: 5px -18px; padding: 8px 18px; border: 1px solid transparent; border-radius: 7px; }
+    .block:hover { border-color: var(--border); }
+    .block.selected { border-color: #9bb0f5; background: #fbfcff; }
+    .block-handle {
+      position: absolute;
+      left: -11px;
+      top: 13px;
+      color: #b1bac7;
+      opacity: 0;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+    .block:hover .block-handle, .block.selected .block-handle { opacity: 1; }
+    .editor h2 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.4px; }
+    .editor h3 { margin: 0; font-size: 16px; font-weight: 650; }
+    .editor p { margin: 0; line-height: 1.8; color: #344054; }
+    .endpoint {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 13px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-soft);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .method { padding: 3px 7px; border-radius: 5px; color: var(--success); background: var(--success-soft); font-size: 11px; font-weight: 800; }
+    .field-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; }
+    .field-table th, .field-table td { padding: 11px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+    .field-table th { color: var(--muted); background: var(--surface-soft); font-size: 11px; font-weight: 650; }
+    .field-table tr:last-child td { border-bottom: 0; }
+    .field-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #344054; }
+    .required { color: var(--danger); font-size: 11px; }
+    .collab-indicator { display: flex; align-items: center; gap: 8px; margin-top: 7px; color: var(--primary); font-size: 11px; }
+    .collab-line { width: 3px; height: 16px; border-radius: 2px; background: var(--primary); }
+    .callout { display: flex; gap: 10px; padding: 12px 14px; border-left: 3px solid #e2aa22; border-radius: 0 7px 7px 0; background: #fffaf0; color: #664d03; line-height: 1.6; }
+
+    .context-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--border); background: var(--surface); }
+    .context-tab { padding: 17px 4px 13px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 12px; }
+    .context-tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 650; }
+    .context-body { padding: 20px; }
+    .context-panel[hidden] { display: none; }
+    .context-kicker { color: var(--muted); font-size: 11px; }
+    .context-title { margin-top: 5px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #344054; }
+    .issue { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .issue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .severity { display: inline-flex; align-items: center; gap: 7px; color: var(--danger); font-size: 12px; font-weight: 650; }
+    .severity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+    .status-pill { padding: 3px 7px; border-radius: 10px; color: var(--danger); background: var(--danger-soft); font-size: 10px; font-weight: 750; }
+    .issue h3 { margin: 13px 0 6px; font-size: 15px; font-weight: 650; }
+    .issue p { margin: 0; color: var(--muted); line-height: 1.65; font-size: 12px; }
+    .source { margin-top: 12px; padding: 9px 10px; border-radius: 6px; color: #475467; background: #eef2f6; font-size: 11px; }
+    .evidence { margin-top: 18px; }
+    .evidence h4 { margin: 0 0 9px; font-size: 12px; }
+    .evidence-item { display: flex; gap: 9px; padding: 9px 0; color: #475467; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .evidence-item:last-child { border-bottom: 0; }
+    .issue-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 18px; }
+    .issue-actions .button:last-child { grid-column: 1 / -1; }
+    .empty-panel { padding: 28px 10px; text-align: center; color: var(--muted); line-height: 1.7; }
+    .simple-list { margin-top: 16px; padding: 0; list-style: none; }
+    .simple-list li { padding: 11px 0; border-bottom: 1px solid var(--border); color: #475467; font-size: 12px; }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 220px minmax(540px, 1fr) 280px; }
+      .editor { padding-left: 42px; padding-right: 42px; }
+      .topbar { grid-template-columns: 220px minmax(260px, 1fr) auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">
+    <span><strong>静态交互原型</strong> · 用于确认信息架构、视觉层级和接口需求，不代表功能已经实现</span>
+    <span>DevCollab Frontend Design · V0.1</span>
+  </div>
+
+  <main class="app" aria-label="DevCollab 文档工作台示意">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">DC</div>
+        <span class="brand-name">DevCollab</span>
+        <button class="workspace-switch" type="button"><span>实验室项目</span><span aria-hidden="true">⌄</span></button>
+      </div>
+
+      <label class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input aria-label="搜索工程知识" placeholder="搜索工程知识、API 或代码路径…">
+        <kbd>⌘ K</kbd>
+      </label>
+
+      <div class="top-actions">
+        <button class="icon-button" aria-label="通知" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+          <span class="notification-dot"></span>
+        </button>
+        <div class="avatar" aria-label="当前用户张同学">张</div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar" aria-label="工作空间导航">
+        <nav class="nav-section">
+          <button class="nav-item" type="button">⌂ <span>首页</span></button>
+          <button class="nav-item" type="button">✓ <span>待我评审</span><span class="count">2</span></button>
+          <button class="nav-item" type="button">↯ <span>代码漂移</span><span class="count">1</span></button>
+        </nav>
+
+        <section class="nav-section">
+          <div class="section-label"><span>工程文档</span><span>＋</span></div>
+          <button class="tree-item" type="button"><span class="tree-chevron">⌄</span><span>需求</span></button>
+          <button class="tree-item child" type="button"><span>登录需求</span></button>
+          <button class="tree-item" type="button"><span class="tree-chevron">⌄</span><span>架构</span></button>
+          <button class="tree-item child" type="button"><span>总体架构</span></button>
+          <button class="tree-item" type="button"><span class="tree-chevron">⌄</span><span>API</span></button>
+          <button class="tree-item child current" type="button"><span>订单 API</span><span style="margin-left:auto">•••</span></button>
+          <button class="tree-item" type="button"><span class="tree-chevron">›</span><span>数据库</span></button>
+          <button class="tree-item" type="button"><span class="tree-chevron">›</span><span>测试计划</span></button>
+        </section>
+
+        <div class="sidebar-footer">
+          <button class="nav-item" type="button">＋ <span>新建文档</span></button>
+        </div>
+      </aside>
+
+      <section class="main">
+        <header class="document-header">
+          <div class="breadcrumbs"><span>API</span><span>订单系统</span><span>订单 API</span></div>
+          <div class="title-row">
+            <h1>订单 API 设计</h1>
+            <span class="badge draft">草稿 V4</span>
+          </div>
+          <div class="meta-row">
+            <span>API Contract</span><span class="meta-divider"></span>
+            <span>当前生效：已发布 V3</span><span class="meta-divider"></span>
+            <span class="badge saved">● 已保存</span>
+            <div class="presence" aria-label="3 人在线">
+              <span class="mini-avatar">张</span><span class="mini-avatar">AL</span><span class="mini-avatar">王</span>
+            </div>
+            <span>3 人在线</span>
+          </div>
+          <div class="header-actions">
+            <button class="button primary" type="button">提交评审</button>
+            <button class="button" type="button">查看发布版</button>
+            <button class="button ghost" type="button">版本对比</button>
+            <button class="button ghost" type="button">更多 ···</button>
+          </div>
+        </header>
+
+        <article class="editor">
+          <div class="editor-canvas">
+            <section class="block"><span class="block-handle">⠿</span><h2>创建订单</h2></section>
+            <section class="block"><span class="block-handle">⠿</span><p>创建一笔新的订单。客户端应提供稳定的幂等标识，避免网络重试造成重复下单。</p></section>
+            <section class="block selected"><span class="block-handle">⠿</span><div class="endpoint"><span class="method">POST</span><span>/api/orders</span></div></section>
+            <section class="block"><span class="block-handle">⠿</span><h3>请求字段</h3></section>
+            <section class="block">
+              <span class="block-handle">⠿</span>
+              <table class="field-table">
+                <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                  <tr><td><code>customerId</code> <span class="required">必填</span></td><td><code>string</code></td><td>客户唯一标识</td></tr>
+                  <tr><td><code>items</code> <span class="required">必填</span></td><td><code>OrderItem[]</code></td><td>订单商品明细</td></tr>
+                  <tr><td><code>idempotencyKey</code></td><td><code>string</code></td><td>请求幂等键</td></tr>
+                </tbody>
+              </table>
+              <div class="collab-indicator"><span class="collab-line"></span><span>Alice 正在编辑此 Block</span></div>
+            </section>
+            <section class="block"><span class="block-handle">⠿</span><div class="callout"><strong>注意</strong><span>接口超时后客户端可以安全重试，但必须复用同一幂等键。</span></div></section>
+          </div>
+        </article>
+      </section>
+
+      <aside class="context" aria-label="文档上下文">
+        <div class="context-tabs" role="tablist">
+          <button class="context-tab" data-panel="comments" role="tab" type="button">评论</button>
+          <button class="context-tab active" data-panel="issues" role="tab" type="button">问题 <span>1</span></button>
+          <button class="context-tab" data-panel="bindings" role="tab" type="button">关联</button>
+          <button class="context-tab" data-panel="versions" role="tab" type="button">版本</button>
+        </div>
+        <div class="context-body">
+          <section class="context-panel" id="panel-issues">
+            <div class="context-kicker">当前 Block</div>
+            <div class="context-title">block-api-create</div>
+            <div class="issue">
+              <div class="issue-head"><span class="severity"><span class="severity-dot"></span>高风险</span><span class="status-pill">OPEN</span></div>
+              <h3>缺少幂等键约束说明</h3>
+              <p>请求字段已经出现幂等键，但没有说明有效期、唯一范围以及重复请求返回行为。</p>
+              <div class="source">来源：确定性规则 · API_IDEMPOTENCY</div>
+              <div class="evidence">
+                <h4>Evidence</h4>
+                <div class="evidence-item"><span>▣</span><span>当前 Block · 请求字段</span></div>
+                <div class="evidence-item"><span>⌘</span><span>PR #128 · OrderController.java</span></div>
+              </div>
+              <div class="issue-actions">
+                <button class="button" type="button">接受风险</button>
+                <button class="button" type="button">判定误报</button>
+                <button class="button primary" type="button">标记已解决</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="context-panel" id="panel-comments" hidden>
+            <div class="context-kicker">当前 Block</div>
+            <div class="empty-panel">还没有评论。<br>选中一段内容后可以发起讨论。</div>
+          </section>
+          <section class="context-panel" id="panel-bindings" hidden>
+            <div class="context-kicker">关联代码路径</div>
+            <ul class="simple-list"><li>/order/controller/**</li><li>/order/dto/**</li><li>/docs/openapi/order.yaml</li></ul>
+          </section>
+          <section class="context-panel" id="panel-versions" hidden>
+            <div class="context-kicker">版本历史</div>
+            <ul class="simple-list"><li>草稿 V4 · 正在编辑</li><li>已发布 V3 · 当前生效</li><li>已替代 V2</li></ul>
+          </section>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll('.context-tab');
+    const panels = document.querySelectorAll('.context-panel');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((item) => item.classList.toggle('active', item === tab));
+        panels.forEach((panel) => { panel.hidden = panel.id !== `panel-${tab.dataset.panel}`; });
+      });
+    });
+  </script>
+</body>
+</html>

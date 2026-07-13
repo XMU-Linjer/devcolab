@@ -1,0 +1,54 @@
+# Local execution and interview materials
+docs/90-local-development-plan-v0.2.md
+docs/91-local-interview-knowledge-map-v0.2.md
+docs/92-local-frontend-technology-adr-v0.1.md
+docs/93-local-refresh-token-cookie-learning-v0.1.md
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Node.js / Vue / Vite
+node_modules/
+.pnpm-store/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Frontend tests and reports
+coverage/
+.vitest/
+playwright-report/
+test-results/
+blob-report/
+
+# Java / Maven
+target/
+*.class
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime data and logs
+logs/
+*.log
+.data/
+uploads/
+
+# IDEs and operating systems
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+Desktop.ini

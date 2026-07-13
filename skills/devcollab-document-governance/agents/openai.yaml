@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevCollab Document Governance"
+  short_description: "Create and maintain documents under DevCollab rules"
+  default_prompt: "Use $devcollab-document-governance to create or update a DevCollab document under the project governance rules."
