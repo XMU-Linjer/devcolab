@@ -7,11 +7,23 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
+      redirect: '/workspaces',
+    },
+    {
+      path: '/workspaces',
+      name: 'workspaces',
       meta: {
         requiresAuth: true,
       },
       component: () => import('@/views/HomeView.vue'),
+    },
+    {
+      path: '/workspaces/:workspaceId',
+      name: 'workspace-detail',
+      meta: {
+        requiresAuth: true,
+      },
+      component: () => import('@/views/WorkspaceDetailView.vue'),
     },
     {
       path: '/login',
@@ -49,7 +61,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && authStore.isAuthenticated) {
-    return { name: 'home' };
+    return { name: 'workspaces' };
   }
 
   return true;

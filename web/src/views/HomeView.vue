@@ -32,7 +32,9 @@
           <span class="current-user">
             {{ authStore.currentUser?.displayName || authStore.currentUser?.username }}
           </span>
-          <el-button type="primary" :icon="Plus">创建工作区</el-button>
+          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
+            创建工作区
+          </el-button>
           <el-button :icon="SwitchButton" @click="handleLogout">
             退出
           </el-button>
@@ -42,28 +44,60 @@
       <section class="content-panel">
         <div class="panel-header">
           <div>
-            <h2>登录链路已接入</h2>
-            <p>当前工作台已经通过路由守卫保护，未登录用户会自动回到登录页。</p>
+            <h2>我的工作区</h2>
+            <p>工作区是后续文档树、Block 编辑和协作权限的业务入口。</p>
           </div>
-          <el-tag type="success" effect="light">Authenticated</el-tag>
+          <el-tag type="success" effect="light">
+            {{ workspaces.length }} 个工作区
+          </el-tag>
         </div>
 
-        <div class="status-grid">
-          <article class="status-card">
-            <span>当前用户</span>
-            <strong>{{ authStore.currentUser?.username }}</strong>
-          </article>
-          <article class="status-card">
-            <span>认证状态</span>
-            <strong>Access Token 已保存</strong>
-          </article>
-          <article class="status-card">
-            <span>下一模块</span>
-            <strong>工作区列表</strong>
+        <el-alert
+          v-if="errorMessage"
+          class="workspace-alert"
+          :title="errorMessage"
+          type="error"
+          show-icon
+          :closable="false"
+        />
+
+        <div v-if="loading" class="workspace-loading">
+          <el-skeleton :rows="4" animated />
+        </div>
+
+        <el-empty
+          v-else-if="workspaces.length === 0"
+          description="还没有工作区"
+        >
+          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
+            创建第一个工作区
+          </el-button>
+        </el-empty>
+
+        <div v-else class="workspace-grid">
+          <article
+            v-for="workspaceItem in workspaces"
+            :key="workspaceItem.id"
+            class="workspace-card"
+            @click="openWorkspace(workspaceItem.id)"
+          >
+            <div class="workspace-card-header">
+              <h3>{{ workspaceItem.name }}</h3>
+              <el-tag size="small" effect="light">
+                {{ workspaceItem.currentUserRole }}
+              </el-tag>
+            </div>
+            <p>创建时间：{{ formatTime(workspaceItem.createdAt) }}</p>
+            <p>更新时间：{{ formatTime(workspaceItem.updatedAt) }}</p>
           </article>
         </div>
       </section>
     </section>
+
+    <WorkspaceCreateDialog
+      v-model="dialogVisible"
+      @create="handleCreateWorkspace"
+    />
   </main>
 </template>
 
@@ -76,16 +110,68 @@ import {
   SwitchButton,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import {
+  createWorkspace,
+  listWorkspaces,
+  type Workspace,
+} from '@/api/workspace';
+import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import { useAuthStore } from '@/stores/auth';
+import { readableError } from '@/utils/error';
 
 const authStore = useAuthStore();
 const router = useRouter();
+
+const workspaces = ref<Workspace[]>([]);
+const loading = ref(false);
+const dialogVisible = ref(false);
+const errorMessage = ref('');
+
+onMounted(() => {
+  void loadWorkspaces();
+});
+
+async function loadWorkspaces() {
+  loading.value = true;
+  errorMessage.value = '';
+
+  try {
+    workspaces.value = await listWorkspaces();
+  } catch (error) {
+    errorMessage.value = readableError(error, '工作区加载失败');
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleCreateWorkspace(name: string) {
+  try {
+    const workspace = await createWorkspace({ name });
+    workspaces.value = [workspace, ...workspaces.value];
+    dialogVisible.value = false;
+    ElMessage.success('工作区创建成功');
+  } catch (error) {
+    ElMessage.error(readableError(error, '工作区创建失败'));
+  }
+}
+
+async function openWorkspace(workspaceId: string) {
+  await router.push(`/workspaces/${workspaceId}`);
+}
 
 async function handleLogout() {
   await authStore.logout();
   ElMessage.success('已退出登录');
   await router.push('/login');
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
 }
 </script>
