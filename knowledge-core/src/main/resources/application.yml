@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: devcollab-knowledge-core
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+devcollab:
+  security:
+    jwt:
+      issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
+      secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}
+      access-token-ttl: ${DEVCOLLAB_ACCESS_TOKEN_TTL:PT30M}
