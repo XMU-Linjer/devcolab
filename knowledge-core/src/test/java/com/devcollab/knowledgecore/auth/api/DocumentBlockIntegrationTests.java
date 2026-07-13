@@ -1,0 +1,168 @@
+package com.devcollab.knowledgecore.auth.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.UUID;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class DocumentBlockIntegrationTests {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Test
+    void shouldCreateAndListParagraphBlocksInOrder() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+
+        JsonNode first = createBlock(token, documentId, "First paragraph");
+        JsonNode second = createBlock(token, documentId, "Second paragraph");
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(first.get("id").asText()))
+                .andExpect(jsonPath("$[0].type").value("PARAGRAPH"))
+                .andExpect(jsonPath("$[0].content.text")
+                        .value("First paragraph"))
+                .andExpect(jsonPath("$[0].sortOrder").value(0))
+                .andExpect(jsonPath("$[1].id").value(second.get("id").asText()))
+                .andExpect(jsonPath("$[1].sortOrder").value(1));
+    }
+
+    @Test
+    void shouldRejectBlockAccessFromWorkspaceOutsider() throws Exception {
+        String ownerToken = registerAndGetAccessToken();
+        String outsiderToken = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(ownerToken).get("id").asText();
+        String documentId = createDocument(ownerToken, workspaceId)
+                .get("id")
+                .asText();
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(blockBody("PARAGRAPH", "Private content")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKSPACE_ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldRejectUnsupportedBlockType() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(blockBody("DIAGRAM", "graph TD")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    private JsonNode createWorkspace(String token) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/workspaces")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Block workspace\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result);
+    }
+
+    private JsonNode createDocument(String token, String workspaceId)
+            throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/v1/workspaces/{id}/documents", workspaceId)
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Block design\"}")
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result);
+    }
+
+    private JsonNode createBlock(
+            String token,
+            String documentId,
+            String text
+    ) throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/v1/documents/{id}/blocks", documentId)
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(blockBody("PARAGRAPH", text))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result);
+    }
+
+    private String blockBody(String type, String text) throws Exception {
+        return objectMapper.writeValueAsString(
+                new BlockBody(type, new BlockContentBody(text))
+        );
+    }
+
+    private String registerAndGetAccessToken() throws Exception {
+        String username = "block_" + UUID.randomUUID()
+                .toString()
+                .substring(0, 8);
+        String requestBody = objectMapper.writeValueAsString(
+                new RegisterBody(username, "Block Tester", "password123")
+        );
+        MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result).get("accessToken").asText();
+    }
+
+    private JsonNode responseJson(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    private record BlockBody(String type, BlockContentBody content) {
+    }
+
+    private record BlockContentBody(String text) {
+    }
+
+    private record RegisterBody(
+            String username,
+            String displayName,
+            String password
+    ) {
+    }
+}

@@ -11,6 +11,7 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotF
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -152,6 +153,19 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST,
                 inputErrorCode(request),
                 exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableRequest(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.BAD_REQUEST,
+                inputErrorCode(request),
+                "请求体格式错误或包含不支持的字段值",
                 request
         );
     }
