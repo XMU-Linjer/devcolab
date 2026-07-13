@@ -25,4 +25,17 @@ public record DocumentBlock(
                 now
         );
     }
+
+    public DocumentBlock changeSortOrder(int newSortOrder, Instant now) {
+        return new DocumentBlock(
+                id,
+                documentId,
+                type,
+                text,
+                newSortOrder,
+                createdBy,
+                createdAt,
+                now
+        );
+    }
 }

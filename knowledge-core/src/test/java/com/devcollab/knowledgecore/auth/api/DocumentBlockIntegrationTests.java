@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -172,6 +173,110 @@ class DocumentBlockIntegrationTests {
                         .value("DOCUMENT_BLOCK_NOT_FOUND"));
     }
 
+    @Test
+    void shouldDeleteBlockAndNormalizeRemainingOrder() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        JsonNode first = createBlock(token, documentId, "First");
+        JsonNode second = createBlock(token, documentId, "Second");
+        JsonNode third = createBlock(token, documentId, "Third");
+
+        mockMvc.perform(delete(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        second.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(first.get("id").asText()))
+                .andExpect(jsonPath("$[0].sortOrder").value(0))
+                .andExpect(jsonPath("$[1].id").value(third.get("id").asText()))
+                .andExpect(jsonPath("$[1].sortOrder").value(1));
+    }
+
+    @Test
+    void shouldMoveBlockAndReturnCompleteNewOrder() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        JsonNode first = createBlock(token, documentId, "First");
+        JsonNode second = createBlock(token, documentId, "Second");
+        JsonNode third = createBlock(token, documentId, "Third");
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}/position",
+                        documentId,
+                        third.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(moveBlockBody(0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(third.get("id").asText()))
+                .andExpect(jsonPath("$[0].sortOrder").value(0))
+                .andExpect(jsonPath("$[1].id").value(first.get("id").asText()))
+                .andExpect(jsonPath("$[1].sortOrder").value(1))
+                .andExpect(jsonPath("$[2].id").value(second.get("id").asText()))
+                .andExpect(jsonPath("$[2].sortOrder").value(2));
+    }
+
+    @Test
+    void shouldRejectTargetIndexOutsideDocumentRange() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+        String blockId = createBlock(token, documentId, "Only block")
+                .get("id")
+                .asText();
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}/position",
+                        documentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(moveBlockBody(1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_BLOCK_POSITION_INVALID"));
+    }
+
+    @Test
+    void shouldRejectBlockDeletionFromWorkspaceOutsider() throws Exception {
+        String ownerToken = registerAndGetAccessToken();
+        String outsiderToken = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(ownerToken).get("id").asText();
+        String documentId = createDocument(ownerToken, workspaceId)
+                .get("id")
+                .asText();
+        String blockId = createBlock(ownerToken, documentId, "Private")
+                .get("id")
+                .asText();
+
+        mockMvc.perform(delete(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        blockId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKSPACE_ACCESS_DENIED"));
+    }
+
     private JsonNode createWorkspace(String token) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/workspaces")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
@@ -223,6 +328,12 @@ class DocumentBlockIntegrationTests {
         );
     }
 
+    private String moveBlockBody(int targetIndex) throws Exception {
+        return objectMapper.writeValueAsString(
+                new MoveBlockBody(targetIndex)
+        );
+    }
+
     private String registerAndGetAccessToken() throws Exception {
         String username = "block_" + UUID.randomUUID()
                 .toString()
@@ -253,6 +364,9 @@ class DocumentBlockIntegrationTests {
     }
 
     private record UpdateBlockBody(BlockContentBody content) {
+    }
+
+    private record MoveBlockBody(int targetIndex) {
     }
 
     private record RegisterBody(

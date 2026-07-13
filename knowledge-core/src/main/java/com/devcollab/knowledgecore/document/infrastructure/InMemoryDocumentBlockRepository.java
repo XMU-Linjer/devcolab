@@ -25,6 +25,12 @@ public class InMemoryDocumentBlockRepository
     }
 
     @Override
+    public List<DocumentBlock> saveAll(List<DocumentBlock> documentBlocks) {
+        documentBlocks.forEach(this::save);
+        return documentBlocks;
+    }
+
+    @Override
     public Optional<DocumentBlock> findById(UUID blockId) {
         return Optional.ofNullable(blocks.get(blockId));
     }
@@ -35,5 +41,10 @@ public class InMemoryDocumentBlockRepository
                 .filter(block -> block.documentId().equals(documentId))
                 .sorted(Comparator.comparingInt(DocumentBlock::sortOrder))
                 .toList();
+    }
+
+    @Override
+    public void deleteById(UUID blockId) {
+        blocks.remove(blockId);
     }
 }

@@ -2,12 +2,14 @@ package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.application.CreateDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.application.DocumentBlockApplicationService;
+import com.devcollab.knowledgecore.document.application.MoveDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.application.UpdateDocumentBlockCommand;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -70,5 +72,35 @@ public class DocumentBlockController {
                 currentUser.userId(),
                 new UpdateDocumentBlockCommand(request.content().text())
         ));
+    }
+
+    @DeleteMapping("/api/v1/documents/{documentId}/blocks/{blockId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+            @PathVariable UUID documentId,
+            @PathVariable UUID blockId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        blockService.delete(documentId, blockId, currentUser.userId());
+    }
+
+    @PatchMapping(
+            "/api/v1/documents/{documentId}/blocks/{blockId}/position"
+    )
+    public List<DocumentBlockResponse> move(
+            @PathVariable UUID documentId,
+            @PathVariable UUID blockId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody MoveDocumentBlockRequest request
+    ) {
+        return blockService.move(
+                        documentId,
+                        blockId,
+                        currentUser.userId(),
+                        new MoveDocumentBlockCommand(request.targetIndex())
+                )
+                .stream()
+                .map(DocumentBlockResponse::from)
+                .toList();
     }
 }

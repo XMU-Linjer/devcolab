@@ -8,7 +8,11 @@ public interface DocumentBlockRepository {
 
     DocumentBlock save(DocumentBlock block);
 
+    List<DocumentBlock> saveAll(List<DocumentBlock> blocks);
+
     Optional<DocumentBlock> findById(UUID blockId);
 
     List<DocumentBlock> findAllByDocumentId(UUID documentId);
+
+    void deleteById(UUID blockId);
 }
