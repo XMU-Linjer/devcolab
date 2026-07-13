@@ -26,32 +26,40 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Knowledge Core</p>
-          <h1>前端工作台初始化完成</h1>
+          <h1>工作区</h1>
         </div>
-        <el-button type="primary" :icon="Plus">创建工作区</el-button>
+        <div class="topbar-actions">
+          <span class="current-user">
+            {{ authStore.currentUser?.displayName || authStore.currentUser?.username }}
+          </span>
+          <el-button type="primary" :icon="Plus">创建工作区</el-button>
+          <el-button :icon="SwitchButton" @click="handleLogout">
+            退出
+          </el-button>
+        </div>
       </header>
 
       <section class="content-panel">
         <div class="panel-header">
           <div>
-            <h2>下一步：登录注册链路</h2>
-            <p>当前页面只是前端壳子，用来验证 Vue、路由、Pinia、Axios 和组件库已经接入。</p>
+            <h2>登录链路已接入</h2>
+            <p>当前工作台已经通过路由守卫保护，未登录用户会自动回到登录页。</p>
           </div>
-          <el-tag type="success" effect="light">Vue 3 + TypeScript</el-tag>
+          <el-tag type="success" effect="light">Authenticated</el-tag>
         </div>
 
         <div class="status-grid">
           <article class="status-card">
-            <span>工程</span>
-            <strong>Vite 已接入</strong>
+            <span>当前用户</span>
+            <strong>{{ authStore.currentUser?.username }}</strong>
           </article>
           <article class="status-card">
-            <span>状态</span>
-            <strong>Pinia 已接入</strong>
+            <span>认证状态</span>
+            <strong>Access Token 已保存</strong>
           </article>
           <article class="status-card">
-            <span>接口</span>
-            <strong>Axios 待接登录</strong>
+            <span>下一模块</span>
+            <strong>工作区列表</strong>
           </article>
         </div>
       </section>
@@ -60,5 +68,24 @@
 </template>
 
 <script setup lang="ts">
-import { Connection, Document, House, Plus } from '@element-plus/icons-vue';
+import {
+  Connection,
+  Document,
+  House,
+  Plus,
+  SwitchButton,
+} from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
+import { useRouter } from 'vue-router';
+
+import { useAuthStore } from '@/stores/auth';
+
+const authStore = useAuthStore();
+const router = useRouter();
+
+async function handleLogout() {
+  await authStore.logout();
+  ElMessage.success('已退出登录');
+  await router.push('/login');
+}
 </script>
