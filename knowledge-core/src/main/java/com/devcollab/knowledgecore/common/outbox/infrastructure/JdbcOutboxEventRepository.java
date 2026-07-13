@@ -60,6 +60,50 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
     }
 
     @Override
+    public List<OutboxEvent> findPending(int limit) {
+        return jdbcTemplate.query("""
+                        SELECT * FROM outbox_events
+                         WHERE status = ?
+                         ORDER BY occurred_at, id
+                         LIMIT ?
+                        """,
+                OUTBOX_EVENT_ROW_MAPPER,
+                OutboxEventStatus.PENDING.name(),
+                limit
+        );
+    }
+
+    @Override
+    public void markPublished(UUID eventId) {
+        jdbcTemplate.update("""
+                        UPDATE outbox_events
+                           SET status = ?,
+                               published_at = ?,
+                               last_error = NULL
+                         WHERE id = ?
+                        """,
+                OutboxEventStatus.PUBLISHED.name(),
+                Timestamp.from(Instant.now()),
+                eventId
+        );
+    }
+
+    @Override
+    public void markFailed(UUID eventId, String errorMessage) {
+        jdbcTemplate.update("""
+                        UPDATE outbox_events
+                           SET status = ?,
+                               retry_count = retry_count + 1,
+                               last_error = ?
+                         WHERE id = ?
+                        """,
+                OutboxEventStatus.FAILED.name(),
+                errorMessage,
+                eventId
+        );
+    }
+
+    @Override
     public List<OutboxEvent> findAll() {
         return jdbcTemplate.query("""
                         SELECT * FROM outbox_events

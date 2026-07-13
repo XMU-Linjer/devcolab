@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.common.outbox;
 
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventRepository;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventStatus;
@@ -37,6 +39,9 @@ class OutboxEventIntegrationTests {
     @Autowired
     private OutboxEventRepository outboxEventRepository;
 
+    @Autowired
+    private OutboxRelayService outboxRelayService;
+
     @Test
     void shouldWriteDocumentCreatedEventWithBusinessData()
             throws Exception {
@@ -60,6 +65,34 @@ class OutboxEventIntegrationTests {
         assertThat(payload.get("documentId").asText())
                 .isEqualTo(document.get("id").asText());
         assertThat(payload.get("title").asText()).isEqualTo("Outbox doc");
+    }
+
+    @Test
+    void shouldRelayPendingEventsToPublishedStatus() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        int before = outboxEventRepository.findAll().size();
+        createDocument(token, workspaceId, "Relay doc");
+
+        OutboxEvent pending = outboxEventRepository.findAll().get(before);
+        assertThat(pending.status()).isEqualTo(OutboxEventStatus.PENDING);
+
+        OutboxRelayResult result = outboxRelayService.relayPendingEvents(
+                before + 1
+        );
+
+        assertThat(result.scanned()).isGreaterThanOrEqualTo(1);
+        assertThat(result.published()).isGreaterThanOrEqualTo(1);
+        assertThat(result.failed()).isZero();
+
+        OutboxEvent published = outboxEventRepository.findAll()
+                .stream()
+                .filter(event -> event.id().equals(pending.id()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(published.status()).isEqualTo(OutboxEventStatus.PUBLISHED);
+        assertThat(published.publishedAt()).isNotNull();
+        assertThat(published.lastError()).isNull();
     }
 
     @Test
