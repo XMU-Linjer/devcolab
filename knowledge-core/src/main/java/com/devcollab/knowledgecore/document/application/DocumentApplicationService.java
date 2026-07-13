@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.document.application;
 
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
@@ -7,9 +8,12 @@ import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -17,15 +21,19 @@ public class DocumentApplicationService {
 
     private final DocumentRepository documentRepository;
     private final WorkspaceApplicationService workspaceService;
+    private final OutboxEventPublisher outboxEventPublisher;
 
     public DocumentApplicationService(
             DocumentRepository documentRepository,
-            WorkspaceApplicationService workspaceService
+            WorkspaceApplicationService workspaceService,
+            OutboxEventPublisher outboxEventPublisher
     ) {
         this.documentRepository = documentRepository;
         this.workspaceService = workspaceService;
+        this.outboxEventPublisher = outboxEventPublisher;
     }
 
+    @Transactional
     public Document create(
             UUID workspaceId,
             UUID currentUserId,
@@ -44,7 +52,9 @@ public class DocumentApplicationService {
                 now,
                 now
         );
-        return documentRepository.save(document);
+        Document saved = documentRepository.save(document);
+        publishDocumentEvent("DOCUMENT_CREATED", saved, currentUserId);
+        return saved;
     }
 
     public List<Document> listTreeSource(
@@ -64,6 +74,7 @@ public class DocumentApplicationService {
         return document;
     }
 
+    @Transactional
     public Document update(
             UUID documentId,
             UUID currentUserId,
@@ -84,9 +95,12 @@ public class DocumentApplicationService {
                 document.createdAt(),
                 Instant.now()
         );
-        return documentRepository.save(updated);
+        Document saved = documentRepository.save(updated);
+        publishDocumentEvent("DOCUMENT_UPDATED", saved, currentUserId);
+        return saved;
     }
 
+    @Transactional
     public Document move(
             UUID documentId,
             UUID currentUserId,
@@ -109,9 +123,12 @@ public class DocumentApplicationService {
                 document.createdAt(),
                 Instant.now()
         );
-        return documentRepository.save(moved);
+        Document saved = documentRepository.save(moved);
+        publishDocumentEvent("DOCUMENT_MOVED", saved, currentUserId);
+        return saved;
     }
 
+    @Transactional
     public void delete(UUID documentId, UUID currentUserId) {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(
@@ -119,6 +136,7 @@ public class DocumentApplicationService {
                 currentUserId
         );
         documentRepository.deleteById(documentId);
+        publishDocumentEvent("DOCUMENT_DELETED", document, currentUserId);
     }
 
     private void validateParent(
@@ -163,5 +181,32 @@ public class DocumentApplicationService {
     private Document requireDocument(UUID documentId) {
         return documentRepository.findById(documentId)
                 .orElseThrow(DocumentNotFoundException::new);
+    }
+
+    private void publishDocumentEvent(
+            String eventType,
+            Document document,
+            UUID currentUserId
+    ) {
+        outboxEventPublisher.publish(
+                "DOCUMENT",
+                document.id(),
+                eventType,
+                documentPayload(document, currentUserId)
+        );
+    }
+
+    private Map<String, Object> documentPayload(
+            Document document,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", document.workspaceId());
+        payload.put("documentId", document.id());
+        payload.put("parentDocumentId", document.parentDocumentId());
+        payload.put("title", document.title());
+        payload.put("operatorUserId", currentUserId);
+        payload.put("updatedAt", document.updatedAt());
+        return payload;
     }
 }
