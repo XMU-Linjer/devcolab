@@ -1,6 +1,8 @@
 package com.devcollab.knowledgecore.common.api;
 
 import com.devcollab.knowledgecore.auth.application.exception.InvalidCredentialsException;
+import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenException;
+import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -27,7 +29,7 @@ public class GlobalExceptionHandler {
 
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
-                "VALIDATION_FAILED",
+                "AUTH_INVALID_INPUT",
                 message,
                 request
         );
@@ -40,7 +42,7 @@ public class GlobalExceptionHandler {
     ) {
         return errorResponse(
                 HttpStatus.CONFLICT,
-                "USERNAME_ALREADY_EXISTS",
+                "AUTH_USERNAME_EXISTS",
                 exception.getMessage(),
                 request
         );
@@ -53,7 +55,33 @@ public class GlobalExceptionHandler {
     ) {
         return errorResponse(
                 HttpStatus.UNAUTHORIZED,
-                "INVALID_CREDENTIALS",
+                "AUTH_INVALID_CREDENTIALS",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRefreshTokenException(
+            InvalidRefreshTokenException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.UNAUTHORIZED,
+                "AUTH_REFRESH_INVALID",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidCsrfTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCsrfTokenException(
+            InvalidCsrfTokenException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.FORBIDDEN,
+                "AUTH_CSRF_INVALID",
                 exception.getMessage(),
                 request
         );
@@ -66,7 +94,7 @@ public class GlobalExceptionHandler {
     ) {
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
-                "INVALID_REQUEST",
+                "AUTH_INVALID_INPUT",
                 exception.getMessage(),
                 request
         );

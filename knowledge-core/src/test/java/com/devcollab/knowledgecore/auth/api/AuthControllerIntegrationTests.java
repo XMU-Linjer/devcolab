@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.auth.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -17,6 +18,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,6 +47,9 @@ class AuthControllerIntegrationTests {
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andReturn();
+
+        assertNotNull(registerResult.getResponse().getCookie("dc_refresh"));
+        assertNotNull(registerResult.getResponse().getCookie("dc_csrf"));
 
         JsonNode responseJson = objectMapper.readTree(
                 registerResult.getResponse().getContentAsString()
@@ -80,7 +86,7 @@ class AuthControllerIntegrationTests {
                                 .content(registerRequest)
                 )
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("USERNAME_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.code").value("AUTH_USERNAME_EXISTS"))
                 .andExpect(jsonPath("$.message").value("用户名已存在"));
     }
 
@@ -108,7 +114,7 @@ class AuthControllerIntegrationTests {
                                 .content(loginRequest)
                 )
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.code").value("AUTH_INVALID_CREDENTIALS"))
                 .andExpect(jsonPath("$.message").value("用户名或密码错误"));
     }
 
@@ -116,11 +122,91 @@ class AuthControllerIntegrationTests {
     void shouldRejectCurrentUserRequestWithoutToken() throws Exception {
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+                .andExpect(jsonPath("$.code").value("AUTH_ACCESS_INVALID"));
+    }
+
+    @Test
+    void shouldRefreshAndRotateCookies() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        assertNotNull(refreshCookie);
+        assertNotNull(csrfCookie);
+
+        MvcResult refreshResult = mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", csrfCookie.getValue())
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andReturn();
+
+        Cookie rotatedRefreshCookie = refreshResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie rotatedCsrfCookie = refreshResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        assertNotNull(rotatedRefreshCookie);
+        assertNotNull(rotatedCsrfCookie);
+        assertNotEquals(
+                refreshCookie.getValue(),
+                rotatedRefreshCookie.getValue()
+        );
+        assertNotEquals(csrfCookie.getValue(), rotatedCsrfCookie.getValue());
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", csrfCookie.getValue())
+                )
+                .andExpect(status().isUnauthorized())
+                .andExpect(
+                        jsonPath("$.code").value("AUTH_REFRESH_INVALID")
+                );
+    }
+
+    @Test
+    void shouldRejectRefreshWithInvalidCsrfHeader() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", "wrong-csrf-token")
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_CSRF_INVALID"));
     }
 
     private String uniqueUsername() {
         return "alice_" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private MvcResult register(String username) throws Exception {
+        return mockMvc.perform(
+                        post("/api/v1/auth/register")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(registerRequest(username))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
     }
 
     private String registerRequest(String username) {

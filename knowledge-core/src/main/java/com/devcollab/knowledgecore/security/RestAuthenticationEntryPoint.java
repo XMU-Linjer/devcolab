@@ -31,7 +31,7 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
     ) throws IOException, ServletException {
         ApiErrorResponse errorResponse = ApiErrorResponse.of(
                 HttpStatus.UNAUTHORIZED.value(),
-                "UNAUTHORIZED",
+                "AUTH_ACCESS_INVALID",
                 "请先登录或提供有效的访问令牌",
                 request.getRequestURI()
         );

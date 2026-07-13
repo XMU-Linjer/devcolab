@@ -9,5 +9,13 @@ devcollab:
   security:
     jwt:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
+      audience: ${DEVCOLLAB_JWT_AUDIENCE:devcollab-web}
       secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}
       access-token-ttl: ${DEVCOLLAB_ACCESS_TOKEN_TTL:PT30M}
+    refresh:
+      ttl: ${DEVCOLLAB_REFRESH_TOKEN_TTL:P7D}
+      refresh-cookie-name: ${DEVCOLLAB_REFRESH_COOKIE_NAME:dc_refresh}
+      csrf-cookie-name: ${DEVCOLLAB_CSRF_COOKIE_NAME:dc_csrf}
+      csrf-header-name: ${DEVCOLLAB_CSRF_HEADER_NAME:X-CSRF-Token}
+      allowed-origin: ${DEVCOLLAB_WEB_ORIGIN:http://localhost:5173}
+      secure: ${DEVCOLLAB_COOKIE_SECURE:false}

@@ -7,6 +7,7 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "devcollab.security.jwt")
 public record JwtProperties(
         String issuer,
+        String audience,
         String secret,
         Duration accessTokenTtl
 ) {
@@ -14,6 +15,10 @@ public record JwtProperties(
     public JwtProperties {
         if (issuer == null || issuer.isBlank()) {
             throw new IllegalArgumentException("JWT issuer 不能为空");
+        }
+
+        if (audience == null || audience.isBlank()) {
+            throw new IllegalArgumentException("JWT audience 不能为空");
         }
 
         if (secret == null || secret.length() < 32) {

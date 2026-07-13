@@ -1,0 +1,138 @@
+package com.devcollab.knowledgecore.auth.api;
+
+import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenException;
+import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
+import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenProperties;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.util.Arrays;
+
+@Component
+public class RefreshCookieManager {
+
+    private static final String SAME_SITE = "Strict";
+    private static final String COOKIE_PATH = "/api/v1/auth";
+
+    private final RefreshTokenProperties properties;
+
+    public RefreshCookieManager(RefreshTokenProperties properties) {
+        this.properties = properties;
+    }
+
+    public RequestCredentials readAndValidate(HttpServletRequest request) {
+        String refreshToken = cookieValue(
+                request,
+                properties.refreshCookieName()
+        );
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new InvalidRefreshTokenException();
+        }
+
+        String csrfCookie = cookieValue(
+                request,
+                properties.csrfCookieName()
+        );
+        String csrfHeader = request.getHeader(properties.csrfHeaderName());
+        String origin = request.getHeader(HttpHeaders.ORIGIN);
+
+        if (!properties.allowedOrigin().equals(origin)
+                || csrfCookie == null
+                || csrfHeader == null
+                || !secureEquals(csrfCookie, csrfHeader)) {
+            throw new InvalidCsrfTokenException();
+        }
+
+        return new RequestCredentials(refreshToken, csrfHeader);
+    }
+
+    public void write(
+            HttpServletResponse response,
+            String refreshToken,
+            String csrfToken
+    ) {
+        addCookie(
+                response,
+                properties.refreshCookieName(),
+                refreshToken,
+                true,
+                properties.ttl()
+        );
+        addCookie(
+                response,
+                properties.csrfCookieName(),
+                csrfToken,
+                false,
+                properties.ttl()
+        );
+    }
+
+    public void clear(HttpServletResponse response) {
+        addCookie(
+                response,
+                properties.refreshCookieName(),
+                "",
+                true,
+                Duration.ZERO
+        );
+        addCookie(
+                response,
+                properties.csrfCookieName(),
+                "",
+                false,
+                Duration.ZERO
+        );
+    }
+
+    private String cookieValue(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+
+        return Arrays.stream(cookies)
+                .filter(cookie -> name.equals(cookie.getName()))
+                .map(Cookie::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void addCookie(
+            HttpServletResponse response,
+            String name,
+            String value,
+            boolean httpOnly,
+            Duration maxAge
+    ) {
+        ResponseCookie cookie = ResponseCookie.from(name, value)
+                .httpOnly(httpOnly)
+                .secure(properties.secure())
+                .sameSite(SAME_SITE)
+                .path(COOKIE_PATH)
+                .maxAge(maxAge)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private boolean secureEquals(String left, String right) {
+        return MessageDigest.isEqual(
+                left.getBytes(StandardCharsets.UTF_8),
+                right.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    public record RequestCredentials(
+            String refreshToken,
+            String csrfToken
+    ) {
+    }
+}

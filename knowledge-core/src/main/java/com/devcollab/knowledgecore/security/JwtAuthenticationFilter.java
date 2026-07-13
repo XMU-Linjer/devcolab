@@ -47,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     jwtTokenService.verify(token);
             CurrentUser currentUser = new CurrentUser(
                     claims.userId(),
+                    claims.sessionId(),
                     claims.username()
             );
             UsernamePasswordAuthenticationToken authentication =

@@ -1,11 +1,14 @@
 package com.devcollab.knowledgecore.auth.application;
 
 import com.devcollab.knowledgecore.auth.application.exception.InvalidCredentialsException;
+import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
 import com.devcollab.knowledgecore.auth.domain.UserRepository;
 import com.devcollab.knowledgecore.auth.domain.UserStatus;
 import com.devcollab.knowledgecore.auth.infrastructure.JwtTokenService;
+import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService;
+import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService.RefreshCredentials;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -19,15 +22,18 @@ public class AuthenticationApplicationService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthenticationApplicationService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            JwtTokenService jwtTokenService
+            JwtTokenService jwtTokenService,
+            RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     public AuthenticatedUser register(RegisterCommand command) {
@@ -50,9 +56,7 @@ public class AuthenticationApplicationService {
                 now
         );
 
-        UserAccount savedUser = userRepository.save(userAccount);
-
-        return createAuthenticatedUser(savedUser);
+        return createAuthenticatedUser(userRepository.save(userAccount));
     }
 
     public AuthenticatedUser login(LoginCommand command) {
@@ -62,26 +66,54 @@ public class AuthenticationApplicationService {
                 .findByNormalizedUsername(normalizedUsername)
                 .orElseThrow(this::invalidCredentials);
 
-        if (!userAccount.canLogin()) {
-            throw invalidCredentials();
-        }
-
-        boolean passwordMatches = passwordEncoder.matches(
-                command.password(),
-                userAccount.passwordHash()
-        );
-
-        if (!passwordMatches) {
+        if (!userAccount.canLogin()
+                || !passwordEncoder.matches(
+                        command.password(),
+                        userAccount.passwordHash()
+                )) {
             throw invalidCredentials();
         }
 
         return createAuthenticatedUser(userAccount);
     }
 
-    private AuthenticatedUser createAuthenticatedUser(UserAccount userAccount) {
+    public AuthenticatedUser refresh(
+            String refreshToken,
+            String csrfToken
+    ) {
+        RefreshCredentials credentials = refreshTokenService.rotate(
+                refreshToken,
+                csrfToken
+        );
+
+        UserAccount userAccount = userRepository
+                .findById(credentials.userId())
+                .filter(UserAccount::canLogin)
+                .orElseThrow(() -> {
+                    refreshTokenService.revoke(credentials.refreshToken());
+                    return new InvalidRefreshTokenException();
+                });
+
+        return createAuthenticatedUser(userAccount, credentials);
+    }
+
+    private AuthenticatedUser createAuthenticatedUser(
+            UserAccount userAccount
+    ) {
+        return createAuthenticatedUser(
+                userAccount,
+                refreshTokenService.issue(userAccount.id())
+        );
+    }
+
+    private AuthenticatedUser createAuthenticatedUser(
+            UserAccount userAccount,
+            RefreshCredentials credentials
+    ) {
         String accessToken = jwtTokenService.issueAccessToken(
                 userAccount.id(),
-                userAccount.username()
+                userAccount.username(),
+                credentials.sessionId()
         );
 
         return new AuthenticatedUser(
@@ -90,7 +122,10 @@ public class AuthenticationApplicationService {
                 userAccount.displayName(),
                 accessToken,
                 "Bearer",
-                jwtTokenService.expiresInSeconds()
+                jwtTokenService.expiresInSeconds(),
+                credentials.sessionId(),
+                credentials.refreshToken(),
+                credentials.csrfToken()
         );
     }
 

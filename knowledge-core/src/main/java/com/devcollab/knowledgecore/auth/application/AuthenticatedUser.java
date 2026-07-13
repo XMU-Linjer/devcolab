@@ -8,6 +8,9 @@ public record AuthenticatedUser(
         String displayName,
         String accessToken,
         String tokenType,
-        long expiresInSeconds
+        long expiresInSeconds,
+        UUID sessionId,
+        String refreshToken,
+        String csrfToken
 ) {
 }

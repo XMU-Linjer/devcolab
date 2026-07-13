@@ -22,16 +22,24 @@ public class JwtTokenService {
         this.algorithm = Algorithm.HMAC256(properties.secret());
         this.verifier = JWT.require(algorithm)
                 .withIssuer(properties.issuer())
+                .withAudience(properties.audience())
                 .build();
     }
 
-    public String issueAccessToken(UUID userId, String username) {
+    public String issueAccessToken(
+            UUID userId,
+            String username,
+            UUID sessionId
+    ) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(properties.accessTokenTtl());
 
         return JWT.create()
                 .withIssuer(properties.issuer())
+                .withAudience(properties.audience())
                 .withSubject(userId.toString())
+                .withJWTId(UUID.randomUUID().toString())
+                .withClaim("sid", sessionId.toString())
                 .withClaim("username", username)
                 .withIssuedAt(Date.from(now))
                 .withExpiresAt(Date.from(expiresAt))
@@ -43,7 +51,9 @@ public class JwtTokenService {
 
         return new TokenClaims(
                 UUID.fromString(jwt.getSubject()),
+                UUID.fromString(jwt.getClaim("sid").asString()),
                 jwt.getClaim("username").asString(),
+                jwt.getId(),
                 jwt.getExpiresAt().toInstant()
         );
     }
@@ -54,7 +64,9 @@ public class JwtTokenService {
 
     public record TokenClaims(
             UUID userId,
+            UUID sessionId,
             String username,
+            String tokenId,
             Instant expiresAt
     ) {
     }
