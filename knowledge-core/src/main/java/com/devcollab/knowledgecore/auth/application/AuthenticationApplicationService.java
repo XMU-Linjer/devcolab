@@ -97,6 +97,10 @@ public class AuthenticationApplicationService {
         return createAuthenticatedUser(userAccount, credentials);
     }
 
+    public void logout(String refreshToken, String csrfToken) {
+        refreshTokenService.revoke(refreshToken, csrfToken);
+    }
+
     private AuthenticatedUser createAuthenticatedUser(
             UserAccount userAccount
     ) {

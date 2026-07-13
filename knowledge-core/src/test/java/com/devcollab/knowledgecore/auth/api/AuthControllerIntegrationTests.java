@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -187,6 +188,69 @@ class AuthControllerIntegrationTests {
 
         mockMvc.perform(
                         post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", "wrong-csrf-token")
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_CSRF_INVALID"));
+    }
+
+    @Test
+    void shouldLogoutAndRevokeCurrentRefreshSession() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        MvcResult logoutResult = mockMvc.perform(
+                        post("/api/v1/auth/logout")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", csrfCookie.getValue())
+                )
+                .andExpect(status().isNoContent())
+                .andReturn();
+
+        Cookie clearedRefreshCookie = logoutResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie clearedCsrfCookie = logoutResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        assertNotNull(clearedRefreshCookie);
+        assertNotNull(clearedCsrfCookie);
+        assertEquals(0, clearedRefreshCookie.getMaxAge());
+        assertEquals(0, clearedCsrfCookie.getMaxAge());
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://localhost:5173")
+                                .header("X-CSRF-Token", csrfCookie.getValue())
+                )
+                .andExpect(status().isUnauthorized())
+                .andExpect(
+                        jsonPath("$.code").value("AUTH_REFRESH_INVALID")
+                );
+    }
+
+    @Test
+    void shouldRejectLogoutWithInvalidCsrfHeader() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        mockMvc.perform(
+                        post("/api/v1/auth/logout")
                                 .cookie(refreshCookie, csrfCookie)
                                 .header("Origin", "http://localhost:5173")
                                 .header("X-CSRF-Token", "wrong-csrf-token")

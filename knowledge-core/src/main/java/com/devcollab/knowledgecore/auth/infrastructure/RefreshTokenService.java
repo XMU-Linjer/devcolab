@@ -84,6 +84,28 @@ public class RefreshTokenService {
         sessionRepository.revoke(hash(refreshToken));
     }
 
+    public void revoke(
+            String refreshToken,
+            String csrfToken
+    ) {
+        String refreshTokenHash = hash(refreshToken);
+        sessionRepository
+                .findActiveByTokenHash(refreshTokenHash, Instant.now())
+                .ifPresent(session -> {
+                    if (!secureEquals(
+                            session.csrfTokenHash(),
+                            hash(csrfToken)
+                    )) {
+                        throw new InvalidCsrfTokenException();
+                    }
+
+                    sessionRepository.consume(
+                            refreshTokenHash,
+                            session.id()
+                    );
+                });
+    }
+
     private String randomToken() {
         byte[] bytes = new byte[TOKEN_BYTES];
         secureRandom.nextBytes(bytes);

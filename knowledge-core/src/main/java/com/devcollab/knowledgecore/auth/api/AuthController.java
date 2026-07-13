@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Optional;
+
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
@@ -78,6 +80,23 @@ public class AuthController {
 
         writeRefreshCookies(response, authenticatedUser);
         return AuthResponse.from(authenticatedUser);
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        Optional<RequestCredentials> credentials =
+                refreshCookieManager.readForLogout(request);
+
+        credentials.ifPresent(value -> authenticationService.logout(
+                value.refreshToken(),
+                value.csrfToken()
+        ));
+
+        refreshCookieManager.clear(response);
     }
 
     @GetMapping("/me")

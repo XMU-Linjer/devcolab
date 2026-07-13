@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Optional;
 
 @Component
 public class RefreshCookieManager {
@@ -37,21 +38,22 @@ public class RefreshCookieManager {
             throw new InvalidRefreshTokenException();
         }
 
-        String csrfCookie = cookieValue(
-                request,
-                properties.csrfCookieName()
-        );
-        String csrfHeader = request.getHeader(properties.csrfHeaderName());
-        String origin = request.getHeader(HttpHeaders.ORIGIN);
+        return validateCsrf(request, refreshToken);
+    }
 
-        if (!properties.allowedOrigin().equals(origin)
-                || csrfCookie == null
-                || csrfHeader == null
-                || !secureEquals(csrfCookie, csrfHeader)) {
-            throw new InvalidCsrfTokenException();
+    public Optional<RequestCredentials> readForLogout(
+            HttpServletRequest request
+    ) {
+        String refreshToken = cookieValue(
+                request,
+                properties.refreshCookieName()
+        );
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Optional.empty();
         }
 
-        return new RequestCredentials(refreshToken, csrfHeader);
+        return Optional.of(validateCsrf(request, refreshToken));
     }
 
     public void write(
@@ -103,6 +105,27 @@ public class RefreshCookieManager {
                 .map(Cookie::getValue)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private RequestCredentials validateCsrf(
+            HttpServletRequest request,
+            String refreshToken
+    ) {
+        String csrfCookie = cookieValue(
+                request,
+                properties.csrfCookieName()
+        );
+        String csrfHeader = request.getHeader(properties.csrfHeaderName());
+        String origin = request.getHeader(HttpHeaders.ORIGIN);
+
+        if (!properties.allowedOrigin().equals(origin)
+                || csrfCookie == null
+                || csrfHeader == null
+                || !secureEquals(csrfCookie, csrfHeader)) {
+            throw new InvalidCsrfTokenException();
+        }
+
+        return new RequestCredentials(refreshToken, csrfHeader);
     }
 
     private void addCookie(
