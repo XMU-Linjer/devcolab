@@ -24,6 +24,7 @@
 | 93 | `93-local-authentication-interview-guide-v0.2.md` | 登录全链路、JWT、Cookie、安全威胁和面试表达 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-interview-guide-v0.1.md` | 工作空间、成员隔离、文档树链路、技术栈与场景题 | 已由 `.gitignore` 忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.2.md` | 文档 Block 增删改查、拖动排序、权限校验与代码调用链 | 已由 `.gitignore` 忽略 |
+| 96 | `96-local-frontend-backend-integration-guide-v0.1.md` | 前后端联调、Refresh Cookie 自动续期、CSRF Header、401 处理和打包优化学习记录 | 已由 `.gitignore` 忽略 |
 
 本地技术选型和执行材料不得作为产品范围、架构决策或完成状态的唯一依据。
 
