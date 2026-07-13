@@ -18,6 +18,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasItem;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -79,6 +81,15 @@ class PostgreSqlKnowledgeCoreIT {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code")
                         .value("DOCUMENT_BLOCK_VERSION_CONFLICT"));
+
+        mockMvc.perform(get("/api/v1/workspaces/{id}/search", workspaceId)
+                        .queryParam("keyword", "Postgres")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].documentId")
+                        .value(hasItem(documentId)))
+                .andExpect(jsonPath("$[*].snippet")
+                        .value(hasItem("Postgres updated")));
     }
 
     private JsonNode createWorkspace(String token) throws Exception {

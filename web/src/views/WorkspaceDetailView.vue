@@ -34,6 +34,12 @@
         </div>
       </header>
 
+      <WorkspaceSearchPanel
+        v-if="workspace"
+        :workspace-id="workspace.id"
+        @open-document="openDocument"
+      />
+
       <section class="document-workspace">
         <aside class="document-sidebar">
           <div class="document-sidebar-header">
@@ -190,6 +196,7 @@ import DocumentTree, {
 } from '@/components/document/DocumentTree.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
 import WorkspaceMembersPanel from '@/components/workspace/WorkspaceMembersPanel.vue';
+import WorkspaceSearchPanel from '@/components/workspace/WorkspaceSearchPanel.vue';
 import { readableError } from '@/utils/error';
 
 const route = useRoute();

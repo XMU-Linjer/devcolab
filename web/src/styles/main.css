@@ -254,6 +254,88 @@ h1 {
   margin-top: 28px;
 }
 
+.workspace-search {
+  margin-top: 24px;
+  border: 1px solid #dde4ef;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.workspace-search-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workspace-search-header h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+}
+
+.workspace-search-input {
+  margin-top: 16px;
+}
+
+.workspace-search-alert {
+  margin-top: 14px;
+}
+
+.workspace-search-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.workspace-search-result {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #e4eaf3;
+  border-radius: 8px;
+  background: #fbfcff;
+  color: inherit;
+  cursor: pointer;
+  padding: 14px;
+  text-align: left;
+}
+
+.workspace-search-result:hover {
+  border-color: #9db7ff;
+  background: #f6f8ff;
+}
+
+.workspace-search-result-main {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.workspace-search-title {
+  color: #172033;
+  font-weight: 700;
+}
+
+.workspace-search-snippet {
+  color: #66758c;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.workspace-search-result-meta {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  color: #748198;
+  font-size: 12px;
+}
+
 .members-panel-header {
   display: flex;
   align-items: flex-start;
