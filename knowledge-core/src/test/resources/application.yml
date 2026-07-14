@@ -16,6 +16,12 @@ devcollab:
       enabled: false
       url: http://localhost:9200
       index-name: devcollab-search-test
+  worker:
+    outbox:
+      enabled: false
+      batch-size: 50
+      fixed-delay-ms: 5000
+      initial-delay-ms: 5000
   security:
     jwt:
       issuer: devcollab-test

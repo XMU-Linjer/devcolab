@@ -1,0 +1,146 @@
+package com.devcollab.knowledgecore.common.outbox;
+
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
+import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
+import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventRepository;
+import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventStatus;
+import com.devcollab.knowledgecore.common.outbox.worker.OutboxWorkerProperties;
+import com.devcollab.knowledgecore.common.outbox.worker.OutboxWorkerService;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class OutboxWorkerServiceTests {
+
+    @Test
+    void shouldRelayPendingEventsWithConfiguredBatchSize() {
+        InMemoryOutboxEventRepository repository =
+                new InMemoryOutboxEventRepository();
+        OutboxEvent first = repository.save(pendingEvent(
+                "DOCUMENT_CREATED",
+                Instant.parse("2026-07-14T00:00:00Z")
+        ));
+        OutboxEvent second = repository.save(pendingEvent(
+                "DOCUMENT_UPDATED",
+                Instant.parse("2026-07-14T00:00:01Z")
+        ));
+        OutboxRelayService relayService = new OutboxRelayService(
+                repository,
+                handledEvent -> {
+                }
+        );
+        OutboxWorkerService workerService = new OutboxWorkerService(
+                relayService,
+                new OutboxWorkerProperties(true, 1)
+        );
+
+        OutboxRelayResult result = workerService.runOnce();
+
+        assertThat(result.scanned()).isEqualTo(1);
+        assertThat(result.published()).isEqualTo(1);
+        assertThat(result.failed()).isZero();
+        assertThat(repository.findById(first.id()).status())
+                .isEqualTo(OutboxEventStatus.PUBLISHED);
+        assertThat(repository.findById(second.id()).status())
+                .isEqualTo(OutboxEventStatus.PENDING);
+    }
+
+    private OutboxEvent pendingEvent(String eventType, Instant occurredAt) {
+        return OutboxEvent.pending(
+                "DOCUMENT",
+                UUID.randomUUID(),
+                eventType,
+                "{}",
+                occurredAt
+        );
+    }
+
+    private static final class InMemoryOutboxEventRepository
+            implements OutboxEventRepository {
+
+        private final List<OutboxEvent> events = new ArrayList<>();
+
+        @Override
+        public OutboxEvent save(OutboxEvent event) {
+            events.add(event);
+            return event;
+        }
+
+        @Override
+        public List<OutboxEvent> findPending(int limit) {
+            return events.stream()
+                    .filter(event -> event.status()
+                            == OutboxEventStatus.PENDING)
+                    .sorted(Comparator
+                            .comparing(OutboxEvent::occurredAt)
+                            .thenComparing(OutboxEvent::id))
+                    .limit(limit)
+                    .toList();
+        }
+
+        @Override
+        public void markPublished(UUID eventId) {
+            replace(eventId, current -> new OutboxEvent(
+                    current.id(),
+                    current.aggregateType(),
+                    current.aggregateId(),
+                    current.eventType(),
+                    current.payload(),
+                    OutboxEventStatus.PUBLISHED,
+                    current.occurredAt(),
+                    Instant.now(),
+                    current.retryCount(),
+                    null
+            ));
+        }
+
+        @Override
+        public void markFailed(UUID eventId, String errorMessage) {
+            replace(eventId, current -> new OutboxEvent(
+                    current.id(),
+                    current.aggregateType(),
+                    current.aggregateId(),
+                    current.eventType(),
+                    current.payload(),
+                    OutboxEventStatus.FAILED,
+                    current.occurredAt(),
+                    current.publishedAt(),
+                    current.retryCount() + 1,
+                    errorMessage
+            ));
+        }
+
+        @Override
+        public List<OutboxEvent> findAll() {
+            return List.copyOf(events);
+        }
+
+        private OutboxEvent findById(UUID eventId) {
+            return events.stream()
+                    .filter(event -> event.id().equals(eventId))
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        private void replace(
+                UUID eventId,
+                java.util.function.Function<OutboxEvent, OutboxEvent> mapper
+        ) {
+            for (int index = 0; index < events.size(); index++) {
+                OutboxEvent current = events.get(index);
+                if (current.id().equals(eventId)) {
+                    events.set(index, mapper.apply(current));
+                    return;
+                }
+            }
+            throw new IllegalArgumentException("Event not found");
+        }
+    }
+}
