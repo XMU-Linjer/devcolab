@@ -8,6 +8,8 @@ public interface DocumentVersionRepository {
 
     DocumentVersion save(DocumentVersion version);
 
+    void supersedeCurrentVersions(UUID documentId);
+
     int nextVersionNo(UUID documentId);
 
     Optional<DocumentVersion> findById(UUID versionId);

@@ -41,6 +41,7 @@ public class DocumentBlockApplicationService {
             CreateDocumentBlockCommand command
     ) {
         Document document = documentService.get(documentId, currentUserId);
+        documentService.ensureEditable(document);
 
         int sortOrder = blockRepository
                 .findAllByDocumentId(documentId)
@@ -92,6 +93,7 @@ public class DocumentBlockApplicationService {
             UpdateDocumentBlockCommand command
     ) {
         Document document = documentService.get(documentId, currentUserId);
+        documentService.ensureEditable(document);
 
         requireBlock(documentId, blockId);
         DocumentBlock updated = blockRepository.updateTextIfVersionMatches(
@@ -131,6 +133,7 @@ public class DocumentBlockApplicationService {
             UUID currentUserId
     ) {
         Document document = documentService.get(documentId, currentUserId);
+        documentService.ensureEditable(document);
         DocumentBlock block = requireBlock(documentId, blockId);
 
         blockRepository.deleteById(block.id());
@@ -160,6 +163,7 @@ public class DocumentBlockApplicationService {
             MoveDocumentBlockCommand command
     ) {
         Document document = documentService.get(documentId, currentUserId);
+        documentService.ensureEditable(document);
         DocumentBlock block = requireBlock(documentId, blockId);
         List<DocumentBlock> current = new ArrayList<>(
                 blockRepository.findAllByDocumentId(documentId)

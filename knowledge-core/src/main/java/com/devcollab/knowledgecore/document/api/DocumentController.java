@@ -45,7 +45,8 @@ public class DocumentController {
                 currentUser.userId(),
                 new CreateDocumentCommand(
                         request.parentDocumentId(),
-                        request.title()
+                        request.title(),
+                        request.documentType()
                 )
         ));
     }
@@ -145,6 +146,16 @@ public class DocumentController {
                         currentUser.userId(),
                         reviewCommand(request)
                 )
+        );
+    }
+
+    @PostMapping("/api/v1/documents/{documentId}/deprecate")
+    public DocumentResponse deprecate(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return DocumentResponse.from(
+                documentService.deprecate(documentId, currentUser.userId())
         );
     }
 

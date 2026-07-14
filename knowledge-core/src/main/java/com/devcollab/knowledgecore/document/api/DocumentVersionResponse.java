@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.domain.DocumentVersion;
+import com.devcollab.knowledgecore.document.domain.DocumentVersionStatus;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -10,6 +11,7 @@ public record DocumentVersionResponse(
         UUID documentId,
         int versionNo,
         String title,
+        DocumentVersionStatus status,
         String snapshotPayload,
         UUID publishedBy,
         Instant publishedAt
@@ -20,6 +22,7 @@ public record DocumentVersionResponse(
                 version.documentId(),
                 version.versionNo(),
                 version.title(),
+                version.status(),
                 version.snapshotPayload(),
                 version.publishedBy(),
                 version.publishedAt()

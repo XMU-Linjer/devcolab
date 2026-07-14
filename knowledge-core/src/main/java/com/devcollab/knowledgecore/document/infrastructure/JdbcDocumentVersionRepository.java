@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.infrastructure;
 
 import com.devcollab.knowledgecore.document.domain.DocumentVersion;
 import com.devcollab.knowledgecore.document.domain.DocumentVersionRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentVersionStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -20,6 +21,7 @@ public class JdbcDocumentVersionRepository implements DocumentVersionRepository 
                     rs.getObject("document_id", UUID.class),
                     rs.getInt("version_no"),
                     rs.getString("title"),
+                    DocumentVersionStatus.valueOf(rs.getString("status")),
                     rs.getString("snapshot_payload"),
                     rs.getObject("published_by", UUID.class),
                     rs.getTimestamp("published_at").toInstant()
@@ -35,18 +37,32 @@ public class JdbcDocumentVersionRepository implements DocumentVersionRepository 
     public DocumentVersion save(DocumentVersion version) {
         jdbcTemplate.update("""
                         INSERT INTO document_versions
-                            (id, document_id, version_no, title,
+                            (id, document_id, version_no, title, status,
                              snapshot_payload, published_by, published_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 version.id(),
                 version.documentId(),
                 version.versionNo(),
                 version.title(),
+                version.status().name(),
                 version.snapshotPayload(),
                 version.publishedBy(),
                 Timestamp.from(version.publishedAt()));
         return version;
+    }
+
+    @Override
+    public void supersedeCurrentVersions(UUID documentId) {
+        jdbcTemplate.update("""
+                        UPDATE document_versions
+                           SET status = ?
+                         WHERE document_id = ?
+                           AND status = ?
+                        """,
+                DocumentVersionStatus.SUPERSEDED.name(),
+                documentId,
+                DocumentVersionStatus.CURRENT.name());
     }
 
     @Override

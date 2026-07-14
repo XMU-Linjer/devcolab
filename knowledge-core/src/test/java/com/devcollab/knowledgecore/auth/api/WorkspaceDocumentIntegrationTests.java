@@ -75,7 +75,17 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$.parentDocumentId")
                         .value(root.get("id").asText()))
                 .andExpect(jsonPath("$.title").value("登录设计"))
+                .andExpect(jsonPath("$.documentType").value("REQUIREMENT"))
                 .andExpect(jsonPath("$.reviewStatus").value("DRAFT"));
+
+        JsonNode apiDocument = createDocumentWithType(
+                token, workspaceId, null, "Order API", "API"
+        );
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}", apiDocument.get("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentType").value("API"));
     }
 
     @Test
@@ -215,6 +225,136 @@ class WorkspaceDocumentIntegrationTests {
                         .value(hasItem("DOCUMENT_CREATED")))
                 .andExpect(jsonPath("$[*].action")
                         .value(hasItem("DOCUMENT_BLOCK_CREATED")));
+    }
+
+    @Test
+    void shouldSupersedeOldVersionAndManageReviewIssues() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "version issue workspace"
+        ).get("id").asText();
+        String documentId = createDocument(
+                token, workspaceId, null, "Versioned API"
+        ).get("id").asText();
+        JsonNode block = createParagraphBlock(token, documentId, "version one");
+
+        submitAndApprove(token, documentId);
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        block.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "content": {"text": "version two"},
+                                  "expectedVersion": 0
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        submitAndApprove(token, documentId);
+
+        MvcResult versionsResult = mockMvc.perform(get(
+                        "/api/v1/documents/{id}/versions",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].versionNo").value(2))
+                .andExpect(jsonPath("$[0].status").value("CURRENT"))
+                .andExpect(jsonPath("$[1].versionNo").value(1))
+                .andExpect(jsonPath("$[1].status").value("SUPERSEDED"))
+                .andReturn();
+
+        String latestVersionId = responseJson(versionsResult)
+                .get(0)
+                .get("id")
+                .asText();
+
+        MvcResult issueResult = mockMvc.perform(post(
+                        "/api/v1/documents/{documentId}/versions/{versionId}/review-issues",
+                        documentId,
+                        latestVersionId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "API_CONTRACT",
+                                  "severity": "HIGH",
+                                  "title": "Missing error code",
+                                  "description": "The published contract should define error codes."
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.severity").value("HIGH"))
+                .andReturn();
+
+        String issueId = responseJson(issueResult).get("id").asText();
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/versions/{versionId}/review-issues",
+                        documentId,
+                        latestVersionId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(issueId));
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/review-issues/{issueId}",
+                        documentId,
+                        issueId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"RESOLVED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESOLVED"));
+    }
+
+    @Test
+    void shouldDeprecateDocumentAndRejectFurtherEditingOrReview()
+            throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "deprecated workspace"
+        ).get("id").asText();
+        String documentId = createDocument(
+                token, workspaceId, null, "Deprecated doc"
+        ).get("id").asText();
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/deprecate",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("DEPRECATED"));
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{id}",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"should fail\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_REVIEW_STATUS_INVALID"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_REVIEW_STATUS_INVALID"));
     }
 
     @Test
@@ -442,6 +582,28 @@ class WorkspaceDocumentIntegrationTests {
         return responseJson(result);
     }
 
+    private JsonNode createDocumentWithType(
+            String token,
+            String workspaceId,
+            String parentDocumentId,
+            String title,
+            String documentType
+    ) throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/v1/workspaces/{id}/documents", workspaceId)
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(documentBody(
+                                        parentDocumentId,
+                                        title,
+                                        documentType
+                                ))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result);
+    }
+
     private JsonNode createParagraphBlock(
             String token,
             String documentId,
@@ -465,13 +627,45 @@ class WorkspaceDocumentIntegrationTests {
         return responseJson(result);
     }
 
+    private void submitAndApprove(String token, String documentId)
+            throws Exception {
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/approve-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("PUBLISHED"));
+    }
+
     private String documentBody(String parentDocumentId, String title) {
+        return documentBody(parentDocumentId, title, null);
+    }
+
+    private String documentBody(
+            String parentDocumentId,
+            String title,
+            String documentType
+    ) {
         String parent = parentDocumentId == null
                 ? "null"
                 : "\"" + parentDocumentId + "\"";
+        String type = documentType == null
+                ? "null"
+                : "\"" + documentType + "\"";
         return """
-                {"parentDocumentId": %s, "title": "%s"}
-                """.formatted(parent, title);
+                {"parentDocumentId": %s, "title": "%s", "documentType": %s}
+                """.formatted(parent, title, type);
     }
 
     private String registerAndGetAccessToken() throws Exception {

@@ -8,6 +8,7 @@ public record DocumentVersion(
         UUID documentId,
         int versionNo,
         String title,
+        DocumentVersionStatus status,
         String snapshotPayload,
         UUID publishedBy,
         Instant publishedAt

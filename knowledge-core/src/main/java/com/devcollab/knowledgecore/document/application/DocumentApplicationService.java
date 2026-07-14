@@ -16,8 +16,10 @@ import com.devcollab.knowledgecore.document.domain.DocumentReviewAction;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewRecord;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewRecordRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
+import com.devcollab.knowledgecore.document.domain.DocumentType;
 import com.devcollab.knowledgecore.document.domain.DocumentVersion;
 import com.devcollab.knowledgecore.document.domain.DocumentVersionRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentVersionStatus;
 import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
@@ -83,6 +85,9 @@ public class DocumentApplicationService {
                 workspaceId,
                 command.parentDocumentId(),
                 command.title().trim(),
+                command.documentType() == null
+                        ? DocumentType.REQUIREMENT
+                        : command.documentType(),
                 DocumentReviewStatus.DRAFT,
                 currentUserId,
                 now,
@@ -130,12 +135,14 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 currentUserId
         );
+        ensureEditable(document);
 
         Document updated = new Document(
                 document.id(),
                 document.workspaceId(),
                 document.parentDocumentId(),
                 command.title().trim(),
+                document.documentType(),
                 document.reviewStatus(),
                 document.createdBy(),
                 document.createdAt(),
@@ -166,6 +173,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 currentUserId
         );
+        ensureEditable(document);
         validateParent(document.workspaceId(), command.parentDocumentId());
         validateNoCycle(document, command.parentDocumentId());
 
@@ -174,6 +182,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 command.parentDocumentId(),
                 document.title(),
+                document.documentType(),
                 document.reviewStatus(),
                 document.createdBy(),
                 document.createdAt(),
@@ -220,8 +229,10 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 currentUserId
         );
+        ensureEditable(document);
         if (document.reviewStatus() != DocumentReviewStatus.DRAFT
-                && document.reviewStatus() != DocumentReviewStatus.REJECTED) {
+                && document.reviewStatus() != DocumentReviewStatus.REJECTED
+                && document.reviewStatus() != DocumentReviewStatus.PUBLISHED) {
             throw new InvalidDocumentReviewStatusException();
         }
 
@@ -230,6 +241,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 document.parentDocumentId(),
                 document.title(),
+                document.documentType(),
                 DocumentReviewStatus.IN_REVIEW,
                 document.createdBy(),
                 document.createdAt(),
@@ -278,6 +290,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 document.parentDocumentId(),
                 document.title(),
+                document.documentType(),
                 DocumentReviewStatus.PUBLISHED,
                 document.createdBy(),
                 document.createdAt(),
@@ -327,6 +340,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 document.parentDocumentId(),
                 document.title(),
+                document.documentType(),
                 DocumentReviewStatus.REJECTED,
                 document.createdBy(),
                 document.createdAt(),
@@ -351,6 +365,44 @@ public class DocumentApplicationService {
         );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_REJECTED",
+                saved,
+                currentUserId
+        );
+        return saved;
+    }
+
+    @Transactional
+    public Document deprecate(UUID documentId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        requireWorkspaceAdmin(document.workspaceId(), currentUserId);
+        if (document.reviewStatus() == DocumentReviewStatus.DEPRECATED) {
+            throw new InvalidDocumentReviewStatusException();
+        }
+
+        Instant now = Instant.now();
+        Document deprecated = new Document(
+                document.id(),
+                document.workspaceId(),
+                document.parentDocumentId(),
+                document.title(),
+                document.documentType(),
+                DocumentReviewStatus.DEPRECATED,
+                document.createdBy(),
+                document.createdAt(),
+                now
+        );
+        Document saved = documentRepository.save(deprecated);
+        logOperation(
+                saved,
+                "DOCUMENT_DEPRECATED",
+                "废弃文档：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                now
+        );
+        publishDocumentEvent(
+                "DOCUMENT_DEPRECATED",
                 saved,
                 currentUserId
         );
@@ -472,6 +524,13 @@ public class DocumentApplicationService {
                 .orElseThrow(DocumentNotFoundException::new);
     }
 
+    public void ensureEditable(Document document) {
+        if (document.reviewStatus() == DocumentReviewStatus.DEPRECATED
+                || document.reviewStatus() == DocumentReviewStatus.SUPERSEDED) {
+            throw new InvalidDocumentReviewStatusException();
+        }
+    }
+
     private void requireWorkspaceAdmin(UUID workspaceId, UUID currentUserId) {
         WorkspaceMember member = workspaceService.requireMembership(
                 workspaceId,
@@ -487,11 +546,13 @@ public class DocumentApplicationService {
             UUID currentUserId,
             Instant publishedAt
     ) {
+        versionRepository.supersedeCurrentVersions(document.id());
         DocumentVersion version = new DocumentVersion(
                 UUID.randomUUID(),
                 document.id(),
                 versionRepository.nextVersionNo(document.id()),
                 document.title(),
+                DocumentVersionStatus.CURRENT,
                 snapshotPayload(document, publishedAt),
                 currentUserId,
                 publishedAt
@@ -554,6 +615,7 @@ public class DocumentApplicationService {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("documentId", document.id());
         snapshot.put("title", document.title());
+        snapshot.put("documentType", document.documentType());
         snapshot.put("publishedAt", publishedAt);
         snapshot.put("blocks", blocks.stream()
                 .map(block -> {
@@ -616,6 +678,7 @@ public class DocumentApplicationService {
         payload.put("documentId", document.id());
         payload.put("parentDocumentId", document.parentDocumentId());
         payload.put("title", document.title());
+        payload.put("documentType", document.documentType());
         payload.put("reviewStatus", document.reviewStatus());
         payload.put("operatorUserId", currentUserId);
         payload.put("updatedAt", document.updatedAt());

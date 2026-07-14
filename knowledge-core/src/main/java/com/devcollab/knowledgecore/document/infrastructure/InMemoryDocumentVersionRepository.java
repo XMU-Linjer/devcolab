@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.infrastructure;
 
 import com.devcollab.knowledgecore.document.domain.DocumentVersion;
 import com.devcollab.knowledgecore.document.domain.DocumentVersionRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentVersionStatus;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -23,6 +24,24 @@ public class InMemoryDocumentVersionRepository implements DocumentVersionReposit
     public DocumentVersion save(DocumentVersion version) {
         versions.put(version.id(), version);
         return version;
+    }
+
+    @Override
+    public void supersedeCurrentVersions(UUID documentId) {
+        versions.replaceAll((id, version) ->
+                version.documentId().equals(documentId)
+                        && version.status() == DocumentVersionStatus.CURRENT
+                        ? new DocumentVersion(
+                                version.id(),
+                                version.documentId(),
+                                version.versionNo(),
+                                version.title(),
+                                DocumentVersionStatus.SUPERSEDED,
+                                version.snapshotPayload(),
+                                version.publishedBy(),
+                                version.publishedAt()
+                        )
+                        : version);
     }
 
     @Override
