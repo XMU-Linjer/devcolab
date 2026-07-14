@@ -10,6 +10,7 @@ import com.devcollab.knowledgecore.document.application.exception.DocumentBlockV
 import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
+import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
@@ -199,6 +200,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.BAD_REQUEST,
                 "DOCUMENT_BLOCK_POSITION_INVALID",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidDocumentReviewStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidDocumentReviewStatus(
+            InvalidDocumentReviewStatusException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "DOCUMENT_REVIEW_STATUS_INVALID",
                 exception.getMessage(),
                 request
         );

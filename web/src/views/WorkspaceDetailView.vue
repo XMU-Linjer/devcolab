@@ -97,14 +97,54 @@
             <div class="document-editor-heading">
               <div>
                 <p class="eyebrow">Document</p>
-                <h2>{{ selectedDocument.title }}</h2>
+                <div class="document-title-row">
+                  <h2>{{ selectedDocument.title }}</h2>
+                  <el-tag :type="reviewStatusTagType(selectedDocument.reviewStatus)" effect="light">
+                    {{ reviewStatusText(selectedDocument.reviewStatus) }}
+                  </el-tag>
+                </div>
                 <p class="section-hint">
                   这里是 Block 编辑器雏形，保存会直接写入 Knowledge Core。
                 </p>
               </div>
-              <el-tag effect="light">
-                更新于 {{ formatTime(selectedDocument.updatedAt) }}
-              </el-tag>
+              <div class="document-heading-actions">
+                <el-button
+                  v-if="canSubmitReview(selectedDocument)"
+                  type="primary"
+                  :loading="submittingReview"
+                  @click="handleSubmitReview"
+                >
+                  提交评审
+                </el-button>
+                <el-button
+                  v-if="canReviewDocument(selectedDocument)"
+                  type="success"
+                  :loading="approvingReview"
+                  @click="handleApproveReview"
+                >
+                  通过评审
+                </el-button>
+                <el-button
+                  v-if="canReviewDocument(selectedDocument)"
+                  type="danger"
+                  plain
+                  :loading="rejectingReview"
+                  @click="handleRejectReview"
+                >
+                  驳回
+                </el-button>
+                <el-tag effect="light">
+                  更新于 {{ formatTime(selectedDocument.updatedAt) }}
+                </el-tag>
+              </div>
+            </div>
+
+            <div v-if="latestVersion" class="document-version-card">
+              <div>
+                <p class="eyebrow">Published Version</p>
+                <strong>v{{ latestVersion.versionNo }} · {{ latestVersion.title }}</strong>
+              </div>
+              <span>{{ formatTime(latestVersion.publishedAt) }}</span>
             </div>
 
             <BlockEditor
@@ -183,14 +223,20 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import {
+  approveDocumentReview,
   createDocument,
   deleteDocument,
   getDocument,
+  listDocumentVersions,
   listDocumentTree,
   moveDocument,
+  rejectDocumentReview,
+  submitDocumentReview,
   updateDocument,
+  type DocumentReviewStatus,
   type DocumentSummary,
   type DocumentTreeNode,
+  type DocumentVersion,
 } from '@/api/document';
 import { getWorkspace, type Workspace, type WorkspaceRole } from '@/api/workspace';
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
@@ -208,6 +254,7 @@ const router = useRouter();
 const workspace = ref<Workspace | null>(null);
 const documentTree = ref<DocumentTreeNode[]>([]);
 const selectedDocument = ref<DocumentSummary | null>(null);
+const documentVersions = ref<DocumentVersion[]>([]);
 const loading = ref(false);
 const documentLoading = ref(false);
 const dialogVisible = ref(false);
@@ -218,8 +265,12 @@ const movingDocumentNode = ref<FlatDocumentTreeNode | null>(null);
 const moveTargetParentId = ref<string | null>(null);
 const errorMessage = ref('');
 const focusedBlockId = ref<string | null>(null);
+const submittingReview = ref(false);
+const approvingReview = ref(false);
+const rejectingReview = ref(false);
 
 const flattenedDocumentOptions = computed(() => flattenDocumentTree(documentTree.value));
+const latestVersion = computed(() => documentVersions.value[0] ?? null);
 const moveParentOptions = computed(() => {
   if (!movingDocumentNode.value) {
     return flattenedDocumentOptions.value;
@@ -393,12 +444,68 @@ async function handleDeleteDocument(node: FlatDocumentTreeNode) {
 
     if (selectedDocument.value && removedIds.has(selectedDocument.value.id)) {
       selectedDocument.value = null;
+      documentVersions.value = [];
       if (documentTree.value[0]) {
         await openDocument(documentTree.value[0].id);
       }
     }
   } catch (error) {
     ElMessage.error(readableError(error, '文档删除失败'));
+  }
+}
+
+async function handleSubmitReview() {
+  if (!selectedDocument.value) {
+    return;
+  }
+
+  submittingReview.value = true;
+  try {
+    selectedDocument.value = await submitDocumentReview(
+      selectedDocument.value.id,
+    );
+    ElMessage.success('文档已提交评审');
+  } catch (error) {
+    ElMessage.error(readableError(error, '提交评审失败'));
+  } finally {
+    submittingReview.value = false;
+  }
+}
+
+async function handleApproveReview() {
+  if (!selectedDocument.value) {
+    return;
+  }
+
+  approvingReview.value = true;
+  try {
+    selectedDocument.value = await approveDocumentReview(
+      selectedDocument.value.id,
+    );
+    await loadDocumentVersions(selectedDocument.value.id);
+    ElMessage.success('文档已发布为新版本');
+  } catch (error) {
+    ElMessage.error(readableError(error, '通过评审失败'));
+  } finally {
+    approvingReview.value = false;
+  }
+}
+
+async function handleRejectReview() {
+  if (!selectedDocument.value) {
+    return;
+  }
+
+  rejectingReview.value = true;
+  try {
+    selectedDocument.value = await rejectDocumentReview(
+      selectedDocument.value.id,
+    );
+    ElMessage.success('文档已驳回，可修改后重新提交');
+  } catch (error) {
+    ElMessage.error(readableError(error, '驳回评审失败'));
+  } finally {
+    rejectingReview.value = false;
   }
 }
 
@@ -420,12 +527,18 @@ async function openDocument(documentId: string, blockId: string | null = null) {
   focusedBlockId.value = blockId;
   try {
     selectedDocument.value = await getDocument(documentId);
+    await loadDocumentVersions(documentId);
   } catch (error) {
     focusedBlockId.value = null;
+    documentVersions.value = [];
     ElMessage.error(readableError(error, '文档加载失败'));
   } finally {
     documentLoading.value = false;
   }
+}
+
+async function loadDocumentVersions(documentId: string) {
+  documentVersions.value = await listDocumentVersions(documentId);
 }
 
 function currentWorkspaceId() {
@@ -435,6 +548,38 @@ function currentWorkspaceId() {
 
 function roleText(role: WorkspaceRole) {
   return role === 'ADMIN' ? '管理员' : '普通用户';
+}
+
+function canSubmitReview(document: DocumentSummary) {
+  return document.reviewStatus === 'DRAFT' || document.reviewStatus === 'REJECTED';
+}
+
+function canReviewDocument(document: DocumentSummary) {
+  return workspace.value?.currentUserRole === 'ADMIN'
+    && document.reviewStatus === 'IN_REVIEW';
+}
+
+function reviewStatusText(status: DocumentReviewStatus) {
+  const statusMap: Record<DocumentReviewStatus, string> = {
+    DRAFT: '草稿',
+    IN_REVIEW: '评审中',
+    PUBLISHED: '已发布',
+    REJECTED: '已驳回',
+  };
+  return statusMap[status];
+}
+
+function reviewStatusTagType(status: DocumentReviewStatus) {
+  const statusMap: Record<
+    DocumentReviewStatus,
+    'primary' | 'success' | 'warning' | 'info' | 'danger'
+  > = {
+    DRAFT: 'info',
+    IN_REVIEW: 'warning',
+    PUBLISHED: 'success',
+    REJECTED: 'danger',
+  };
+  return statusMap[status];
 }
 
 function formatTime(value: string) {

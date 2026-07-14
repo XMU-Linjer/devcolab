@@ -6,6 +6,7 @@ import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,6 +81,7 @@ class SearchIndexProjectionServiceTests {
                 workspaceId,
                 null,
                 "Order API Contract",
+                DocumentReviewStatus.DRAFT,
                 UUID.randomUUID(),
                 now,
                 now

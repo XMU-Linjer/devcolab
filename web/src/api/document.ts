@@ -1,10 +1,13 @@
 import { http } from './http';
 
+export type DocumentReviewStatus = 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED' | 'REJECTED';
+
 export interface DocumentSummary {
   id: string;
   workspaceId: string;
   parentDocumentId: string | null;
   title: string;
+  reviewStatus: DocumentReviewStatus;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -14,6 +17,16 @@ export interface DocumentTreeNode {
   id: string;
   title: string;
   children: DocumentTreeNode[];
+}
+
+export interface DocumentVersion {
+  id: string;
+  documentId: string;
+  versionNo: number;
+  title: string;
+  snapshotPayload: string;
+  publishedBy: string;
+  publishedAt: string;
 }
 
 export interface CreateDocumentPayload {
@@ -72,4 +85,40 @@ export async function moveDocument(
 
 export async function deleteDocument(documentId: string): Promise<void> {
   await http.delete(`/documents/${documentId}`);
+}
+
+export async function submitDocumentReview(
+  documentId: string,
+): Promise<DocumentSummary> {
+  const { data } = await http.post<DocumentSummary>(
+    `/documents/${documentId}/submit-review`,
+  );
+  return data;
+}
+
+export async function approveDocumentReview(
+  documentId: string,
+): Promise<DocumentSummary> {
+  const { data } = await http.post<DocumentSummary>(
+    `/documents/${documentId}/approve-review`,
+  );
+  return data;
+}
+
+export async function rejectDocumentReview(
+  documentId: string,
+): Promise<DocumentSummary> {
+  const { data } = await http.post<DocumentSummary>(
+    `/documents/${documentId}/reject-review`,
+  );
+  return data;
+}
+
+export async function listDocumentVersions(
+  documentId: string,
+): Promise<DocumentVersion[]> {
+  const { data } = await http.get<DocumentVersion[]>(
+    `/documents/${documentId}/versions`,
+  );
+  return data;
 }

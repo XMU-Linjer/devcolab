@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -72,7 +73,8 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$.workspaceId").value(workspaceId))
                 .andExpect(jsonPath("$.parentDocumentId")
                         .value(root.get("id").asText()))
-                .andExpect(jsonPath("$.title").value("登录设计"));
+                .andExpect(jsonPath("$.title").value("登录设计"))
+                .andExpect(jsonPath("$.reviewStatus").value("DRAFT"));
     }
 
     @Test
@@ -94,6 +96,158 @@ class WorkspaceDocumentIntegrationTests {
 
         mockMvc.perform(get(
                         "/api/v1/documents/{id}", document.get("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKSPACE_ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldSubmitDraftDocumentForReview() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "评审空间"
+        ).get("id").asText();
+        String documentId = createDocument(
+                token, workspaceId, null, "评审文档"
+        ).get("id").asText();
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("DOCUMENT_REVIEW_STATUS_INVALID"));
+    }
+
+    @Test
+    void shouldApproveReviewAndCreatePublishedVersion() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "publish workspace"
+        ).get("id").asText();
+        String documentId = createDocument(
+                token, workspaceId, null, "publish document"
+        ).get("id").asText();
+        createParagraphBlock(token, documentId, "published paragraph");
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/approve-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("PUBLISHED"));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}/versions",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].versionNo").value(1))
+                .andExpect(jsonPath("$[0].title").value("publish document"))
+                .andExpect(jsonPath("$[0].snapshotPayload")
+                        .value(containsString("published paragraph")));
+    }
+
+    @Test
+    void shouldRejectReviewAndAllowResubmit() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                token, "reject workspace"
+        ).get("id").asText();
+        String documentId = createDocument(
+                token, workspaceId, null, "reject document"
+        ).get("id").asText();
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/reject-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("REJECTED"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+    }
+
+    @Test
+    void shouldRejectReviewApproveFromWorkspaceOutsider() throws Exception {
+        String ownerToken = registerAndGetAccessToken();
+        String outsiderToken = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                ownerToken, "review approve private workspace"
+        ).get("id").asText();
+        String documentId = createDocument(
+                ownerToken, workspaceId, null, "internal review document"
+        ).get("id").asText();
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewStatus").value("IN_REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/approve-review",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKSPACE_ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldRejectReviewSubmitFromWorkspaceOutsider() throws Exception {
+        String ownerToken = registerAndGetAccessToken();
+        String outsiderToken = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(
+                ownerToken, "评审私有空间"
+        ).get("id").asText();
+        String documentId = createDocument(
+                ownerToken, workspaceId, null, "内部评审文档"
+        ).get("id").asText();
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{id}/submit-review",
+                        documentId
+                )
                         .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code")
@@ -223,6 +377,29 @@ class WorkspaceDocumentIntegrationTests {
                                 .header(HttpHeaders.AUTHORIZATION, bearer(token))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(documentBody(parentDocumentId, title))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+        return responseJson(result);
+    }
+
+    private JsonNode createParagraphBlock(
+            String token,
+            String documentId,
+            String text
+    ) throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/v1/documents/{id}/blocks", documentId)
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "type": "PARAGRAPH",
+                                          "content": {
+                                            "text": "%s"
+                                          }
+                                        }
+                                        """.formatted(text))
                 )
                 .andExpect(status().isCreated())
                 .andReturn();

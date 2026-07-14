@@ -515,9 +515,17 @@ h1 {
 }
 
 .document-preview h2 {
-  margin-bottom: 18px;
+  margin-bottom: 0;
   color: #172033;
   font-size: 24px;
+}
+
+.document-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .document-editor-heading {
@@ -526,6 +534,39 @@ h1 {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 22px;
+}
+
+.document-heading-actions {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.document-version-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #d9ecff;
+  border-radius: 14px;
+  background: #f5faff;
+  color: #1d4ed8;
+}
+
+.document-version-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+}
+
+.document-version-card span {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .document-meta {

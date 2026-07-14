@@ -106,4 +106,45 @@ public class DocumentController {
     ) {
         documentService.delete(documentId, currentUser.userId());
     }
+
+    @PostMapping("/api/v1/documents/{documentId}/submit-review")
+    public DocumentResponse submitReview(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return DocumentResponse.from(
+                documentService.submitReview(documentId, currentUser.userId())
+        );
+    }
+
+    @PostMapping("/api/v1/documents/{documentId}/approve-review")
+    public DocumentResponse approveReview(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return DocumentResponse.from(
+                documentService.approveReview(documentId, currentUser.userId())
+        );
+    }
+
+    @PostMapping("/api/v1/documents/{documentId}/reject-review")
+    public DocumentResponse rejectReview(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return DocumentResponse.from(
+                documentService.rejectReview(documentId, currentUser.userId())
+        );
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/versions")
+    public List<DocumentVersionResponse> versions(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return documentService.listVersions(documentId, currentUser.userId())
+                .stream()
+                .map(DocumentVersionResponse::from)
+                .toList();
+    }
 }

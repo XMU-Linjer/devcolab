@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.infrastructure;
 
 import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -20,6 +21,7 @@ public class JdbcDocumentRepository implements DocumentRepository {
                     rs.getObject("workspace_id", UUID.class),
                     rs.getObject("parent_document_id", UUID.class),
                     rs.getString("title"),
+                    DocumentReviewStatus.valueOf(rs.getString("review_status")),
                     rs.getObject("created_by", UUID.class),
                     rs.getTimestamp("created_at").toInstant(),
                     rs.getTimestamp("updated_at").toInstant()
@@ -35,21 +37,26 @@ public class JdbcDocumentRepository implements DocumentRepository {
     public Document save(Document document) {
         int updated = jdbcTemplate.update("""
                         UPDATE documents
-                           SET parent_document_id = ?, title = ?, updated_at = ?
+                           SET parent_document_id = ?,
+                               title = ?,
+                               review_status = ?,
+                               updated_at = ?
                          WHERE id = ?
                         """,
                 document.parentDocumentId(), document.title(),
+                document.reviewStatus().name(),
                 Timestamp.from(document.updatedAt()), document.id());
 
         if (updated == 0) {
             jdbcTemplate.update("""
                             INSERT INTO documents
                                 (id, workspace_id, parent_document_id, title,
-                                 created_by, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                 review_status, created_by, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     document.id(), document.workspaceId(),
                     document.parentDocumentId(), document.title(),
+                    document.reviewStatus().name(),
                     document.createdBy(), Timestamp.from(document.createdAt()),
                     Timestamp.from(document.updatedAt()));
         }

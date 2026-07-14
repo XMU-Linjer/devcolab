@@ -4,9 +4,20 @@ import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublishe
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
+import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.document.domain.Document;
+import com.devcollab.knowledgecore.document.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
+import com.devcollab.knowledgecore.document.domain.DocumentVersion;
+import com.devcollab.knowledgecore.document.domain.DocumentVersionRepository;
+import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,17 +31,29 @@ import java.util.UUID;
 public class DocumentApplicationService {
 
     private final DocumentRepository documentRepository;
+    private final DocumentBlockRepository blockRepository;
+    private final DocumentVersionRepository versionRepository;
     private final WorkspaceApplicationService workspaceService;
+    private final WorkspacePermissionPolicy permissionPolicy;
     private final OutboxEventPublisher outboxEventPublisher;
+    private final ObjectMapper objectMapper;
 
     public DocumentApplicationService(
             DocumentRepository documentRepository,
+            DocumentBlockRepository blockRepository,
+            DocumentVersionRepository versionRepository,
             WorkspaceApplicationService workspaceService,
-            OutboxEventPublisher outboxEventPublisher
+            WorkspacePermissionPolicy permissionPolicy,
+            OutboxEventPublisher outboxEventPublisher,
+            ObjectMapper objectMapper
     ) {
         this.documentRepository = documentRepository;
+        this.blockRepository = blockRepository;
+        this.versionRepository = versionRepository;
         this.workspaceService = workspaceService;
+        this.permissionPolicy = permissionPolicy;
         this.outboxEventPublisher = outboxEventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -48,6 +71,7 @@ public class DocumentApplicationService {
                 workspaceId,
                 command.parentDocumentId(),
                 command.title().trim(),
+                DocumentReviewStatus.DRAFT,
                 currentUserId,
                 now,
                 now
@@ -91,6 +115,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 document.parentDocumentId(),
                 command.title().trim(),
+                document.reviewStatus(),
                 document.createdBy(),
                 document.createdAt(),
                 Instant.now()
@@ -119,6 +144,7 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 command.parentDocumentId(),
                 document.title(),
+                document.reviewStatus(),
                 document.createdBy(),
                 document.createdAt(),
                 Instant.now()
@@ -137,6 +163,106 @@ public class DocumentApplicationService {
         );
         documentRepository.deleteById(documentId);
         publishDocumentEvent("DOCUMENT_DELETED", document, currentUserId);
+    }
+
+    @Transactional
+    public Document submitReview(UUID documentId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        if (document.reviewStatus() != DocumentReviewStatus.DRAFT
+                && document.reviewStatus() != DocumentReviewStatus.REJECTED) {
+            throw new InvalidDocumentReviewStatusException();
+        }
+
+        Document submitted = new Document(
+                document.id(),
+                document.workspaceId(),
+                document.parentDocumentId(),
+                document.title(),
+                DocumentReviewStatus.IN_REVIEW,
+                document.createdBy(),
+                document.createdAt(),
+                Instant.now()
+        );
+        Document saved = documentRepository.save(submitted);
+        publishDocumentEvent(
+                "DOCUMENT_REVIEW_SUBMITTED",
+                saved,
+                currentUserId
+        );
+        return saved;
+    }
+
+    @Transactional
+    public Document approveReview(UUID documentId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        requireWorkspaceAdmin(document.workspaceId(), currentUserId);
+        if (document.reviewStatus() != DocumentReviewStatus.IN_REVIEW) {
+            throw new InvalidDocumentReviewStatusException();
+        }
+
+        Instant now = Instant.now();
+        Document approved = new Document(
+                document.id(),
+                document.workspaceId(),
+                document.parentDocumentId(),
+                document.title(),
+                DocumentReviewStatus.PUBLISHED,
+                document.createdBy(),
+                document.createdAt(),
+                now
+        );
+        Document saved = documentRepository.save(approved);
+        DocumentVersion version = createPublishedVersion(saved, currentUserId, now);
+        publishDocumentEvent(
+                "DOCUMENT_REVIEW_APPROVED",
+                saved,
+                currentUserId
+        );
+        publishDocumentVersionEvent(saved, version, currentUserId);
+        return saved;
+    }
+
+    @Transactional
+    public Document rejectReview(UUID documentId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        requireWorkspaceAdmin(document.workspaceId(), currentUserId);
+        if (document.reviewStatus() != DocumentReviewStatus.IN_REVIEW) {
+            throw new InvalidDocumentReviewStatusException();
+        }
+
+        Document rejected = new Document(
+                document.id(),
+                document.workspaceId(),
+                document.parentDocumentId(),
+                document.title(),
+                DocumentReviewStatus.REJECTED,
+                document.createdBy(),
+                document.createdAt(),
+                Instant.now()
+        );
+        Document saved = documentRepository.save(rejected);
+        publishDocumentEvent(
+                "DOCUMENT_REVIEW_REJECTED",
+                saved,
+                currentUserId
+        );
+        return saved;
+    }
+
+    public List<DocumentVersion> listVersions(
+            UUID documentId,
+            UUID currentUserId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        return versionRepository.findAllByDocumentId(documentId);
     }
 
     private void validateParent(
@@ -183,6 +309,60 @@ public class DocumentApplicationService {
                 .orElseThrow(DocumentNotFoundException::new);
     }
 
+    private void requireWorkspaceAdmin(UUID workspaceId, UUID currentUserId) {
+        WorkspaceMember member = workspaceService.requireMembership(
+                workspaceId,
+                currentUserId
+        );
+        if (!permissionPolicy.isAdmin(member)) {
+            throw new WorkspaceAccessDeniedException();
+        }
+    }
+
+    private DocumentVersion createPublishedVersion(
+            Document document,
+            UUID currentUserId,
+            Instant publishedAt
+    ) {
+        DocumentVersion version = new DocumentVersion(
+                UUID.randomUUID(),
+                document.id(),
+                versionRepository.nextVersionNo(document.id()),
+                document.title(),
+                snapshotPayload(document, publishedAt),
+                currentUserId,
+                publishedAt
+        );
+        return versionRepository.save(version);
+    }
+
+    private String snapshotPayload(Document document, Instant publishedAt) {
+        List<DocumentBlock> blocks = blockRepository.findAllByDocumentId(
+                document.id()
+        );
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("documentId", document.id());
+        snapshot.put("title", document.title());
+        snapshot.put("publishedAt", publishedAt);
+        snapshot.put("blocks", blocks.stream()
+                .map(block -> {
+                    Map<String, Object> blockSnapshot = new LinkedHashMap<>();
+                    blockSnapshot.put("id", block.id());
+                    blockSnapshot.put("type", block.type());
+                    blockSnapshot.put("text", block.text());
+                    blockSnapshot.put("sortOrder", block.sortOrder());
+                    blockSnapshot.put("version", block.version());
+                    return blockSnapshot;
+                })
+                .toList());
+
+        try {
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("文档发布快照生成失败", exception);
+        }
+    }
+
     private void publishDocumentEvent(
             String eventType,
             Document document,
@@ -196,6 +376,26 @@ public class DocumentApplicationService {
         );
     }
 
+    private void publishDocumentVersionEvent(
+            Document document,
+            DocumentVersion version,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", document.workspaceId());
+        payload.put("documentId", document.id());
+        payload.put("versionId", version.id());
+        payload.put("versionNo", version.versionNo());
+        payload.put("operatorUserId", currentUserId);
+        payload.put("publishedAt", version.publishedAt());
+        outboxEventPublisher.publish(
+                "DOCUMENT_VERSION",
+                version.id(),
+                "DOCUMENT_VERSION_PUBLISHED",
+                payload
+        );
+    }
+
     private Map<String, Object> documentPayload(
             Document document,
             UUID currentUserId
@@ -205,6 +405,7 @@ public class DocumentApplicationService {
         payload.put("documentId", document.id());
         payload.put("parentDocumentId", document.parentDocumentId());
         payload.put("title", document.title());
+        payload.put("reviewStatus", document.reviewStatus());
         payload.put("operatorUserId", currentUserId);
         payload.put("updatedAt", document.updatedAt());
         return payload;

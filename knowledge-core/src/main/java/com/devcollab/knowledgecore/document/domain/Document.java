@@ -8,6 +8,7 @@ public record Document(
         UUID workspaceId,
         UUID parentDocumentId,
         String title,
+        DocumentReviewStatus reviewStatus,
         UUID createdBy,
         Instant createdAt,
         Instant updatedAt
