@@ -9,6 +9,8 @@ public interface OutboxEventRepository {
 
     List<OutboxEvent> findPending(int limit);
 
+    List<OutboxEvent> findRetryable(int maxRetryCount, int limit);
+
     void markPublished(UUID eventId);
 
     void markFailed(UUID eventId, String errorMessage);

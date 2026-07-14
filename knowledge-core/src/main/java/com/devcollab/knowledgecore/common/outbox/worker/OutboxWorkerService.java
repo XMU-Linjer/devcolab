@@ -33,8 +33,9 @@ public class OutboxWorkerService {
         }
 
         try {
-            OutboxRelayResult result = relayService.relayPendingEvents(
-                    properties.batchSize()
+            OutboxRelayResult result = relayService.relayRetryableEvents(
+                    properties.batchSize(),
+                    properties.maxRetryCount()
             );
             if (result.scanned() > 0 || result.failed() > 0) {
                 log.info(

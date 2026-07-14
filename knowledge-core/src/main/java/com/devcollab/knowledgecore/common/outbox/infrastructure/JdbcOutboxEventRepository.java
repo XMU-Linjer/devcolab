@@ -74,6 +74,23 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
     }
 
     @Override
+    public List<OutboxEvent> findRetryable(int maxRetryCount, int limit) {
+        return jdbcTemplate.query("""
+                        SELECT * FROM outbox_events
+                         WHERE status = ?
+                            OR (status = ? AND retry_count < ?)
+                         ORDER BY occurred_at, id
+                         LIMIT ?
+                        """,
+                OUTBOX_EVENT_ROW_MAPPER,
+                OutboxEventStatus.PENDING.name(),
+                OutboxEventStatus.FAILED.name(),
+                maxRetryCount,
+                limit
+        );
+    }
+
+    @Override
     public void markPublished(UUID eventId) {
         jdbcTemplate.update("""
                         UPDATE outbox_events

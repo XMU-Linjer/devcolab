@@ -20,6 +20,7 @@ devcollab:
     outbox:
       enabled: false
       batch-size: 50
+      max-retry-count: 3
       fixed-delay-ms: 5000
       initial-delay-ms: 5000
   security:

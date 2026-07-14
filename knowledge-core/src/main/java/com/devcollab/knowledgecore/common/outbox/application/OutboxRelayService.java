@@ -33,6 +33,22 @@ public class OutboxRelayService {
         List<OutboxEvent> pendingEvents = eventRepository.findPending(
                 batchSize
         );
+        return relayEvents(pendingEvents);
+    }
+
+    @Transactional
+    public OutboxRelayResult relayRetryableEvents(
+            int batchSize,
+            int maxRetryCount
+    ) {
+        List<OutboxEvent> pendingEvents = eventRepository.findRetryable(
+                maxRetryCount,
+                batchSize
+        );
+        return relayEvents(pendingEvents);
+    }
+
+    private OutboxRelayResult relayEvents(List<OutboxEvent> pendingEvents) {
         int published = 0;
         int failed = 0;
 

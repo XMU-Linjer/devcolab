@@ -38,7 +38,7 @@ class OutboxWorkerServiceTests {
         );
         OutboxWorkerService workerService = new OutboxWorkerService(
                 relayService,
-                new OutboxWorkerProperties(true, 1)
+                new OutboxWorkerProperties(true, 1, 3)
         );
 
         OutboxRelayResult result = workerService.runOnce();
@@ -52,6 +52,64 @@ class OutboxWorkerServiceTests {
                 .isEqualTo(OutboxEventStatus.PENDING);
     }
 
+    @Test
+    void shouldRetryFailedEventsBelowMaxRetryCount() {
+        InMemoryOutboxEventRepository repository =
+                new InMemoryOutboxEventRepository();
+        OutboxEvent failed = repository.save(failedEvent(
+                "DOCUMENT_UPDATED",
+                Instant.parse("2026-07-14T00:00:00Z"),
+                1
+        ));
+        OutboxRelayService relayService = new OutboxRelayService(
+                repository,
+                handledEvent -> {
+                }
+        );
+        OutboxWorkerService workerService = new OutboxWorkerService(
+                relayService,
+                new OutboxWorkerProperties(true, 10, 3)
+        );
+
+        OutboxRelayResult result = workerService.runOnce();
+
+        assertThat(result.scanned()).isEqualTo(1);
+        assertThat(result.published()).isEqualTo(1);
+        assertThat(result.failed()).isZero();
+        assertThat(repository.findById(failed.id()).status())
+                .isEqualTo(OutboxEventStatus.PUBLISHED);
+    }
+
+    @Test
+    void shouldSkipFailedEventsAtMaxRetryCount() {
+        InMemoryOutboxEventRepository repository =
+                new InMemoryOutboxEventRepository();
+        OutboxEvent exhausted = repository.save(failedEvent(
+                "DOCUMENT_UPDATED",
+                Instant.parse("2026-07-14T00:00:00Z"),
+                3
+        ));
+        OutboxRelayService relayService = new OutboxRelayService(
+                repository,
+                handledEvent -> {
+                }
+        );
+        OutboxWorkerService workerService = new OutboxWorkerService(
+                relayService,
+                new OutboxWorkerProperties(true, 10, 3)
+        );
+
+        OutboxRelayResult result = workerService.runOnce();
+
+        assertThat(result.scanned()).isZero();
+        assertThat(result.published()).isZero();
+        assertThat(result.failed()).isZero();
+        assertThat(repository.findById(exhausted.id()).status())
+                .isEqualTo(OutboxEventStatus.FAILED);
+        assertThat(repository.findById(exhausted.id()).retryCount())
+                .isEqualTo(3);
+    }
+
     private OutboxEvent pendingEvent(String eventType, Instant occurredAt) {
         return OutboxEvent.pending(
                 "DOCUMENT",
@@ -59,6 +117,25 @@ class OutboxWorkerServiceTests {
                 eventType,
                 "{}",
                 occurredAt
+        );
+    }
+
+    private OutboxEvent failedEvent(
+            String eventType,
+            Instant occurredAt,
+            int retryCount
+    ) {
+        return new OutboxEvent(
+                UUID.randomUUID(),
+                "DOCUMENT",
+                UUID.randomUUID(),
+                eventType,
+                "{}",
+                OutboxEventStatus.FAILED,
+                occurredAt,
+                null,
+                retryCount,
+                "previous failure"
         );
     }
 
@@ -78,6 +155,20 @@ class OutboxWorkerServiceTests {
             return events.stream()
                     .filter(event -> event.status()
                             == OutboxEventStatus.PENDING)
+                    .sorted(Comparator
+                            .comparing(OutboxEvent::occurredAt)
+                            .thenComparing(OutboxEvent::id))
+                    .limit(limit)
+                    .toList();
+        }
+
+        @Override
+        public List<OutboxEvent> findRetryable(int maxRetryCount, int limit) {
+            return events.stream()
+                    .filter(event -> event.status()
+                            == OutboxEventStatus.PENDING
+                            || (event.status() == OutboxEventStatus.FAILED
+                            && event.retryCount() < maxRetryCount))
                     .sorted(Comparator
                             .comparing(OutboxEvent::occurredAt)
                             .thenComparing(OutboxEvent::id))

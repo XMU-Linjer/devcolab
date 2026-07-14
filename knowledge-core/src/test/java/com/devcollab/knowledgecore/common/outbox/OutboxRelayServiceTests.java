@@ -102,6 +102,20 @@ class OutboxRelayServiceTests {
         }
 
         @Override
+        public List<OutboxEvent> findRetryable(int maxRetryCount, int limit) {
+            return events.stream()
+                    .filter(event -> event.status()
+                            == OutboxEventStatus.PENDING
+                            || (event.status() == OutboxEventStatus.FAILED
+                            && event.retryCount() < maxRetryCount))
+                    .sorted(Comparator
+                            .comparing(OutboxEvent::occurredAt)
+                            .thenComparing(OutboxEvent::id))
+                    .limit(limit)
+                    .toList();
+        }
+
+        @Override
         public void markPublished(UUID eventId) {
             replace(eventId, current -> new OutboxEvent(
                     current.id(),
