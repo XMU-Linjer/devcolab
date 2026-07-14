@@ -1,5 +1,5 @@
 <template>
-  <section class="block-editor">
+  <section ref="editorRoot" class="block-editor">
     <header class="block-editor-header">
       <div>
         <p class="eyebrow">Blocks</p>
@@ -64,6 +64,8 @@
         :is-first="index === 0"
         :is-last="index === blocks.length - 1"
         :busy="busyBlockId === block.id"
+        :class="{ 'is-focused': focusedBlockId === block.id }"
+        :data-block-id="block.id"
         @save="handleSave"
         @delete="handleDelete"
         @move-up="handleMove(block, index - 1)"
@@ -76,7 +78,7 @@
 <script setup lang="ts">
 import { Plus } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { onMounted, ref, watch } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 
 import {
   createBlock,
@@ -90,12 +92,15 @@ import { isConflictError, readableError } from '@/utils/error';
 
 const props = defineProps<{
   documentId: string;
+  focusBlockId?: string | null;
 }>();
 
 const blocks = ref<DocumentBlock[]>([]);
+const editorRoot = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const creating = ref(false);
 const busyBlockId = ref<string | null>(null);
+const focusedBlockId = ref<string | null>(null);
 const conflictMessage = ref('');
 const errorMessage = ref('');
 
@@ -110,6 +115,13 @@ watch(
   },
 );
 
+watch(
+  () => props.focusBlockId,
+  () => {
+    void focusRequestedBlock();
+  },
+);
+
 async function loadBlocks() {
   loading.value = true;
   conflictMessage.value = '';
@@ -117,11 +129,39 @@ async function loadBlocks() {
 
   try {
     blocks.value = await listBlocks(props.documentId);
+    await focusRequestedBlock();
   } catch (error) {
     errorMessage.value = readableError(error, '内容块加载失败');
   } finally {
     loading.value = false;
   }
+}
+
+async function focusRequestedBlock() {
+  if (!props.focusBlockId) {
+    focusedBlockId.value = null;
+    return;
+  }
+
+  await nextTick();
+  const target = editorRoot.value?.querySelector<HTMLElement>(
+    `[data-block-id="${props.focusBlockId}"]`,
+  );
+  if (!target) {
+    return;
+  }
+
+  focusedBlockId.value = props.focusBlockId;
+  target.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  });
+
+  window.setTimeout(() => {
+    if (focusedBlockId.value === props.focusBlockId) {
+      focusedBlockId.value = null;
+    }
+  }, 2200);
 }
 
 async function handleCreate() {

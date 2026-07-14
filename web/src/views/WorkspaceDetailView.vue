@@ -107,7 +107,10 @@
               </el-tag>
             </div>
 
-            <BlockEditor :document-id="selectedDocument.id" />
+            <BlockEditor
+              :document-id="selectedDocument.id"
+              :focus-block-id="focusedBlockId"
+            />
           </div>
 
           <el-empty
@@ -214,6 +217,7 @@ const movingDocument = ref(false);
 const movingDocumentNode = ref<FlatDocumentTreeNode | null>(null);
 const moveTargetParentId = ref<string | null>(null);
 const errorMessage = ref('');
+const focusedBlockId = ref<string | null>(null);
 
 const flattenedDocumentOptions = computed(() => flattenDocumentTree(documentTree.value));
 const moveParentOptions = computed(() => {
@@ -411,11 +415,13 @@ async function refreshTreeAndSelected(documentId: string) {
   await openDocument(documentId);
 }
 
-async function openDocument(documentId: string) {
+async function openDocument(documentId: string, blockId: string | null = null) {
   documentLoading.value = true;
+  focusedBlockId.value = blockId;
   try {
     selectedDocument.value = await getDocument(documentId);
   } catch (error) {
+    focusedBlockId.value = null;
     ElMessage.error(readableError(error, '文档加载失败'));
   } finally {
     documentLoading.value = false;

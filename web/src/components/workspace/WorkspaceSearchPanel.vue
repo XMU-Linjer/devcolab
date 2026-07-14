@@ -45,7 +45,7 @@
         :key="`${result.type}-${result.documentId}-${result.blockId || 'title'}`"
         class="workspace-search-result"
         type="button"
-        @click="$emit('open-document', result.documentId)"
+        @click="openSearchResult(result)"
       >
         <div class="workspace-search-result-main">
           <span class="workspace-search-title">{{ result.documentTitle }}</span>
@@ -81,8 +81,8 @@ const props = defineProps<{
   workspaceId: string;
 }>();
 
-defineEmits<{
-  (event: 'open-document', documentId: string): void;
+const emit = defineEmits<{
+  (event: 'open-document', documentId: string, blockId: string | null): void;
 }>();
 
 const keyword = ref('');
@@ -119,6 +119,10 @@ function clearResults() {
 
 function typeText(type: SearchHitType) {
   return type === 'DOCUMENT_TITLE' ? '标题命中' : '正文命中';
+}
+
+function openSearchResult(result: SearchHit) {
+  emit('open-document', result.documentId, result.blockId);
 }
 
 function highlightedSegments(result: SearchHit) {
