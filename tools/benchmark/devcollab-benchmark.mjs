@@ -307,15 +307,26 @@ class ApiClient {
   }
 
   async request(method, path, body) {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          Accept: 'application/json',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (error) {
+      const cause = error instanceof Error && error.cause instanceof Error
+        ? `: ${error.cause.message}`
+        : '';
+      throw new Error(
+        `${method} ${this.baseUrl}${path} failed to connect${cause}. `
+        + 'Check that Knowledge Core is running and --base-url points to the correct port.',
+      );
+    }
 
     const text = await response.text();
     if (!response.ok) {
