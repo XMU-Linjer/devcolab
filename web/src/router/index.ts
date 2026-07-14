@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import axios from 'axios';
 
+import { csrfHeader, getAccessToken, setAccessToken } from '@/api/http';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
@@ -55,7 +57,23 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore();
 
-  if (authStore.accessToken && !authStore.initialized) {
+  if (!getAccessToken() && !authStore.initialized) {
+    try {
+      const { data } = await axios.post<{ accessToken: string }>(
+        '/api/v1/auth/refresh',
+        undefined,
+        {
+          withCredentials: true,
+          headers: csrfHeader(),
+        },
+      );
+      setAccessToken(data.accessToken);
+    } catch {
+      setAccessToken(null);
+    }
+  }
+
+  if (getAccessToken() && !authStore.initialized) {
     await authStore.loadCurrentUser();
   }
 

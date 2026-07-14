@@ -1,8 +1,17 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-const ACCESS_TOKEN_KEY = 'devcollab.accessToken';
 const CSRF_COOKIE_NAME = 'dc_csrf';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
+
+let memoryToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  memoryToken = token;
+}
+
+export function getAccessToken() {
+  return memoryToken;
+}
 
 interface RetriableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
@@ -15,7 +24,7 @@ export const http = axios.create({
 });
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+  const token = getAccessToken();
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -42,7 +51,7 @@ http.interceptors.response.use(
 
     const csrfToken = readCookie(CSRF_COOKIE_NAME);
     if (!csrfToken) {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      setAccessToken(null);
       return Promise.reject(error);
     }
 
@@ -60,11 +69,11 @@ http.interceptors.response.use(
         },
       );
 
-      localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+      setAccessToken(data.accessToken);
       originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
       return http(originalRequest);
     } catch (refreshError) {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      setAccessToken(null);
       return Promise.reject(refreshError);
     }
   },
