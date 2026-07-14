@@ -10,26 +10,6 @@ const DEFAULT_PASSWORD = 'Benchmark@123456';
 const args = parseArgs(process.argv.slice(2));
 const command = args._[0] ?? 'help';
 
-if (command === 'help' || args.help) {
-  printHelp();
-  process.exit(0);
-}
-
-try {
-  if (command === 'seed') {
-    await seed();
-  } else if (command === 'run') {
-    await runBenchmark();
-  } else if (command === 'compare') {
-    await compareResults();
-  } else {
-    throw new Error(`Unknown command: ${command}`);
-  }
-} catch (error) {
-  console.error(`[benchmark] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-}
-
 async function seed() {
   const baseUrl = option('base-url', DEFAULT_BASE_URL);
   const username = option('username', `bench_${Date.now()}`);
@@ -360,4 +340,35 @@ Examples:
   node tools/benchmark/devcollab-benchmark.mjs run --label redis --iterations 300 --concurrency 16
   node tools/benchmark/devcollab-benchmark.mjs compare tools/benchmark/results/no-cache.json tools/benchmark/results/redis.json
 `);
+}
+
+async function main() {
+  if (command === 'help' || args.help) {
+    printHelp();
+    return;
+  }
+
+  if (command === 'seed') {
+    await seed();
+    return;
+  }
+
+  if (command === 'run') {
+    await runBenchmark();
+    return;
+  }
+
+  if (command === 'compare') {
+    await compareResults();
+    return;
+  }
+
+  throw new Error(`Unknown command: ${command}`);
+}
+
+try {
+  await main();
+} catch (error) {
+  console.error(`[benchmark] ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
 }
