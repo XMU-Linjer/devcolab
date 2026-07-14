@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.common.outbox.infrastructure;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventHandler;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,6 +14,11 @@ import org.springframework.stereotype.Component;
  * dispatchers without changing the business write path.
  */
 @Component
+@ConditionalOnProperty(
+        name = "devcollab.search.elasticsearch.enabled",
+        havingValue = "false",
+        matchIfMissing = true
+)
 public class NoopOutboxEventHandler implements OutboxEventHandler {
 
     @Override

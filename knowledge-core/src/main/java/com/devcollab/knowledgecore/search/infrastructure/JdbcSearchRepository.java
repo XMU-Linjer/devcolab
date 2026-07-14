@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.search.infrastructure;
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchHitType;
 import com.devcollab.knowledgecore.search.domain.SearchRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +14,11 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 @Repository
+@ConditionalOnProperty(
+        name = "devcollab.search.engine",
+        havingValue = "postgres",
+        matchIfMissing = true
+)
 public class JdbcSearchRepository implements SearchRepository {
 
     private static final int SNIPPET_LIMIT = 120;

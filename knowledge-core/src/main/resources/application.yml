@@ -12,6 +12,12 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
+  search:
+    engine: ${DEVCOLLAB_SEARCH_ENGINE:postgres}
+    elasticsearch:
+      enabled: ${DEVCOLLAB_ELASTICSEARCH_ENABLED:false}
+      url: ${DEVCOLLAB_ELASTICSEARCH_URL:http://localhost:9200}
+      index-name: ${DEVCOLLAB_ELASTICSEARCH_INDEX:devcollab-search}
   security:
     jwt:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}

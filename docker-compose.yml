@@ -47,11 +47,35 @@ services:
     networks:
       - devcollab-local
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.3
+    container_name: devcollab-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${ELASTICSEARCH_HOST_PORT:-9200}:9200"
+      - "${ELASTICSEARCH_TRANSPORT_HOST_PORT:-9300}:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:9200/_cluster/health || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - devcollab-local
+
 volumes:
   postgres-data:
   redis-data:
+  elasticsearch-data:
 
 networks:
   devcollab-local:
     name: devcollab-local
-

@@ -10,6 +10,12 @@ spring:
     enabled: true
 
 devcollab:
+  search:
+    engine: postgres
+    elasticsearch:
+      enabled: false
+      url: http://localhost:9200
+      index-name: devcollab-search-test
   security:
     jwt:
       issuer: devcollab-test
