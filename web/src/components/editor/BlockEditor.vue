@@ -220,7 +220,6 @@ async function handleSave(block: DocumentBlock, text: string) {
       expectedVersion: block.version,
     });
     replaceBlock(updated);
-    ElMessage.success('已保存');
   } catch (error) {
     const message = readableError(error, '段落保存失败');
     if (isConflictError(error)) {
