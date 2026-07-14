@@ -9,6 +9,9 @@ import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewAction;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewRecord;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewRecordRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.domain.DocumentVersion;
 import com.devcollab.knowledgecore.document.domain.DocumentVersionRepository;
@@ -33,6 +36,7 @@ public class DocumentApplicationService {
     private final DocumentRepository documentRepository;
     private final DocumentBlockRepository blockRepository;
     private final DocumentVersionRepository versionRepository;
+    private final DocumentReviewRecordRepository reviewRecordRepository;
     private final WorkspaceApplicationService workspaceService;
     private final WorkspacePermissionPolicy permissionPolicy;
     private final OutboxEventPublisher outboxEventPublisher;
@@ -42,6 +46,7 @@ public class DocumentApplicationService {
             DocumentRepository documentRepository,
             DocumentBlockRepository blockRepository,
             DocumentVersionRepository versionRepository,
+            DocumentReviewRecordRepository reviewRecordRepository,
             WorkspaceApplicationService workspaceService,
             WorkspacePermissionPolicy permissionPolicy,
             OutboxEventPublisher outboxEventPublisher,
@@ -50,6 +55,7 @@ public class DocumentApplicationService {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.versionRepository = versionRepository;
+        this.reviewRecordRepository = reviewRecordRepository;
         this.workspaceService = workspaceService;
         this.permissionPolicy = permissionPolicy;
         this.outboxEventPublisher = outboxEventPublisher;
@@ -188,6 +194,13 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(submitted);
+        createReviewRecord(
+                saved.id(),
+                DocumentReviewAction.SUBMITTED,
+                null,
+                currentUserId,
+                saved.updatedAt()
+        );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_SUBMITTED",
                 saved,
@@ -197,7 +210,11 @@ public class DocumentApplicationService {
     }
 
     @Transactional
-    public Document approveReview(UUID documentId, UUID currentUserId) {
+    public Document approveReview(
+            UUID documentId,
+            UUID currentUserId,
+            ReviewDocumentCommand command
+    ) {
         Document document = requireDocument(documentId);
         requireWorkspaceAdmin(document.workspaceId(), currentUserId);
         if (document.reviewStatus() != DocumentReviewStatus.IN_REVIEW) {
@@ -217,6 +234,13 @@ public class DocumentApplicationService {
         );
         Document saved = documentRepository.save(approved);
         DocumentVersion version = createPublishedVersion(saved, currentUserId, now);
+        createReviewRecord(
+                saved.id(),
+                DocumentReviewAction.APPROVED,
+                normalizeComment(command.comment()),
+                currentUserId,
+                now
+        );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_APPROVED",
                 saved,
@@ -227,7 +251,11 @@ public class DocumentApplicationService {
     }
 
     @Transactional
-    public Document rejectReview(UUID documentId, UUID currentUserId) {
+    public Document rejectReview(
+            UUID documentId,
+            UUID currentUserId,
+            ReviewDocumentCommand command
+    ) {
         Document document = requireDocument(documentId);
         requireWorkspaceAdmin(document.workspaceId(), currentUserId);
         if (document.reviewStatus() != DocumentReviewStatus.IN_REVIEW) {
@@ -245,6 +273,13 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(rejected);
+        createReviewRecord(
+                saved.id(),
+                DocumentReviewAction.REJECTED,
+                normalizeComment(command.comment()),
+                currentUserId,
+                saved.updatedAt()
+        );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_REJECTED",
                 saved,
@@ -263,6 +298,18 @@ public class DocumentApplicationService {
                 currentUserId
         );
         return versionRepository.findAllByDocumentId(documentId);
+    }
+
+    public List<DocumentReviewRecord> listReviewRecords(
+            UUID documentId,
+            UUID currentUserId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        return reviewRecordRepository.findAllByDocumentId(documentId);
     }
 
     private void validateParent(
@@ -334,6 +381,31 @@ public class DocumentApplicationService {
                 publishedAt
         );
         return versionRepository.save(version);
+    }
+
+    private DocumentReviewRecord createReviewRecord(
+            UUID documentId,
+            DocumentReviewAction action,
+            String comment,
+            UUID operatorUserId,
+            Instant createdAt
+    ) {
+        DocumentReviewRecord record = new DocumentReviewRecord(
+                UUID.randomUUID(),
+                documentId,
+                action,
+                comment,
+                operatorUserId,
+                createdAt
+        );
+        return reviewRecordRepository.save(record);
+    }
+
+    private String normalizeComment(String comment) {
+        if (comment == null || comment.isBlank()) {
+            return null;
+        }
+        return comment.trim();
     }
 
     private String snapshotPayload(Document document, Instant publishedAt) {

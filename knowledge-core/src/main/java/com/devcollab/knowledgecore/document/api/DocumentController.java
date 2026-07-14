@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.document.api;
 import com.devcollab.knowledgecore.document.application.CreateDocumentCommand;
 import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
 import com.devcollab.knowledgecore.document.application.MoveDocumentCommand;
+import com.devcollab.knowledgecore.document.application.ReviewDocumentCommand;
 import com.devcollab.knowledgecore.document.application.UpdateDocumentCommand;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.validation.Valid;
@@ -120,20 +121,30 @@ public class DocumentController {
     @PostMapping("/api/v1/documents/{documentId}/approve-review")
     public DocumentResponse approveReview(
             @PathVariable UUID documentId,
-            @AuthenticationPrincipal CurrentUser currentUser
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody(required = false) ReviewDocumentRequest request
     ) {
         return DocumentResponse.from(
-                documentService.approveReview(documentId, currentUser.userId())
+                documentService.approveReview(
+                        documentId,
+                        currentUser.userId(),
+                        reviewCommand(request)
+                )
         );
     }
 
     @PostMapping("/api/v1/documents/{documentId}/reject-review")
     public DocumentResponse rejectReview(
             @PathVariable UUID documentId,
-            @AuthenticationPrincipal CurrentUser currentUser
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody(required = false) ReviewDocumentRequest request
     ) {
         return DocumentResponse.from(
-                documentService.rejectReview(documentId, currentUser.userId())
+                documentService.rejectReview(
+                        documentId,
+                        currentUser.userId(),
+                        reviewCommand(request)
+                )
         );
     }
 
@@ -146,5 +157,27 @@ public class DocumentController {
                 .stream()
                 .map(DocumentVersionResponse::from)
                 .toList();
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/review-records")
+    public List<DocumentReviewRecordResponse> reviewRecords(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return documentService.listReviewRecords(
+                        documentId,
+                        currentUser.userId()
+                )
+                .stream()
+                .map(DocumentReviewRecordResponse::from)
+                .toList();
+    }
+
+    private ReviewDocumentCommand reviewCommand(
+            ReviewDocumentRequest request
+    ) {
+        return new ReviewDocumentCommand(
+                request == null ? null : request.comment()
+        );
     }
 }

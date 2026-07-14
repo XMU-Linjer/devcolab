@@ -1,6 +1,7 @@
 import { http } from './http';
 
 export type DocumentReviewStatus = 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED' | 'REJECTED';
+export type DocumentReviewAction = 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 
 export interface DocumentSummary {
   id: string;
@@ -27,6 +28,15 @@ export interface DocumentVersion {
   snapshotPayload: string;
   publishedBy: string;
   publishedAt: string;
+}
+
+export interface DocumentReviewRecord {
+  id: string;
+  documentId: string;
+  action: DocumentReviewAction;
+  comment: string | null;
+  operatorUserId: string;
+  createdAt: string;
 }
 
 export interface CreateDocumentPayload {
@@ -98,18 +108,22 @@ export async function submitDocumentReview(
 
 export async function approveDocumentReview(
   documentId: string,
+  payload: { comment?: string | null } = {},
 ): Promise<DocumentSummary> {
   const { data } = await http.post<DocumentSummary>(
     `/documents/${documentId}/approve-review`,
+    payload,
   );
   return data;
 }
 
 export async function rejectDocumentReview(
   documentId: string,
+  payload: { comment?: string | null } = {},
 ): Promise<DocumentSummary> {
   const { data } = await http.post<DocumentSummary>(
     `/documents/${documentId}/reject-review`,
+    payload,
   );
   return data;
 }
@@ -119,6 +133,15 @@ export async function listDocumentVersions(
 ): Promise<DocumentVersion[]> {
   const { data } = await http.get<DocumentVersion[]>(
     `/documents/${documentId}/versions`,
+  );
+  return data;
+}
+
+export async function listDocumentReviewRecords(
+  documentId: string,
+): Promise<DocumentReviewRecord[]> {
+  const { data } = await http.get<DocumentReviewRecord[]>(
+    `/documents/${documentId}/review-records`,
   );
   return data;
 }

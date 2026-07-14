@@ -147,6 +147,89 @@
               <span>{{ formatTime(latestVersion.publishedAt) }}</span>
             </div>
 
+            <div class="document-history-grid">
+              <section class="document-history-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <p class="eyebrow">Versions</p>
+                    <h3>版本历史</h3>
+                  </div>
+                  <el-tag v-if="latestVersion" type="success" effect="light">
+                    当前 v{{ latestVersion.versionNo }}
+                  </el-tag>
+                </div>
+
+                <el-empty
+                  v-if="documentVersions.length === 0"
+                  description="暂无发布版本"
+                  :image-size="72"
+                />
+                <div v-else class="version-list">
+                  <article
+                    v-for="version in documentVersions"
+                    :key="version.id"
+                    class="version-item"
+                  >
+                    <div>
+                      <strong>v{{ version.versionNo }} · {{ version.title }}</strong>
+                      <p>发布于 {{ formatTime(version.publishedAt) }}</p>
+                    </div>
+                    <el-tag size="small" effect="plain">
+                      {{ snapshotBlockCount(version) }} 个 Block
+                    </el-tag>
+                  </article>
+                </div>
+              </section>
+
+              <section class="document-history-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <p class="eyebrow">Review</p>
+                    <h3>评审面板</h3>
+                  </div>
+                  <el-tag effect="light">
+                    {{ reviewRecords.length }} 条记录
+                  </el-tag>
+                </div>
+
+                <div v-if="canReviewDocument(selectedDocument)" class="review-comment-box">
+                  <el-input
+                    v-model="reviewComment"
+                    type="textarea"
+                    :rows="3"
+                    maxlength="2000"
+                    show-word-limit
+                    placeholder="填写评审意见，例如：同意发布，或说明驳回原因"
+                  />
+                </div>
+                <p v-else class="section-hint">
+                  当前状态下无需处理评审，可查看历史记录。
+                </p>
+
+                <el-empty
+                  v-if="reviewRecords.length === 0"
+                  description="暂无评审记录"
+                  :image-size="72"
+                />
+                <div v-else class="review-record-list">
+                  <article
+                    v-for="record in reviewRecords"
+                    :key="record.id"
+                    class="review-record-item"
+                  >
+                    <div class="review-record-header">
+                      <el-tag :type="reviewActionTagType(record.action)" size="small">
+                        {{ reviewActionText(record.action) }}
+                      </el-tag>
+                      <span>{{ formatTime(record.createdAt) }}</span>
+                    </div>
+                    <p v-if="record.comment">{{ record.comment }}</p>
+                    <p v-else class="muted-text">未填写评审意见</p>
+                  </article>
+                </div>
+              </section>
+            </div>
+
             <BlockEditor
               :document-id="selectedDocument.id"
               :focus-block-id="focusedBlockId"
@@ -227,12 +310,15 @@ import {
   createDocument,
   deleteDocument,
   getDocument,
+  listDocumentReviewRecords,
   listDocumentVersions,
   listDocumentTree,
   moveDocument,
   rejectDocumentReview,
   submitDocumentReview,
   updateDocument,
+  type DocumentReviewAction,
+  type DocumentReviewRecord,
   type DocumentReviewStatus,
   type DocumentSummary,
   type DocumentTreeNode,
@@ -255,6 +341,7 @@ const workspace = ref<Workspace | null>(null);
 const documentTree = ref<DocumentTreeNode[]>([]);
 const selectedDocument = ref<DocumentSummary | null>(null);
 const documentVersions = ref<DocumentVersion[]>([]);
+const reviewRecords = ref<DocumentReviewRecord[]>([]);
 const loading = ref(false);
 const documentLoading = ref(false);
 const dialogVisible = ref(false);
@@ -268,6 +355,7 @@ const focusedBlockId = ref<string | null>(null);
 const submittingReview = ref(false);
 const approvingReview = ref(false);
 const rejectingReview = ref(false);
+const reviewComment = ref('');
 
 const flattenedDocumentOptions = computed(() => flattenDocumentTree(documentTree.value));
 const latestVersion = computed(() => documentVersions.value[0] ?? null);
@@ -445,6 +533,7 @@ async function handleDeleteDocument(node: FlatDocumentTreeNode) {
     if (selectedDocument.value && removedIds.has(selectedDocument.value.id)) {
       selectedDocument.value = null;
       documentVersions.value = [];
+      reviewRecords.value = [];
       if (documentTree.value[0]) {
         await openDocument(documentTree.value[0].id);
       }
@@ -464,6 +553,7 @@ async function handleSubmitReview() {
     selectedDocument.value = await submitDocumentReview(
       selectedDocument.value.id,
     );
+    await loadReviewRecords(selectedDocument.value.id);
     ElMessage.success('文档已提交评审');
   } catch (error) {
     ElMessage.error(readableError(error, '提交评审失败'));
@@ -481,8 +571,11 @@ async function handleApproveReview() {
   try {
     selectedDocument.value = await approveDocumentReview(
       selectedDocument.value.id,
+      { comment: normalizeReviewComment(reviewComment.value) },
     );
     await loadDocumentVersions(selectedDocument.value.id);
+    await loadReviewRecords(selectedDocument.value.id);
+    reviewComment.value = '';
     ElMessage.success('文档已发布为新版本');
   } catch (error) {
     ElMessage.error(readableError(error, '通过评审失败'));
@@ -500,7 +593,10 @@ async function handleRejectReview() {
   try {
     selectedDocument.value = await rejectDocumentReview(
       selectedDocument.value.id,
+      { comment: normalizeReviewComment(reviewComment.value) },
     );
+    await loadReviewRecords(selectedDocument.value.id);
+    reviewComment.value = '';
     ElMessage.success('文档已驳回，可修改后重新提交');
   } catch (error) {
     ElMessage.error(readableError(error, '驳回评审失败'));
@@ -527,10 +623,14 @@ async function openDocument(documentId: string, blockId: string | null = null) {
   focusedBlockId.value = blockId;
   try {
     selectedDocument.value = await getDocument(documentId);
-    await loadDocumentVersions(documentId);
+    await Promise.all([
+      loadDocumentVersions(documentId),
+      loadReviewRecords(documentId),
+    ]);
   } catch (error) {
     focusedBlockId.value = null;
     documentVersions.value = [];
+    reviewRecords.value = [];
     ElMessage.error(readableError(error, '文档加载失败'));
   } finally {
     documentLoading.value = false;
@@ -539,6 +639,10 @@ async function openDocument(documentId: string, blockId: string | null = null) {
 
 async function loadDocumentVersions(documentId: string) {
   documentVersions.value = await listDocumentVersions(documentId);
+}
+
+async function loadReviewRecords(documentId: string) {
+  reviewRecords.value = await listDocumentReviewRecords(documentId);
 }
 
 function currentWorkspaceId() {
@@ -557,6 +661,43 @@ function canSubmitReview(document: DocumentSummary) {
 function canReviewDocument(document: DocumentSummary) {
   return workspace.value?.currentUserRole === 'ADMIN'
     && document.reviewStatus === 'IN_REVIEW';
+}
+
+function normalizeReviewComment(comment: string) {
+  const trimmed = comment.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function snapshotBlockCount(version: DocumentVersion) {
+  try {
+    const snapshot = JSON.parse(version.snapshotPayload) as {
+      blocks?: unknown[];
+    };
+    return Array.isArray(snapshot.blocks) ? snapshot.blocks.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function reviewActionText(action: DocumentReviewAction) {
+  const actionMap: Record<DocumentReviewAction, string> = {
+    SUBMITTED: '提交评审',
+    APPROVED: '通过评审',
+    REJECTED: '驳回评审',
+  };
+  return actionMap[action];
+}
+
+function reviewActionTagType(action: DocumentReviewAction) {
+  const actionMap: Record<
+    DocumentReviewAction,
+    'primary' | 'success' | 'warning' | 'info' | 'danger'
+  > = {
+    SUBMITTED: 'warning',
+    APPROVED: 'success',
+    REJECTED: 'danger',
+  };
+  return actionMap[action];
 }
 
 function reviewStatusText(status: DocumentReviewStatus) {

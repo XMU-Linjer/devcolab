@@ -153,7 +153,9 @@ class WorkspaceDocumentIntegrationTests {
                         "/api/v1/documents/{id}/approve-review",
                         documentId
                 )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"comment\":\"同意发布\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reviewStatus").value("PUBLISHED"));
 
@@ -167,6 +169,16 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$[0].title").value("publish document"))
                 .andExpect(jsonPath("$[0].snapshotPayload")
                         .value(containsString("published paragraph")));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}/review-records",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value("APPROVED"))
+                .andExpect(jsonPath("$[0].comment").value("同意发布"))
+                .andExpect(jsonPath("$[1].action").value("SUBMITTED"));
     }
 
     @Test
@@ -191,9 +203,20 @@ class WorkspaceDocumentIntegrationTests {
                         "/api/v1/documents/{id}/reject-review",
                         documentId
                 )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"comment\":\"需要补充说明\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reviewStatus").value("REJECTED"));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}/review-records",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value("REJECTED"))
+                .andExpect(jsonPath("$[0].comment").value("需要补充说明"));
 
         mockMvc.perform(post(
                         "/api/v1/documents/{id}/submit-review",
