@@ -6,6 +6,7 @@ import java.time.Duration;
 
 @ConfigurationProperties(prefix = "devcollab.cache")
 public record CacheProperties(
+        boolean enabled,
         Duration workspaceMemberTtl,
         Duration documentTreeTtl
 ) {

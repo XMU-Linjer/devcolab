@@ -19,6 +19,10 @@ docs/95-local-document-block-learning-guide-v0.2.md
 .env
 .env.*
 !.env.example
+
+# Local benchmark outputs
+tools/benchmark/.benchmark-seed.json
+tools/benchmark/results/
 *.local
 
 # Node.js / Vue / Vite

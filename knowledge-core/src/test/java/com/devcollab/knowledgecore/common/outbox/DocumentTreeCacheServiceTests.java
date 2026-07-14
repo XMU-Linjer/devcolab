@@ -27,7 +27,7 @@ class DocumentTreeCacheServiceTests {
 
     private final RedisCacheService cache = mock(RedisCacheService.class);
     private final DocumentRepository repository = mock(DocumentRepository.class);
-    private final CacheProperties properties = new CacheProperties(Duration.ofMinutes(10), Duration.ofMinutes(5));
+    private final CacheProperties properties = new CacheProperties(true, Duration.ofMinutes(10), Duration.ofMinutes(5));
     private final DocumentTreeCacheService service = new DocumentTreeCacheService(
             cache,
             repository,

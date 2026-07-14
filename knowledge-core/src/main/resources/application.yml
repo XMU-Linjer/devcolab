@@ -17,6 +17,7 @@ spring:
 
 devcollab:
   cache:
+    enabled: ${DEVCOLLAB_CACHE_ENABLED:true}
     workspace-member-ttl: ${DEVCOLLAB_CACHE_WORKSPACE_MEMBER_TTL:PT10M}
     document-tree-ttl: ${DEVCOLLAB_CACHE_DOCUMENT_TREE_TTL:PT5M}
   search:

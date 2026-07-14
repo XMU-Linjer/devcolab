@@ -25,7 +25,7 @@ class WorkspaceMemberCacheServiceTests {
 
     private final RedisCacheService cache = mock(RedisCacheService.class);
     private final WorkspaceMemberRepository repository = mock(WorkspaceMemberRepository.class);
-    private final CacheProperties properties = new CacheProperties(Duration.ofMinutes(10), Duration.ofMinutes(5));
+    private final CacheProperties properties = new CacheProperties(true, Duration.ofMinutes(10), Duration.ofMinutes(5));
     private final WorkspaceMemberCacheService service = new WorkspaceMemberCacheService(
             cache,
             repository,

@@ -23,13 +23,22 @@ public class RedisCacheService {
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final CacheProperties properties;
 
-    public RedisCacheService(StringRedisTemplate redis, ObjectMapper objectMapper) {
+    public RedisCacheService(
+            StringRedisTemplate redis,
+            ObjectMapper objectMapper,
+            CacheProperties properties
+    ) {
         this.redis = redis;
         this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     public <T> Optional<T> get(String key, Class<T> type) {
+        if (!properties.enabled()) {
+            return Optional.empty();
+        }
         try {
             String json = redis.opsForValue().get(key);
             if (json == null || json.isEmpty()) {
@@ -47,6 +56,9 @@ public class RedisCacheService {
     }
 
     public <T> void set(String key, T value, Duration ttl) {
+        if (!properties.enabled()) {
+            return;
+        }
         try {
             String json = objectMapper.writeValueAsString(value);
             redis.opsForValue().set(key, json, ttl);
@@ -58,6 +70,9 @@ public class RedisCacheService {
     }
 
     public void evict(String key) {
+        if (!properties.enabled()) {
+            return;
+        }
         try {
             redis.delete(key);
         } catch (Exception e) {
