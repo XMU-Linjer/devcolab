@@ -26,6 +26,14 @@ const router = createRouter({
       component: () => import('@/views/WorkspaceDetailView.vue'),
     },
     {
+      path: '/w/:workspaceId/docs/:documentId',
+      name: 'document-workbench',
+      meta: {
+        requiresAuth: true,
+      },
+      component: () => import('@/views/DocumentWorkbenchView.vue'),
+    },
+    {
       path: '/login',
       name: 'login',
       meta: {

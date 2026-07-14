@@ -1,13 +1,31 @@
 import { http } from './http';
 
-export type DocumentReviewStatus = 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED' | 'REJECTED';
+export type DocumentReviewStatus =
+  | 'DRAFT'
+  | 'IN_REVIEW'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'SUPERSEDED'
+  | 'DEPRECATED';
 export type DocumentReviewAction = 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export type DocumentType =
+  | 'REQUIREMENT'
+  | 'API'
+  | 'ARCHITECTURE'
+  | 'DATABASE'
+  | 'FRONTEND'
+  | 'BACKEND'
+  | 'TEST'
+  | 'DEPLOYMENT'
+  | 'ADR';
+export type DocumentVersionStatus = 'CURRENT' | 'SUPERSEDED';
 
 export interface DocumentSummary {
   id: string;
   workspaceId: string;
   parentDocumentId: string | null;
   title: string;
+  documentType: DocumentType;
   reviewStatus: DocumentReviewStatus;
   createdBy: string;
   createdAt: string;
@@ -25,6 +43,7 @@ export interface DocumentVersion {
   documentId: string;
   versionNo: number;
   title: string;
+  status: DocumentVersionStatus;
   snapshotPayload: string;
   publishedBy: string;
   publishedAt: string;
@@ -54,6 +73,7 @@ export interface DocumentOperationLog {
 export interface CreateDocumentPayload {
   title: string;
   parentDocumentId?: string | null;
+  documentType?: DocumentType | null;
 }
 
 export async function createDocument(
@@ -136,6 +156,15 @@ export async function rejectDocumentReview(
   const { data } = await http.post<DocumentSummary>(
     `/documents/${documentId}/reject-review`,
     payload,
+  );
+  return data;
+}
+
+export async function deprecateDocument(
+  documentId: string,
+): Promise<DocumentSummary> {
+  const { data } = await http.post<DocumentSummary>(
+    `/documents/${documentId}/deprecate`,
   );
   return data;
 }

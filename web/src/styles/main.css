@@ -851,6 +851,125 @@ h1 {
   color: #b7791f;
 }
 
+.workbench-page {
+  min-width: 0;
+}
+
+.workbench-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  gap: 18px;
+  margin-top: 24px;
+  align-items: start;
+}
+
+.workbench-tree-panel,
+.workbench-editor-panel,
+.workbench-side-panel {
+  min-height: 680px;
+  border: 1px solid #dde4ef;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.workbench-editor-panel {
+  min-width: 0;
+}
+
+.workbench-side-panel {
+  min-width: 0;
+}
+
+.document-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 20px;
+  border: 1px solid #e4eaf3;
+  border-radius: 12px;
+  background: #f8faff;
+  padding: 14px;
+}
+
+.document-status-main,
+.document-status-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.document-status-version {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.workbench-tab-panel,
+.version-history-panel,
+.review-issue-panel {
+  min-width: 0;
+}
+
+.version-history-button {
+  width: 100%;
+  border: 1px solid #edf1f7;
+  text-align: left;
+}
+
+.review-issue-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.review-issue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.review-issue-item {
+  border: 1px solid #edf1f7;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.review-issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-issue-header strong {
+  color: #0f172a;
+}
+
+.review-issue-item p {
+  margin: 8px 0 0;
+  color: #475569;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.review-issue-meta,
+.review-issue-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.review-issue-meta span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 .auth-page {
   display: grid;
   min-height: 100vh;
@@ -952,6 +1071,10 @@ h1 {
   }
 
   .document-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench-layout {
     grid-template-columns: 1fr;
   }
 

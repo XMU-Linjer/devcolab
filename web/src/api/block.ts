@@ -1,6 +1,6 @@
 import { http } from './http';
 
-export type DocumentBlockType = 'PARAGRAPH';
+export type DocumentBlockType = 'PARAGRAPH' | 'HEADING' | 'CODE' | 'TODO';
 
 export interface DocumentBlock {
   id: string;
@@ -80,4 +80,3 @@ export async function moveBlock(
   );
   return data;
 }
-

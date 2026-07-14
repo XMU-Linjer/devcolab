@@ -3,20 +3,30 @@
     <header class="block-editor-header">
       <div>
         <p class="eyebrow">Blocks</p>
-        <h3>内容块</h3>
+        <h3>内容编辑区</h3>
         <p class="section-hint">
-          当前 MVP 支持段落块的新增、编辑、删除和排序；保存时会携带版本号做并发校验。
+          MVP 使用稳定 Block ID + version 做自动保存和冲突检测；后续可平滑升级为 Tiptap 顶层 Node。
         </p>
       </div>
       <el-button
         type="primary"
         :icon="Plus"
         :loading="creating"
+        :disabled="readonly"
         @click="handleCreate"
       >
         新增段落
       </el-button>
     </header>
+
+    <el-alert
+      v-if="readonly"
+      class="block-alert"
+      title="当前文档处于只读状态，不能编辑内容。"
+      type="info"
+      show-icon
+      :closable="false"
+    />
 
     <el-alert
       v-if="conflictMessage"
@@ -51,7 +61,12 @@
       v-else-if="blocks.length === 0"
       description="这篇文档还没有内容块"
     >
-      <el-button type="primary" :icon="Plus" @click="handleCreate">
+      <el-button
+        type="primary"
+        :icon="Plus"
+        :disabled="readonly"
+        @click="handleCreate"
+      >
         创建第一个段落
       </el-button>
     </el-empty>
@@ -64,6 +79,7 @@
         :is-first="index === 0"
         :is-last="index === blocks.length - 1"
         :busy="busyBlockId === block.id"
+        :readonly="readonly"
         :class="{ 'is-focused': focusedBlockId === block.id }"
         :data-block-id="block.id"
         @save="handleSave"
@@ -93,6 +109,7 @@ import { isConflictError, readableError } from '@/utils/error';
 const props = defineProps<{
   documentId: string;
   focusBlockId?: string | null;
+  readonly?: boolean;
 }>();
 
 const blocks = ref<DocumentBlock[]>([]);
@@ -165,6 +182,10 @@ async function focusRequestedBlock() {
 }
 
 async function handleCreate() {
+  if (props.readonly) {
+    return;
+  }
+
   creating.value = true;
 
   try {
@@ -184,6 +205,10 @@ async function handleCreate() {
 }
 
 async function handleSave(block: DocumentBlock, text: string) {
+  if (props.readonly) {
+    return;
+  }
+
   busyBlockId.value = block.id;
   conflictMessage.value = '';
 
@@ -208,6 +233,10 @@ async function handleSave(block: DocumentBlock, text: string) {
 }
 
 async function handleDelete(block: DocumentBlock) {
+  if (props.readonly) {
+    return;
+  }
+
   try {
     await ElMessageBox.confirm(
       '删除后该段落会从当前文档移除，此操作暂不支持撤销。',
@@ -240,7 +269,7 @@ async function handleDelete(block: DocumentBlock) {
 }
 
 async function handleMove(block: DocumentBlock, targetIndex: number) {
-  if (targetIndex < 0 || targetIndex >= blocks.value.length) {
+  if (props.readonly || targetIndex < 0 || targetIndex >= blocks.value.length) {
     return;
   }
 

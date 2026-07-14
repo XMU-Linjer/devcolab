@@ -37,7 +37,7 @@
       <WorkspaceSearchPanel
         v-if="workspace"
         :workspace-id="workspace.id"
-        @open-document="openDocument"
+        @open-document="openDocumentWorkbench"
       />
 
       <section class="document-workspace">
@@ -81,7 +81,7 @@
             v-else
             :nodes="documentTree"
             :active-document-id="selectedDocument?.id"
-            @select="openDocument"
+            @select="openDocumentWorkbench"
             @create-child="openCreateChildDialog"
             @rename="handleRenameDocument"
             @move="openMoveDialog"
@@ -700,6 +700,22 @@ async function refreshTreeAndSelected(documentId: string) {
   await openDocument(documentId);
 }
 
+function openDocumentWorkbench(documentId: string, blockId: string | null = null) {
+  const workspaceId = currentWorkspaceId();
+  if (!workspaceId) {
+    return;
+  }
+
+  void router.push({
+    name: 'document-workbench',
+    params: {
+      workspaceId,
+      documentId,
+    },
+    query: blockId ? { blockId } : undefined,
+  });
+}
+
 async function openDocument(documentId: string, blockId: string | null = null) {
   documentLoading.value = true;
   focusedBlockId.value = blockId;
@@ -849,6 +865,8 @@ function reviewStatusText(status: DocumentReviewStatus) {
     IN_REVIEW: '评审中',
     PUBLISHED: '已发布',
     REJECTED: '已驳回',
+    SUPERSEDED: '已被替代',
+    DEPRECATED: '已废弃',
   };
   return statusMap[status];
 }
@@ -862,6 +880,8 @@ function reviewStatusTagType(status: DocumentReviewStatus) {
     IN_REVIEW: 'warning',
     PUBLISHED: 'success',
     REJECTED: 'danger',
+    SUPERSEDED: 'info',
+    DEPRECATED: 'danger',
   };
   return statusMap[status];
 }
