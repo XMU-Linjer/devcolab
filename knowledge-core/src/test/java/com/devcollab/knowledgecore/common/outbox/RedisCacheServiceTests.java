@@ -16,7 +16,7 @@ class RedisCacheServiceTests {
     private final RedisCacheService cache = new RedisCacheService(
             redis,
             new ObjectMapper(),
-            new CacheProperties(false, Duration.ofMinutes(10), Duration.ofMinutes(5))
+            new CacheProperties(false, Duration.ofMinutes(10), Duration.ofMinutes(5), null)
     );
 
     @Test

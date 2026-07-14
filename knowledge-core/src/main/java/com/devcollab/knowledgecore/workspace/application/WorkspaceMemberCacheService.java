@@ -6,6 +6,7 @@ import com.devcollab.knowledgecore.common.cache.RedisCacheService;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
+import com.github.benmanes.caffeine.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -19,28 +20,60 @@ public class WorkspaceMemberCacheService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceMemberCacheService.class);
 
-    private final RedisCacheService cache;
+    private final Cache<String, CachedMembership> localCache;
+    private final RedisCacheService redisCache;
     private final WorkspaceMemberRepository memberRepository;
     private final CacheProperties properties;
 
     public WorkspaceMemberCacheService(
-            RedisCacheService cache,
+            Cache<String, CachedMembership> localCache,
+            RedisCacheService redisCache,
             WorkspaceMemberRepository memberRepository,
             CacheProperties properties
     ) {
-        this.cache = cache;
+        this.localCache = localCache;
+        this.redisCache = redisCache;
         this.memberRepository = memberRepository;
         this.properties = properties;
     }
 
     public Optional<WorkspaceMember> findCached(UUID workspaceId, UUID userId) {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        Optional<CachedMembership> cached = cache.get(key, CachedMembership.class);
-        if (cached.isPresent()) {
-            return Optional.of(cached.get().toWorkspaceMember());
+
+        if (localCacheEnabled()) {
+            CachedMembership local = localCache.getIfPresent(key);
+            if (local != null) {
+                return Optional.of(local.toWorkspaceMember());
+            }
         }
+
+        if (properties.enabled()) {
+            Optional<CachedMembership> redisHit;
+            try {
+                redisHit = redisCache.get(key, CachedMembership.class);
+            } catch (Exception e) {
+                log.warn(
+                        "Redis get failed for key={}, falling back to Repository: {}",
+                        key,
+                        e.getMessage()
+                );
+                redisHit = Optional.empty();
+            }
+            if (redisHit.isPresent()) {
+                CachedMembership cached = redisHit.get();
+                putLocal(key, cached);
+                return Optional.of(cached.toWorkspaceMember());
+            }
+        }
+
         Optional<WorkspaceMember> member = memberRepository.findByWorkspaceIdAndUserId(workspaceId, userId);
-        member.ifPresent(value -> cache.set(key, CachedMembership.from(value), properties.workspaceMemberTtl()));
+        if (member.isPresent()) {
+            CachedMembership cached = CachedMembership.from(member.get());
+            if (properties.enabled()) {
+                redisCache.set(key, cached, properties.workspaceMemberTtl());
+            }
+            putLocal(key, cached);
+        }
         return member;
     }
 
@@ -49,7 +82,23 @@ public class WorkspaceMemberCacheService {
     }
 
     public void evict(UUID workspaceId, UUID userId) {
-        cache.evict(CacheKey.workspaceMember(workspaceId, userId));
+        String key = CacheKey.workspaceMember(workspaceId, userId);
+        if (localCacheEnabled()) {
+            localCache.invalidate(key);
+        }
+        if (properties.enabled()) {
+            redisCache.evict(key);
+        }
+    }
+
+    private void putLocal(String key, CachedMembership cached) {
+        if (localCacheEnabled()) {
+            localCache.put(key, cached);
+        }
+    }
+
+    private boolean localCacheEnabled() {
+        return properties.enabled() && properties.local().enabled();
     }
 
     public record CachedMembership(

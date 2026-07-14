@@ -8,7 +8,8 @@ import java.time.Duration;
 public record CacheProperties(
         boolean enabled,
         Duration workspaceMemberTtl,
-        Duration documentTreeTtl
+        Duration documentTreeTtl,
+        Local local
 ) {
 
     public CacheProperties {
@@ -17,6 +18,39 @@ public record CacheProperties(
         }
         if (documentTreeTtl == null) {
             documentTreeTtl = Duration.ofMinutes(5);
+        }
+        if (local == null) {
+            local = new Local(true, Duration.ofMinutes(2), Duration.ofMinutes(1), 10_000, 1_000);
+        }
+    }
+
+    /**
+     * Caffeine L1 (instance-local) cache settings.
+     * <p>These TTL values are intentionally shorter than the Redis L2 TTLs
+     * so that stale entries are naturally expired at the instance level
+     * while Redis serves as the shared source of cached data.
+     */
+    public record Local(
+            boolean enabled,
+            Duration workspaceMemberTtl,
+            Duration documentTreeTtl,
+            int workspaceMemberMaximumSize,
+            int documentTreeMaximumSize
+    ) {
+
+        public Local {
+            if (workspaceMemberTtl == null) {
+                workspaceMemberTtl = Duration.ofMinutes(2);
+            }
+            if (documentTreeTtl == null) {
+                documentTreeTtl = Duration.ofMinutes(1);
+            }
+            if (workspaceMemberMaximumSize <= 0) {
+                workspaceMemberMaximumSize = 10_000;
+            }
+            if (documentTreeMaximumSize <= 0) {
+                documentTreeMaximumSize = 1_000;
+            }
         }
     }
 }

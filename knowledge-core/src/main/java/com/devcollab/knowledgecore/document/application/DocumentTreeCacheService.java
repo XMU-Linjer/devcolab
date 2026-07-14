@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.common.cache.CacheProperties;
 import com.devcollab.knowledgecore.common.cache.RedisCacheService;
 import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.github.benmanes.caffeine.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -18,35 +19,79 @@ public class DocumentTreeCacheService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentTreeCacheService.class);
 
-    private final RedisCacheService cache;
+    private final Cache<String, DocumentList> localCache;
+    private final RedisCacheService redisCache;
     private final DocumentRepository documentRepository;
     private final CacheProperties properties;
 
     public DocumentTreeCacheService(
-            RedisCacheService cache,
+            Cache<String, DocumentList> localCache,
+            RedisCacheService redisCache,
             DocumentRepository documentRepository,
             CacheProperties properties
     ) {
-        this.cache = cache;
+        this.localCache = localCache;
+        this.redisCache = redisCache;
         this.documentRepository = documentRepository;
         this.properties = properties;
     }
 
     public List<Document> listTreeSource(UUID workspaceId) {
         String key = CacheKey.documentTree(workspaceId);
-        Optional<List<Document>> cached = cache.get(key, DocumentList.class)
-                .map(DocumentList::documents);
-        if (cached.isPresent()) {
-            return cached.get();
+
+        if (localCacheEnabled()) {
+            DocumentList local = localCache.getIfPresent(key);
+            if (local != null) {
+                return local.documents();
+            }
+        }
+
+        if (properties.enabled()) {
+            Optional<DocumentList> redisHit;
+            try {
+                redisHit = redisCache.get(key, DocumentList.class);
+            } catch (Exception e) {
+                log.warn(
+                        "Redis get failed for key={}, falling back to Repository: {}",
+                        key,
+                        e.getMessage()
+                );
+                redisHit = Optional.empty();
+            }
+            if (redisHit.isPresent()) {
+                DocumentList cached = redisHit.get();
+                putLocal(key, cached);
+                return cached.documents();
+            }
         }
 
         List<Document> documents = documentRepository.findAllByWorkspaceId(workspaceId);
-        cache.set(key, new DocumentList(documents), properties.documentTreeTtl());
+        DocumentList list = new DocumentList(documents);
+        if (properties.enabled()) {
+            redisCache.set(key, list, properties.documentTreeTtl());
+        }
+        putLocal(key, list);
         return documents;
     }
 
     public void evictTree(UUID workspaceId) {
-        cache.evict(CacheKey.documentTree(workspaceId));
+        String key = CacheKey.documentTree(workspaceId);
+        if (localCacheEnabled()) {
+            localCache.invalidate(key);
+        }
+        if (properties.enabled()) {
+            redisCache.evict(key);
+        }
+    }
+
+    private void putLocal(String key, DocumentList list) {
+        if (localCacheEnabled()) {
+            localCache.put(key, list);
+        }
+    }
+
+    private boolean localCacheEnabled() {
+        return properties.enabled() && properties.local().enabled();
     }
 
     public record DocumentList(List<Document> documents) {
