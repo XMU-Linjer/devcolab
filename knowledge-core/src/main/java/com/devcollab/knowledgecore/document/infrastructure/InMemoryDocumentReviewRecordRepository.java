@@ -12,7 +12,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
-@Profile("memory")
+@Profile("in-memory")
 public class InMemoryDocumentReviewRecordRepository
         implements DocumentReviewRecordRepository {
 

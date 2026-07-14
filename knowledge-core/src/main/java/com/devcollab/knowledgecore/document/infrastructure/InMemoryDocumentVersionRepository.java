@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,6 +32,11 @@ public class InMemoryDocumentVersionRepository implements DocumentVersionReposit
                 .mapToInt(DocumentVersion::versionNo)
                 .max()
                 .orElse(0) + 1;
+    }
+
+    @Override
+    public Optional<DocumentVersion> findById(UUID versionId) {
+        return Optional.ofNullable(versions.get(versionId));
     }
 
     @Override

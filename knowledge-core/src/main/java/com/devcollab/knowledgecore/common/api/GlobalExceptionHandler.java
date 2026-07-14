@@ -11,6 +11,7 @@ import com.devcollab.knowledgecore.document.application.exception.DocumentParent
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
@@ -213,6 +214,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.CONFLICT,
                 "DOCUMENT_REVIEW_STATUS_INVALID",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(DocumentVersionNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentVersionNotFound(
+            DocumentVersionNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "DOCUMENT_VERSION_NOT_FOUND",
                 exception.getMessage(),
                 request
         );

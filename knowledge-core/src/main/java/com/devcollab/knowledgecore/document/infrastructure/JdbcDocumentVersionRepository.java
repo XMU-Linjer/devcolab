@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -58,6 +59,16 @@ public class JdbcDocumentVersionRepository implements DocumentVersionRepository 
                 Integer.class,
                 documentId);
         return (currentMax == null ? 0 : currentMax) + 1;
+    }
+
+    @Override
+    public Optional<DocumentVersion> findById(UUID versionId) {
+        return jdbcTemplate.query("""
+                        SELECT * FROM document_versions WHERE id = ?
+                        """,
+                DOCUMENT_VERSION_ROW_MAPPER,
+                versionId
+        ).stream().findFirst();
     }
 
     @Override

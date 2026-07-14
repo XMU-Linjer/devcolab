@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -170,6 +171,28 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$[0].snapshotPayload")
                         .value(containsString("published paragraph")));
 
+        String versionId = responseJson(mockMvc.perform(get(
+                        "/api/v1/documents/{id}/versions",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andReturn())
+                .get(0)
+                .get("id")
+                .asText();
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/versions/{versionId}",
+                        documentId,
+                        versionId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(versionId))
+                .andExpect(jsonPath("$.snapshotPayload")
+                        .value(containsString("published paragraph")));
+
         mockMvc.perform(get(
                         "/api/v1/documents/{id}/review-records",
                         documentId
@@ -179,6 +202,19 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$[0].action").value("APPROVED"))
                 .andExpect(jsonPath("$[0].comment").value("同意发布"))
                 .andExpect(jsonPath("$[1].action").value("SUBMITTED"));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{id}/timeline",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action")
+                        .value("DOCUMENT_REVIEW_APPROVED"))
+                .andExpect(jsonPath("$[*].action")
+                        .value(hasItem("DOCUMENT_CREATED")))
+                .andExpect(jsonPath("$[*].action")
+                        .value(hasItem("DOCUMENT_BLOCK_CREATED")));
     }
 
     @Test

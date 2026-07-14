@@ -39,6 +39,18 @@ export interface DocumentReviewRecord {
   createdAt: string;
 }
 
+export interface DocumentOperationLog {
+  id: string;
+  workspaceId: string;
+  documentId: string;
+  action: string;
+  message: string;
+  operatorUserId: string;
+  targetType: string;
+  targetId: string;
+  createdAt: string;
+}
+
 export interface CreateDocumentPayload {
   title: string;
   parentDocumentId?: string | null;
@@ -137,11 +149,30 @@ export async function listDocumentVersions(
   return data;
 }
 
+export async function getDocumentVersion(
+  documentId: string,
+  versionId: string,
+): Promise<DocumentVersion> {
+  const { data } = await http.get<DocumentVersion>(
+    `/documents/${documentId}/versions/${versionId}`,
+  );
+  return data;
+}
+
 export async function listDocumentReviewRecords(
   documentId: string,
 ): Promise<DocumentReviewRecord[]> {
   const { data } = await http.get<DocumentReviewRecord[]>(
     `/documents/${documentId}/review-records`,
+  );
+  return data;
+}
+
+export async function listDocumentTimeline(
+  documentId: string,
+): Promise<DocumentOperationLog[]> {
+  const { data } = await http.get<DocumentOperationLog[]>(
+    `/documents/${documentId}/timeline`,
   );
   return data;
 }

@@ -3,11 +3,14 @@ package com.devcollab.knowledgecore.document.application;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
+import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentParentException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.document.domain.Document;
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentOperationLog;
+import com.devcollab.knowledgecore.document.domain.DocumentOperationLogRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewAction;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewRecord;
@@ -37,6 +40,7 @@ public class DocumentApplicationService {
     private final DocumentBlockRepository blockRepository;
     private final DocumentVersionRepository versionRepository;
     private final DocumentReviewRecordRepository reviewRecordRepository;
+    private final DocumentOperationLogRepository operationLogRepository;
     private final WorkspaceApplicationService workspaceService;
     private final WorkspacePermissionPolicy permissionPolicy;
     private final OutboxEventPublisher outboxEventPublisher;
@@ -47,6 +51,7 @@ public class DocumentApplicationService {
             DocumentBlockRepository blockRepository,
             DocumentVersionRepository versionRepository,
             DocumentReviewRecordRepository reviewRecordRepository,
+            DocumentOperationLogRepository operationLogRepository,
             WorkspaceApplicationService workspaceService,
             WorkspacePermissionPolicy permissionPolicy,
             OutboxEventPublisher outboxEventPublisher,
@@ -56,6 +61,7 @@ public class DocumentApplicationService {
         this.blockRepository = blockRepository;
         this.versionRepository = versionRepository;
         this.reviewRecordRepository = reviewRecordRepository;
+        this.operationLogRepository = operationLogRepository;
         this.workspaceService = workspaceService;
         this.permissionPolicy = permissionPolicy;
         this.outboxEventPublisher = outboxEventPublisher;
@@ -83,6 +89,15 @@ public class DocumentApplicationService {
                 now
         );
         Document saved = documentRepository.save(document);
+        logOperation(
+                saved,
+                "DOCUMENT_CREATED",
+                "创建文档：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                now
+        );
         publishDocumentEvent("DOCUMENT_CREATED", saved, currentUserId);
         return saved;
     }
@@ -127,6 +142,15 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(updated);
+        logOperation(
+                saved,
+                "DOCUMENT_UPDATED",
+                "更新文档标题：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                saved.updatedAt()
+        );
         publishDocumentEvent("DOCUMENT_UPDATED", saved, currentUserId);
         return saved;
     }
@@ -156,6 +180,15 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(moved);
+        logOperation(
+                saved,
+                "DOCUMENT_MOVED",
+                "移动文档层级：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                saved.updatedAt()
+        );
         publishDocumentEvent("DOCUMENT_MOVED", saved, currentUserId);
         return saved;
     }
@@ -166,6 +199,15 @@ public class DocumentApplicationService {
         workspaceService.requireMembership(
                 document.workspaceId(),
                 currentUserId
+        );
+        logOperation(
+                document,
+                "DOCUMENT_DELETED",
+                "删除文档：" + document.title(),
+                currentUserId,
+                "DOCUMENT",
+                document.id(),
+                Instant.now()
         );
         documentRepository.deleteById(documentId);
         publishDocumentEvent("DOCUMENT_DELETED", document, currentUserId);
@@ -194,6 +236,15 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(submitted);
+        logOperation(
+                saved,
+                "DOCUMENT_REVIEW_SUBMITTED",
+                "提交评审：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                saved.updatedAt()
+        );
         createReviewRecord(
                 saved.id(),
                 DocumentReviewAction.SUBMITTED,
@@ -234,6 +285,15 @@ public class DocumentApplicationService {
         );
         Document saved = documentRepository.save(approved);
         DocumentVersion version = createPublishedVersion(saved, currentUserId, now);
+        logOperation(
+                saved,
+                "DOCUMENT_REVIEW_APPROVED",
+                "通过评审并发布 v" + version.versionNo(),
+                currentUserId,
+                "DOCUMENT_VERSION",
+                version.id(),
+                now
+        );
         createReviewRecord(
                 saved.id(),
                 DocumentReviewAction.APPROVED,
@@ -273,6 +333,15 @@ public class DocumentApplicationService {
                 Instant.now()
         );
         Document saved = documentRepository.save(rejected);
+        logOperation(
+                saved,
+                "DOCUMENT_REVIEW_REJECTED",
+                "驳回评审：" + saved.title(),
+                currentUserId,
+                "DOCUMENT",
+                saved.id(),
+                saved.updatedAt()
+        );
         createReviewRecord(
                 saved.id(),
                 DocumentReviewAction.REJECTED,
@@ -300,6 +369,21 @@ public class DocumentApplicationService {
         return versionRepository.findAllByDocumentId(documentId);
     }
 
+    public DocumentVersion getVersion(
+            UUID documentId,
+            UUID versionId,
+            UUID currentUserId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        return versionRepository.findById(versionId)
+                .filter(version -> version.documentId().equals(documentId))
+                .orElseThrow(DocumentVersionNotFoundException::new);
+    }
+
     public List<DocumentReviewRecord> listReviewRecords(
             UUID documentId,
             UUID currentUserId
@@ -310,6 +394,38 @@ public class DocumentApplicationService {
                 currentUserId
         );
         return reviewRecordRepository.findAllByDocumentId(documentId);
+    }
+
+    public List<DocumentOperationLog> listTimeline(
+            UUID documentId,
+            UUID currentUserId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        return operationLogRepository.findAllByDocumentId(documentId);
+    }
+
+    public DocumentOperationLog logDocumentOperation(
+            Document document,
+            String action,
+            String message,
+            UUID operatorUserId,
+            String targetType,
+            UUID targetId,
+            Instant createdAt
+    ) {
+        return logOperation(
+                document,
+                action,
+                message,
+                operatorUserId,
+                targetType,
+                targetId,
+                createdAt
+        );
     }
 
     private void validateParent(
@@ -399,6 +515,29 @@ public class DocumentApplicationService {
                 createdAt
         );
         return reviewRecordRepository.save(record);
+    }
+
+    private DocumentOperationLog logOperation(
+            Document document,
+            String action,
+            String message,
+            UUID operatorUserId,
+            String targetType,
+            UUID targetId,
+            Instant createdAt
+    ) {
+        DocumentOperationLog operationLog = new DocumentOperationLog(
+                UUID.randomUUID(),
+                document.workspaceId(),
+                document.id(),
+                action,
+                message,
+                operatorUserId,
+                targetType,
+                targetId,
+                createdAt
+        );
+        return operationLogRepository.save(operationLog);
     }
 
     private String normalizeComment(String comment) {

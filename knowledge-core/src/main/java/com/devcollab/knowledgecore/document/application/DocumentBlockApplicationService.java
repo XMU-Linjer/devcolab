@@ -58,6 +58,15 @@ public class DocumentBlockApplicationService {
                 now
         );
         DocumentBlock saved = blockRepository.save(block);
+        documentService.logDocumentOperation(
+                document,
+                "DOCUMENT_BLOCK_CREATED",
+                "新增 Block：" + saved.type().name(),
+                currentUserId,
+                "DOCUMENT_BLOCK",
+                saved.id(),
+                saved.createdAt()
+        );
         publishBlockEvent(
                 "DOCUMENT_BLOCK_CREATED",
                 document,
@@ -97,6 +106,15 @@ public class DocumentBlockApplicationService {
                         .isPresent()
                         ? new DocumentBlockVersionConflictException()
                         : new DocumentBlockNotFoundException());
+        documentService.logDocumentOperation(
+                document,
+                "DOCUMENT_BLOCK_UPDATED",
+                "更新 Block 内容",
+                currentUserId,
+                "DOCUMENT_BLOCK",
+                updated.id(),
+                updated.updatedAt()
+        );
         publishBlockEvent(
                 "DOCUMENT_BLOCK_UPDATED",
                 document,
@@ -116,6 +134,15 @@ public class DocumentBlockApplicationService {
         DocumentBlock block = requireBlock(documentId, blockId);
 
         blockRepository.deleteById(block.id());
+        documentService.logDocumentOperation(
+                document,
+                "DOCUMENT_BLOCK_DELETED",
+                "删除 Block：" + block.type().name(),
+                currentUserId,
+                "DOCUMENT_BLOCK",
+                block.id(),
+                Instant.now()
+        );
         normalizeSortOrder(documentId);
         publishBlockEvent(
                 "DOCUMENT_BLOCK_DELETED",
@@ -155,6 +182,15 @@ public class DocumentBlockApplicationService {
                         movedBlock,
                         currentUserId
                 ));
+        documentService.logDocumentOperation(
+                document,
+                "DOCUMENT_BLOCK_MOVED",
+                "调整 Block 排序到第 " + command.targetIndex() + " 位",
+                currentUserId,
+                "DOCUMENT_BLOCK",
+                block.id(),
+                Instant.now()
+        );
         return moved;
     }
 

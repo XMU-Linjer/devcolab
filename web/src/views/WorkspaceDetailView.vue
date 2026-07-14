@@ -169,6 +169,10 @@
                     v-for="version in documentVersions"
                     :key="version.id"
                     class="version-item"
+                    role="button"
+                    tabindex="0"
+                    @click="openVersionDetail(version.id)"
+                    @keyup.enter="openVersionDetail(version.id)"
                   >
                     <div>
                       <strong>v{{ version.versionNo }} · {{ version.title }}</strong>
@@ -229,6 +233,38 @@
                 </div>
               </section>
             </div>
+
+            <section class="document-history-panel document-timeline-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Timeline</p>
+                  <h3>操作时间线</h3>
+                </div>
+                <el-tag effect="light">
+                  {{ documentTimeline.length }} 条动作
+                </el-tag>
+              </div>
+
+              <el-empty
+                v-if="documentTimeline.length === 0"
+                description="暂无操作记录"
+                :image-size="72"
+              />
+              <div v-else class="timeline-list">
+                <article
+                  v-for="item in documentTimeline"
+                  :key="item.id"
+                  class="timeline-item"
+                >
+                  <div class="timeline-dot" />
+                  <div>
+                    <strong>{{ operationActionText(item.action) }}</strong>
+                    <p>{{ item.message }}</p>
+                    <span>{{ formatTime(item.createdAt) }}</span>
+                  </div>
+                </article>
+              </div>
+            </section>
 
             <BlockEditor
               :document-id="selectedDocument.id"
@@ -296,6 +332,41 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="versionDialogVisible"
+      title="版本快照"
+      width="720px"
+      destroy-on-close
+    >
+      <el-skeleton v-if="versionDetailLoading" :rows="5" animated />
+      <div v-else-if="selectedVersionDetail" class="version-detail">
+        <div class="version-detail-header">
+          <div>
+            <p class="eyebrow">Version Snapshot</p>
+            <h3>v{{ selectedVersionDetail.versionNo }} · {{ selectedVersionDetail.title }}</h3>
+          </div>
+          <el-tag type="success" effect="light">
+            {{ formatTime(selectedVersionDetail.publishedAt) }}
+          </el-tag>
+        </div>
+
+        <div
+          v-if="versionSnapshotBlocks(selectedVersionDetail).length > 0"
+          class="snapshot-block-list"
+        >
+          <article
+            v-for="block in versionSnapshotBlocks(selectedVersionDetail)"
+            :key="block.id"
+            class="snapshot-block-item"
+          >
+            <el-tag size="small" effect="plain">{{ block.type }}</el-tag>
+            <p>{{ block.text }}</p>
+          </article>
+        </div>
+        <el-empty v-else description="该版本没有内容 Block" />
+      </div>
+    </el-dialog>
   </main>
 </template>
 
@@ -309,7 +380,9 @@ import {
   approveDocumentReview,
   createDocument,
   deleteDocument,
+  getDocumentVersion,
   getDocument,
+  listDocumentTimeline,
   listDocumentReviewRecords,
   listDocumentVersions,
   listDocumentTree,
@@ -317,6 +390,7 @@ import {
   rejectDocumentReview,
   submitDocumentReview,
   updateDocument,
+  type DocumentOperationLog,
   type DocumentReviewAction,
   type DocumentReviewRecord,
   type DocumentReviewStatus,
@@ -342,9 +416,13 @@ const documentTree = ref<DocumentTreeNode[]>([]);
 const selectedDocument = ref<DocumentSummary | null>(null);
 const documentVersions = ref<DocumentVersion[]>([]);
 const reviewRecords = ref<DocumentReviewRecord[]>([]);
+const documentTimeline = ref<DocumentOperationLog[]>([]);
 const loading = ref(false);
 const documentLoading = ref(false);
 const dialogVisible = ref(false);
+const versionDialogVisible = ref(false);
+const versionDetailLoading = ref(false);
+const selectedVersionDetail = ref<DocumentVersion | null>(null);
 const createParentDocument = ref<FlatDocumentTreeNode | null>(null);
 const moveDialogVisible = ref(false);
 const movingDocument = ref(false);
@@ -534,6 +612,7 @@ async function handleDeleteDocument(node: FlatDocumentTreeNode) {
       selectedDocument.value = null;
       documentVersions.value = [];
       reviewRecords.value = [];
+      documentTimeline.value = [];
       if (documentTree.value[0]) {
         await openDocument(documentTree.value[0].id);
       }
@@ -554,6 +633,7 @@ async function handleSubmitReview() {
       selectedDocument.value.id,
     );
     await loadReviewRecords(selectedDocument.value.id);
+    await loadDocumentTimeline(selectedDocument.value.id);
     ElMessage.success('文档已提交评审');
   } catch (error) {
     ElMessage.error(readableError(error, '提交评审失败'));
@@ -575,6 +655,7 @@ async function handleApproveReview() {
     );
     await loadDocumentVersions(selectedDocument.value.id);
     await loadReviewRecords(selectedDocument.value.id);
+    await loadDocumentTimeline(selectedDocument.value.id);
     reviewComment.value = '';
     ElMessage.success('文档已发布为新版本');
   } catch (error) {
@@ -596,6 +677,7 @@ async function handleRejectReview() {
       { comment: normalizeReviewComment(reviewComment.value) },
     );
     await loadReviewRecords(selectedDocument.value.id);
+    await loadDocumentTimeline(selectedDocument.value.id);
     reviewComment.value = '';
     ElMessage.success('文档已驳回，可修改后重新提交');
   } catch (error) {
@@ -626,11 +708,13 @@ async function openDocument(documentId: string, blockId: string | null = null) {
     await Promise.all([
       loadDocumentVersions(documentId),
       loadReviewRecords(documentId),
+      loadDocumentTimeline(documentId),
     ]);
   } catch (error) {
     focusedBlockId.value = null;
     documentVersions.value = [];
     reviewRecords.value = [];
+    documentTimeline.value = [];
     ElMessage.error(readableError(error, '文档加载失败'));
   } finally {
     documentLoading.value = false;
@@ -643,6 +727,31 @@ async function loadDocumentVersions(documentId: string) {
 
 async function loadReviewRecords(documentId: string) {
   reviewRecords.value = await listDocumentReviewRecords(documentId);
+}
+
+async function loadDocumentTimeline(documentId: string) {
+  documentTimeline.value = await listDocumentTimeline(documentId);
+}
+
+async function openVersionDetail(versionId: string) {
+  if (!selectedDocument.value) {
+    return;
+  }
+
+  versionDialogVisible.value = true;
+  versionDetailLoading.value = true;
+  selectedVersionDetail.value = null;
+  try {
+    selectedVersionDetail.value = await getDocumentVersion(
+      selectedDocument.value.id,
+      versionId,
+    );
+  } catch (error) {
+    ElMessage.error(readableError(error, '版本快照加载失败'));
+    versionDialogVisible.value = false;
+  } finally {
+    versionDetailLoading.value = false;
+  }
 }
 
 function currentWorkspaceId() {
@@ -677,6 +786,40 @@ function snapshotBlockCount(version: DocumentVersion) {
   } catch {
     return 0;
   }
+}
+
+interface VersionSnapshotBlock {
+  id: string;
+  type: string;
+  text: string;
+}
+
+function versionSnapshotBlocks(version: DocumentVersion): VersionSnapshotBlock[] {
+  try {
+    const snapshot = JSON.parse(version.snapshotPayload) as {
+      blocks?: VersionSnapshotBlock[];
+    };
+    return Array.isArray(snapshot.blocks) ? snapshot.blocks : [];
+  } catch {
+    return [];
+  }
+}
+
+function operationActionText(action: string) {
+  const actionMap: Record<string, string> = {
+    DOCUMENT_CREATED: '创建文档',
+    DOCUMENT_UPDATED: '更新文档',
+    DOCUMENT_MOVED: '移动文档',
+    DOCUMENT_DELETED: '删除文档',
+    DOCUMENT_BLOCK_CREATED: '新增内容块',
+    DOCUMENT_BLOCK_UPDATED: '更新内容块',
+    DOCUMENT_BLOCK_DELETED: '删除内容块',
+    DOCUMENT_BLOCK_MOVED: '调整内容块排序',
+    DOCUMENT_REVIEW_SUBMITTED: '提交评审',
+    DOCUMENT_REVIEW_APPROVED: '通过评审',
+    DOCUMENT_REVIEW_REJECTED: '驳回评审',
+  };
+  return actionMap[action] ?? action;
 }
 
 function reviewActionText(action: DocumentReviewAction) {

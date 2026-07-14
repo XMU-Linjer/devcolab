@@ -159,6 +159,19 @@ public class DocumentController {
                 .toList();
     }
 
+    @GetMapping("/api/v1/documents/{documentId}/versions/{versionId}")
+    public DocumentVersionResponse version(
+            @PathVariable UUID documentId,
+            @PathVariable UUID versionId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return DocumentVersionResponse.from(documentService.getVersion(
+                documentId,
+                versionId,
+                currentUser.userId()
+        ));
+    }
+
     @GetMapping("/api/v1/documents/{documentId}/review-records")
     public List<DocumentReviewRecordResponse> reviewRecords(
             @PathVariable UUID documentId,
@@ -170,6 +183,17 @@ public class DocumentController {
                 )
                 .stream()
                 .map(DocumentReviewRecordResponse::from)
+                .toList();
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/timeline")
+    public List<DocumentOperationLogResponse> timeline(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return documentService.listTimeline(documentId, currentUser.userId())
+                .stream()
+                .map(DocumentOperationLogResponse::from)
                 .toList();
     }
 
