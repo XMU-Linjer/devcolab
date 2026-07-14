@@ -4,7 +4,6 @@ import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +14,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.util.UUID;
 
@@ -49,20 +47,6 @@ class ElasticsearchSearchProjectionIT {
     private final RestClient elasticsearch = RestClient.builder()
             .baseUrl("http://localhost:9200")
             .build();
-
-    @BeforeEach
-    void resetIndex() {
-        try {
-            elasticsearch.delete()
-                    .uri("/devcollab-search-it")
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (RestClientResponseException exception) {
-            if (exception.getStatusCode().value() != 404) {
-                throw exception;
-            }
-        }
-    }
 
     @Test
     void shouldSearchDocumentAndBlockThroughElasticsearchProjection()
@@ -105,6 +89,158 @@ class ElasticsearchSearchProjectionIT {
                 countByType(hits, "BLOCK_CONTENT"),
                 relayResult.published(),
                 relayResult.failed()
+        );
+    }
+
+    @Test
+    void shouldProvideRepeatableElasticsearchSearchBaseline()
+            throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token, "ES search baseline")
+                .get("id")
+                .asText();
+        seedBaselineDocuments(token, workspaceId);
+
+        OutboxRelayResult relayResult = outboxRelayService.relayPendingEvents();
+        refreshIndex();
+
+        assertThat(relayResult.published()).isGreaterThanOrEqualTo(9);
+        assertThat(relayResult.failed()).isZero();
+
+        assertBaselineScenario(
+                token,
+                workspaceId,
+                "title-and-content-api",
+                "api",
+                3,
+                1,
+                2
+        );
+        assertBaselineScenario(
+                token,
+                workspaceId,
+                "content-idempotency",
+                "idempotency",
+                1,
+                0,
+                1
+        );
+        assertBaselineScenario(
+                token,
+                workspaceId,
+                "content-csrf",
+                "csrf",
+                1,
+                0,
+                1
+        );
+        assertBaselineScenario(
+                token,
+                workspaceId,
+                "title-and-content-agent",
+                "agent",
+                2,
+                1,
+                1
+        );
+        assertBaselineScenario(
+                token,
+                workspaceId,
+                "no-hit",
+                "not-exists-keyword",
+                0,
+                0,
+                0
+        );
+    }
+
+    private void assertBaselineScenario(
+            String token,
+            String workspaceId,
+            String scenarioName,
+            String keyword,
+            int expectedTotalHits,
+            int expectedTitleHits,
+            int expectedContentHits
+    ) throws Exception {
+        long startedAt = System.nanoTime();
+        MvcResult result = mockMvc.perform(
+                        get("/api/v1/workspaces/{id}/search", workspaceId)
+                                .queryParam("keyword", keyword)
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+
+        JsonNode hits = responseJson(result);
+        int titleHits = countByType(hits, "DOCUMENT_TITLE");
+        int contentHits = countByType(hits, "BLOCK_CONTENT");
+
+        assertThat(hits).hasSize(expectedTotalHits);
+        assertThat(titleHits).isEqualTo(expectedTitleHits);
+        assertThat(contentHits).isEqualTo(expectedContentHits);
+
+        System.out.printf(
+                "SEARCH_BASELINE engine=elasticsearch scenario=%s keyword=%s hits=%d titleHits=%d contentHits=%d durationMs=%d%n",
+                scenarioName,
+                keyword,
+                hits.size(),
+                titleHits,
+                contentHits,
+                durationMs
+        );
+    }
+
+    private void seedBaselineDocuments(String token, String workspaceId)
+            throws Exception {
+        String orderApiDocumentId = createDocument(
+                token,
+                workspaceId,
+                "Order API Contract"
+        ).get("id").asText();
+        createBlock(
+                token,
+                orderApiDocumentId,
+                "POST /api/orders requires idempotency key"
+        );
+        createBlock(
+                token,
+                orderApiDocumentId,
+                "Order API response returns orderId and status"
+        );
+
+        String authDocumentId = createDocument(
+                token,
+                workspaceId,
+                "Login Session Security"
+        ).get("id").asText();
+        createBlock(
+                token,
+                authDocumentId,
+                "Refresh token uses HttpOnly cookie and CSRF header"
+        );
+
+        String agentDocumentId = createDocument(
+                token,
+                workspaceId,
+                "Agent Review Evidence"
+        ).get("id").asText();
+        createBlock(
+                token,
+                agentDocumentId,
+                "Agent review reads requirement docs and code changes"
+        );
+
+        String frontendDocumentId = createDocument(
+                token,
+                workspaceId,
+                "Frontend Workspace Search"
+        ).get("id").asText();
+        createBlock(
+                token,
+                frontendDocumentId,
+                "Vue search panel opens matched document"
         );
     }
 
