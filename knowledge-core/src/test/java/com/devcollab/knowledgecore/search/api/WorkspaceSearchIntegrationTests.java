@@ -59,7 +59,9 @@ class WorkspaceSearchIntegrationTests {
                 .andExpect(jsonPath("$[*].snippet")
                         .value(hasItem(
                                 "The order API needs idempotency key"
-                        )));
+                        )))
+                .andExpect(jsonPath("$[*].highlights[0].start").exists())
+                .andExpect(jsonPath("$[*].highlights[0].end").exists());
     }
 
     @Test

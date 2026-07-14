@@ -326,6 +326,13 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.workspace-search-snippet mark {
+  border-radius: 4px;
+  background: #fff1b8;
+  color: #7a4b00;
+  padding: 0 2px;
+}
+
 .workspace-search-result-meta {
   display: flex;
   align-items: flex-end;

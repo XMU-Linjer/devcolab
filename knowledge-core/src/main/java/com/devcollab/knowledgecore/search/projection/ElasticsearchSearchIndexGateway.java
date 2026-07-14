@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.search.projection;
 
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchHitType;
+import com.devcollab.knowledgecore.search.domain.SearchSnippetHighlighter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -20,8 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
         havingValue = "true"
 )
 public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
-
-    private static final int SNIPPET_LIMIT = 120;
 
     private final RestClient restClient;
     private final ElasticsearchSearchProperties properties;
@@ -154,14 +153,22 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
 
         return hits.stream()
                 .map(hit -> (Map<String, Object>) hit.get("_source"))
-                .map(source -> new SearchHit(
-                        SearchHitType.valueOf((String) source.get("hitType")),
-                        UUID.fromString((String) source.get("documentId")),
-                        (String) source.get("documentTitle"),
-                        blockId(source),
-                        snippet((String) source.get("text"), keyword),
-                        Instant.parse((String) source.get("updatedAt"))
-                ))
+                .map(source -> {
+                    SearchSnippetHighlighter.Result snippet =
+                            SearchSnippetHighlighter.create(
+                                    (String) source.get("text"),
+                                    keyword
+                            );
+                    return new SearchHit(
+                            SearchHitType.valueOf((String) source.get("hitType")),
+                            UUID.fromString((String) source.get("documentId")),
+                            (String) source.get("documentTitle"),
+                            blockId(source),
+                            snippet.snippet(),
+                            snippet.highlights(),
+                            Instant.parse((String) source.get("updatedAt"))
+                    );
+                })
                 .toList();
     }
 
@@ -234,23 +241,4 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
         return UUID.fromString(value);
     }
 
-    private static String snippet(String text, String keyword) {
-        String normalizedText = text == null ? "" : text;
-        if (normalizedText.length() <= SNIPPET_LIMIT) {
-            return normalizedText;
-        }
-
-        String lowerText = normalizedText.toLowerCase();
-        String lowerKeyword = keyword.toLowerCase();
-        int hitIndex = lowerText.indexOf(lowerKeyword);
-        if (hitIndex < 0) {
-            return normalizedText.substring(0, SNIPPET_LIMIT) + "...";
-        }
-
-        int start = Math.max(0, hitIndex - 40);
-        int end = Math.min(normalizedText.length(), start + SNIPPET_LIMIT);
-        String prefix = start > 0 ? "..." : "";
-        String suffix = end < normalizedText.length() ? "..." : "";
-        return prefix + normalizedText.substring(start, end) + suffix;
-    }
 }

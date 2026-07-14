@@ -2,12 +2,18 @@ import { http } from './http';
 
 export type SearchHitType = 'DOCUMENT_TITLE' | 'BLOCK_CONTENT';
 
+export interface SearchHighlightRange {
+  start: number;
+  end: number;
+}
+
 export interface SearchHit {
   type: SearchHitType;
   documentId: string;
   documentTitle: string;
   blockId: string | null;
   snippet: string;
+  highlights: SearchHighlightRange[];
   updatedAt: string;
 }
 

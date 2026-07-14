@@ -49,7 +49,15 @@
       >
         <div class="workspace-search-result-main">
           <span class="workspace-search-title">{{ result.documentTitle }}</span>
-          <span class="workspace-search-snippet">{{ result.snippet }}</span>
+          <span class="workspace-search-snippet">
+            <template
+              v-for="segment in highlightedSegments(result)"
+              :key="`${result.type}-${result.documentId}-${result.blockId || 'title'}-${segment.start}`"
+            >
+              <mark v-if="segment.highlighted">{{ segment.text }}</mark>
+              <span v-else>{{ segment.text }}</span>
+            </template>
+          </span>
         </div>
         <div class="workspace-search-result-meta">
           <el-tag size="small" effect="plain">
@@ -111,6 +119,56 @@ function clearResults() {
 
 function typeText(type: SearchHitType) {
   return type === 'DOCUMENT_TITLE' ? '标题命中' : '正文命中';
+}
+
+function highlightedSegments(result: SearchHit) {
+  const ranges = result.highlights ?? [];
+  if (ranges.length === 0) {
+    return [
+      {
+        start: 0,
+        text: result.snippet,
+        highlighted: false,
+      },
+    ];
+  }
+
+  const segments: Array<{
+    start: number;
+    text: string;
+    highlighted: boolean;
+  }> = [];
+  let cursor = 0;
+
+  for (const range of ranges) {
+    const start = Math.max(0, Math.min(range.start, result.snippet.length));
+    const end = Math.max(start, Math.min(range.end, result.snippet.length));
+    if (cursor < start) {
+      segments.push({
+        start: cursor,
+        text: result.snippet.slice(cursor, start),
+        highlighted: false,
+      });
+    }
+    if (start < end) {
+      segments.push({
+        start,
+        text: result.snippet.slice(start, end),
+        highlighted: true,
+      });
+    }
+    cursor = end;
+  }
+
+  if (cursor < result.snippet.length) {
+    segments.push({
+      start: cursor,
+      text: result.snippet.slice(cursor),
+      highlighted: false,
+    });
+  }
+
+  return segments;
 }
 
 function formatTime(value: string) {
