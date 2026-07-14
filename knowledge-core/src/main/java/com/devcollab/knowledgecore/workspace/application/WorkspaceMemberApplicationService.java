@@ -25,17 +25,20 @@ public class WorkspaceMemberApplicationService {
     private final WorkspaceMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final WorkspacePermissionPolicy permissionPolicy;
+    private final WorkspaceMemberCacheService memberCache;
 
     public WorkspaceMemberApplicationService(
             WorkspaceApplicationService workspaceService,
             WorkspaceMemberRepository memberRepository,
             UserRepository userRepository,
-            WorkspacePermissionPolicy permissionPolicy
+            WorkspacePermissionPolicy permissionPolicy,
+            WorkspaceMemberCacheService memberCache
     ) {
         this.workspaceService = workspaceService;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.permissionPolicy = permissionPolicy;
+        this.memberCache = memberCache;
     }
 
     public List<WorkspaceMemberView> listMembers(
@@ -82,6 +85,7 @@ public class WorkspaceMemberApplicationService {
                 Instant.now()
         );
         memberRepository.save(member);
+        memberCache.evict(workspaceId, targetUser.id());
         return WorkspaceMemberView.from(member, targetUser);
     }
 
@@ -107,6 +111,7 @@ public class WorkspaceMemberApplicationService {
                 target.joinedAt()
         );
         memberRepository.save(updated);
+        memberCache.evict(workspaceId, targetUserId);
 
         UserAccount user = userRepository.findById(targetUserId)
                 .orElseThrow(WorkspaceUserNotFoundException::new);
@@ -127,6 +132,7 @@ public class WorkspaceMemberApplicationService {
         }
 
         memberRepository.deleteByWorkspaceIdAndUserId(workspaceId, targetUserId);
+        memberCache.evict(workspaceId, targetUserId);
     }
 
     private WorkspaceMember requireMemberManager(

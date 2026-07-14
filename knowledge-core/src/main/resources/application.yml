@@ -7,11 +7,18 @@ spring:
     password: ${DEVCOLLAB_DB_PASSWORD:devcollab}
   flyway:
     enabled: true
+  data:
+    redis:
+      host: ${DEVCOLLAB_REDIS_HOST:localhost}
+      port: ${DEVCOLLAB_REDIS_PORT:6379}
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
+  cache:
+    workspace-member-ttl: ${DEVCOLLAB_CACHE_WORKSPACE_MEMBER_TTL:PT10M}
+    document-tree-ttl: ${DEVCOLLAB_CACHE_DOCUMENT_TREE_TTL:PT5M}
   search:
     engine: ${DEVCOLLAB_SEARCH_ENGINE:postgres}
     elasticsearch:

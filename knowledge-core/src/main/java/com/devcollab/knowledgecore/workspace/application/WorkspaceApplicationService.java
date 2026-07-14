@@ -19,13 +19,16 @@ public class WorkspaceApplicationService {
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository memberRepository;
+    private final WorkspaceMemberCacheService memberCache;
 
     public WorkspaceApplicationService(
             WorkspaceRepository workspaceRepository,
-            WorkspaceMemberRepository memberRepository
+            WorkspaceMemberRepository memberRepository,
+            WorkspaceMemberCacheService memberCache
     ) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
+        this.memberCache = memberCache;
     }
 
     @Transactional
@@ -77,8 +80,8 @@ public class WorkspaceApplicationService {
             UUID currentUserId
     ) {
         requireWorkspace(workspaceId);
-        return memberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, currentUserId)
+        return memberCache
+                .findCached(workspaceId, currentUserId)
                 .orElseThrow(WorkspaceAccessDeniedException::new);
     }
 

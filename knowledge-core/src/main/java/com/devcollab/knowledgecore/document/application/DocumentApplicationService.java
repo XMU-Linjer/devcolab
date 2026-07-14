@@ -47,6 +47,7 @@ public class DocumentApplicationService {
     private final WorkspacePermissionPolicy permissionPolicy;
     private final OutboxEventPublisher outboxEventPublisher;
     private final ObjectMapper objectMapper;
+    private final DocumentTreeCacheService treeCache;
 
     public DocumentApplicationService(
             DocumentRepository documentRepository,
@@ -57,7 +58,8 @@ public class DocumentApplicationService {
             WorkspaceApplicationService workspaceService,
             WorkspacePermissionPolicy permissionPolicy,
             OutboxEventPublisher outboxEventPublisher,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            DocumentTreeCacheService treeCache
     ) {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
@@ -68,6 +70,7 @@ public class DocumentApplicationService {
         this.permissionPolicy = permissionPolicy;
         this.outboxEventPublisher = outboxEventPublisher;
         this.objectMapper = objectMapper;
+        this.treeCache = treeCache;
     }
 
     @Transactional
@@ -104,6 +107,7 @@ public class DocumentApplicationService {
                 now
         );
         publishDocumentEvent("DOCUMENT_CREATED", saved, currentUserId);
+        treeCache.evictTree(workspaceId);
         return saved;
     }
 
@@ -112,7 +116,7 @@ public class DocumentApplicationService {
             UUID currentUserId
     ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
-        return documentRepository.findAllByWorkspaceId(workspaceId);
+        return treeCache.listTreeSource(workspaceId);
     }
 
     public Document get(UUID documentId, UUID currentUserId) {
@@ -159,6 +163,7 @@ public class DocumentApplicationService {
                 saved.updatedAt()
         );
         publishDocumentEvent("DOCUMENT_UPDATED", saved, currentUserId);
+        treeCache.evictTree(document.workspaceId());
         return saved;
     }
 
@@ -199,6 +204,7 @@ public class DocumentApplicationService {
                 saved.updatedAt()
         );
         publishDocumentEvent("DOCUMENT_MOVED", saved, currentUserId);
+        treeCache.evictTree(saved.workspaceId());
         return saved;
     }
 
@@ -220,6 +226,7 @@ public class DocumentApplicationService {
         );
         documentRepository.deleteById(documentId);
         publishDocumentEvent("DOCUMENT_DELETED", document, currentUserId);
+        treeCache.evictTree(document.workspaceId());
     }
 
     @Transactional
