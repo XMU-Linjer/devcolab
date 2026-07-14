@@ -25,6 +25,17 @@
       </template>
     </el-input>
 
+    <el-radio-group
+      v-model="scope"
+      class="workspace-search-scope"
+      size="small"
+      @change="handleScopeChange"
+    >
+      <el-radio-button value="ALL">全部</el-radio-button>
+      <el-radio-button value="TITLE">只搜标题</el-radio-button>
+      <el-radio-button value="CONTENT">只搜正文</el-radio-button>
+    </el-radio-group>
+
     <el-alert
       v-if="errorMessage"
       class="workspace-search-alert"
@@ -74,7 +85,12 @@
 import { Search } from '@element-plus/icons-vue';
 import { ref } from 'vue';
 
-import { searchWorkspace, type SearchHit, type SearchHitType } from '@/api/search';
+import {
+  searchWorkspace,
+  type SearchHit,
+  type SearchHitType,
+  type SearchScope,
+} from '@/api/search';
 import { readableError } from '@/utils/error';
 
 const props = defineProps<{
@@ -86,6 +102,7 @@ const emit = defineEmits<{
 }>();
 
 const keyword = ref('');
+const scope = ref<SearchScope>('ALL');
 const results = ref<SearchHit[]>([]);
 const searching = ref(false);
 const searched = ref(false);
@@ -103,11 +120,21 @@ async function handleSearch() {
   errorMessage.value = '';
 
   try {
-    results.value = await searchWorkspace(props.workspaceId, trimmedKeyword);
+    results.value = await searchWorkspace(
+      props.workspaceId,
+      trimmedKeyword,
+      scope.value,
+    );
   } catch (error) {
     errorMessage.value = readableError(error, '搜索失败，请稍后重试');
   } finally {
     searching.value = false;
+  }
+}
+
+function handleScopeChange() {
+  if (searched.value && keyword.value.trim()) {
+    void handleSearch();
   }
 }
 

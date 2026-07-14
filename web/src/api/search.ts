@@ -1,6 +1,7 @@
 import { http } from './http';
 
 export type SearchHitType = 'DOCUMENT_TITLE' | 'BLOCK_CONTENT';
+export type SearchScope = 'ALL' | 'TITLE' | 'CONTENT';
 
 export interface SearchHighlightRange {
   start: number;
@@ -20,12 +21,14 @@ export interface SearchHit {
 export async function searchWorkspace(
   workspaceId: string,
   keyword: string,
+  scope: SearchScope = 'ALL',
 ): Promise<SearchHit[]> {
   const { data } = await http.get<SearchHit[]>(
     `/workspaces/${workspaceId}/search`,
     {
       params: {
         keyword,
+        scope,
       },
     },
   );

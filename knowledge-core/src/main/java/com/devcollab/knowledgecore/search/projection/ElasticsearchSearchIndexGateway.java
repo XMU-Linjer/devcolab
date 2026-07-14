@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.search.projection;
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchHitType;
 import com.devcollab.knowledgecore.search.domain.SearchSnippetHighlighter;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -128,11 +129,12 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
     public List<SearchHit> searchWorkspace(
             UUID workspaceId,
             String keyword,
+            SearchScope scope,
             int limit
     ) {
         Map<String, Object> response = restClient.post()
                 .uri("/{indexName}/_search", properties.indexName())
-                .body(searchBody(workspaceId, keyword, limit))
+                .body(searchBody(workspaceId, keyword, scope, limit))
                 .retrieve()
                 .body(Map.class);
 
@@ -204,24 +206,36 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
     private static Map<String, Object> searchBody(
             UUID workspaceId,
             String keyword,
+            SearchScope scope,
             int limit
     ) {
+        List<Map<String, Object>> filters = new java.util.ArrayList<>();
+        filters.add(Map.of(
+                "term",
+                Map.of("workspaceId", workspaceId.toString())
+        ));
+        if (scope == SearchScope.TITLE) {
+            filters.add(Map.of(
+                    "term",
+                    Map.of("hitType", SearchHitType.DOCUMENT_TITLE.name())
+            ));
+        } else if (scope == SearchScope.CONTENT) {
+            filters.add(Map.of(
+                    "term",
+                    Map.of("hitType", SearchHitType.BLOCK_CONTENT.name())
+            ));
+        }
+
         return Map.of(
                 "size", limit,
                 "query", Map.of(
                         "bool", Map.of(
-                                "filter", List.of(Map.of(
-                                        "term",
-                                        Map.of("workspaceId", workspaceId.toString())
-                                )),
+                                "filter", filters,
                                 "must", List.of(Map.of(
-                                        "multi_match",
+                                        "match",
                                         Map.of(
-                                                "query", keyword,
-                                                "fields", List.of(
-                                                        "documentTitle^3",
-                                                        "text"
-                                                )
+                                                "text",
+                                                Map.of("query", keyword)
                                         )
                                 ))
                         )

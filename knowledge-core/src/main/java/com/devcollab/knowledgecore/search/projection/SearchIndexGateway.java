@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.search.projection;
 
 import com.devcollab.knowledgecore.search.domain.SearchHit;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,5 +23,10 @@ public interface SearchIndexGateway {
             Instant updatedAt
     );
 
-    List<SearchHit> searchWorkspace(UUID workspaceId, String keyword, int limit);
+    List<SearchHit> searchWorkspace(
+            UUID workspaceId,
+            String keyword,
+            SearchScope scope,
+            int limit
+    );
 }

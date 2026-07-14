@@ -7,6 +7,7 @@ import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import com.devcollab.knowledgecore.search.domain.SearchHit;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -199,6 +200,7 @@ class SearchIndexProjectionServiceTests {
         public List<SearchHit> searchWorkspace(
                 UUID workspaceId,
                 String keyword,
+                SearchScope scope,
                 int limit
         ) {
             return List.of();

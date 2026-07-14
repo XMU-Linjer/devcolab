@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.search.api;
 
 import com.devcollab.knowledgecore.search.application.SearchApplicationService;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,12 +25,14 @@ public class SearchController {
     public List<SearchHitResponse> searchWorkspace(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
-            @RequestParam String keyword
+            @RequestParam String keyword,
+            @RequestParam(required = false) String scope
     ) {
         return searchService.searchWorkspace(
                         workspaceId,
                         currentUser.userId(),
-                        keyword
+                        keyword,
+                        SearchScope.from(scope)
                 )
                 .stream()
                 .map(SearchHitResponse::from)

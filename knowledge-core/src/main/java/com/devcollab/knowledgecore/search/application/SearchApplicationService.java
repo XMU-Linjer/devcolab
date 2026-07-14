@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.search.application;
 
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchRepository;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +28,8 @@ public class SearchApplicationService {
     public List<SearchHit> searchWorkspace(
             UUID workspaceId,
             UUID currentUserId,
-            String keyword
+            String keyword,
+            SearchScope scope
     ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
 
@@ -39,6 +41,7 @@ public class SearchApplicationService {
         return searchRepository.searchWorkspace(
                 workspaceId,
                 normalizedKeyword,
+                scope,
                 DEFAULT_LIMIT
         );
     }

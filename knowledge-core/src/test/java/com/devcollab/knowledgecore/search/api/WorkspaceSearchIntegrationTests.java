@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -62,6 +63,54 @@ class WorkspaceSearchIntegrationTests {
                         )))
                 .andExpect(jsonPath("$[*].highlights[0].start").exists())
                 .andExpect(jsonPath("$[*].highlights[0].end").exists());
+    }
+
+    @Test
+    void shouldFilterSearchScopeAndPreferTitleHits() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token, "Scoped search")
+                .get("id")
+                .asText();
+        String titleDocumentId = createDocument(
+                token,
+                workspaceId,
+                "API handbook"
+        ).get("id").asText();
+        String contentDocumentId = createDocument(
+                token,
+                workspaceId,
+                "Order guide"
+        ).get("id").asText();
+        createBlock(
+                token,
+                contentDocumentId,
+                "The order API needs idempotency key"
+        );
+
+        mockMvc.perform(get("/api/v1/workspaces/{id}/search", workspaceId)
+                        .queryParam("keyword", "api")
+                        .queryParam("scope", "TITLE")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].type").value("DOCUMENT_TITLE"))
+                .andExpect(jsonPath("$[0].documentId").value(titleDocumentId));
+
+        mockMvc.perform(get("/api/v1/workspaces/{id}/search", workspaceId)
+                        .queryParam("keyword", "api")
+                        .queryParam("scope", "CONTENT")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].type").value("BLOCK_CONTENT"))
+                .andExpect(jsonPath("$[0].documentId").value(contentDocumentId));
+
+        mockMvc.perform(get("/api/v1/workspaces/{id}/search", workspaceId)
+                        .queryParam("keyword", "api")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].type").value("DOCUMENT_TITLE"));
     }
 
     @Test

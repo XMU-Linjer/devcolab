@@ -8,6 +8,7 @@ public interface SearchRepository {
     List<SearchHit> searchWorkspace(
             UUID workspaceId,
             String keyword,
+            SearchScope scope,
             int limit
     );
 }

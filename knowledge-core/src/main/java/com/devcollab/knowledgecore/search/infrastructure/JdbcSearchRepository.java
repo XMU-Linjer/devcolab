@@ -4,6 +4,7 @@ import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchHitType;
 import com.devcollab.knowledgecore.search.domain.SearchSnippetHighlighter;
 import com.devcollab.knowledgecore.search.domain.SearchRepository;
+import com.devcollab.knowledgecore.search.domain.SearchScope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -32,11 +33,34 @@ public class JdbcSearchRepository implements SearchRepository {
     public List<SearchHit> searchWorkspace(
             UUID workspaceId,
             String keyword,
+            SearchScope scope,
             int limit
     ) {
         String pattern = "%" + keyword.toLowerCase() + "%";
 
-        List<SearchHit> titleHits = jdbcTemplate.query("""
+        List<SearchHit> titleHits = scope.includesTitle()
+                ? searchTitleHits(workspaceId, keyword, pattern)
+                : List.of();
+
+        List<SearchHit> blockHits = scope.includesContent()
+                ? searchBlockHits(workspaceId, keyword, pattern)
+                : List.of();
+
+        return Stream.concat(titleHits.stream(), blockHits.stream())
+                .sorted(Comparator
+                        .comparingInt(JdbcSearchRepository::typeRank)
+                        .thenComparing(SearchHit::updatedAt, Comparator.reverseOrder())
+                        .thenComparing(SearchHit::documentTitle))
+                .limit(limit)
+                .toList();
+    }
+
+    private List<SearchHit> searchTitleHits(
+            UUID workspaceId,
+            String keyword,
+            String pattern
+    ) {
+        return jdbcTemplate.query("""
                         SELECT id, title, updated_at
                           FROM documents
                          WHERE workspace_id = ?
@@ -61,8 +85,14 @@ public class JdbcSearchRepository implements SearchRepository {
                 workspaceId,
                 pattern
         );
+    }
 
-        List<SearchHit> blockHits = jdbcTemplate.query("""
+    private List<SearchHit> searchBlockHits(
+            UUID workspaceId,
+            String keyword,
+            String pattern
+    ) {
+        return jdbcTemplate.query("""
                         SELECT d.id AS document_id,
                                d.title AS document_title,
                                b.id AS block_id,
@@ -93,13 +123,9 @@ public class JdbcSearchRepository implements SearchRepository {
                 workspaceId,
                 pattern
         );
+    }
 
-        return Stream.concat(titleHits.stream(), blockHits.stream())
-                .sorted(Comparator
-                        .comparing(SearchHit::updatedAt, Comparator.reverseOrder())
-                        .thenComparing(SearchHit::documentTitle)
-                        .thenComparing(hit -> hit.type().name()))
-                .limit(limit)
-                .toList();
+    private static int typeRank(SearchHit hit) {
+        return hit.type() == SearchHitType.DOCUMENT_TITLE ? 0 : 1;
     }
 }
