@@ -63,13 +63,27 @@ After each meaningful implementation step, update a local ignored document under
 
 Rules:
 
-- Use existing local files when all 90-99 numbers are occupied.
-- Prefer appending to `docs/97-local-project-explanation-and-next-plan-v0.1.md` for cross-module project explanation and interview wording.
-- Use a topic-specific existing document when the change clearly belongs there, such as auth, frontend-backend integration, block editing, permissions, or document tree.
+- Always prefer creating or updating a **topic-specific** local learning document. Do NOT append to a single catch-all document.
+- Pre-assigned topic slots:
+  - `90` — Search, Outbox, Elasticsearch projection, and PG vs ES benchmarking
+  - `91` — Interview knowledge map (total index of all learning documents)
+  - `92` — Frontend technology ADR
+  - `93` — Authentication (JWT, Refresh Cookie, CSRF, BCrypt)
+  - `94` — Workspace, permission, document tree, and member management
+  - `95` — Document Block editing, optimistic locking, and Tiptap
+  - `96` — Frontend-backend integration, token refresh, and CORS
+  - `97` — Project overview and next-steps plan (summary only; specifics go in topic documents)
+  - `98` — Document lifecycle, version snapshots, operation timeline, and Review Issue
+  - `99` — Available for future topic
 - Keep local learning documents ignored and out of Git commits.
-- Include current implementation conclusion, end-to-end chain, core technical terms, design reason, future upgrade path, interview Q&A, and truthful verification results.
+- Every topic document MUST include these four dimensions:
+  1. What is the technology stack? (technical definition)
+  2. What problem does it solve? What improvement does it bring? (motivation)
+  3. What business loop was completed? What's the end-to-end chain? (implementation flow)
+  4. Why is the architecture designed this way? Why not alternatives? (design reasoning, interview-ready)
+- Additionally include: current implementation conclusion, core technical terms, future upgrade path, interview Q&A, and truthful verification results.
 
-If a new local document is absolutely needed, follow `devcollab-document-governance`: use a precise `9N-local-...` filename, update index, and add the exact path to `.gitignore`.
+When a new topic clearly belongs to an existing numbered slot, update that document and bump its minor version. When the topic is genuinely new and all 90–99 slots are full, create a new `9N-local-...md` file following `devcollab-document-governance`.
 
 ### 5. Keep commit boundaries clean
 

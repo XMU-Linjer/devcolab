@@ -12,24 +12,23 @@
 | 06 | `06-devcollab-authentication-design-v0.4.md` | 定义注册、登录、Token、Cookie、会话、限流、安全及验收 | V0.4 | 应提交 |
 | 07 | `07-devcollab-agent-rag-architecture-v0.1.md` | 定义 LangChain/LangGraph、RAG 入库、混合检索、Reviewer、Evidence、安全和评测 | V0.1 | 应提交 |
 
-正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。需求变更影响系统行为时应同步评估架构与前端设计；架构约束变化时应同步更新验证方案和对应专项设计。
+正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 
-## 2. 本地执行材料
+## 2. 本地学习材料
 
-| 顺序 | 文档 | 作用 | 版本库状态 |
-|---:|---|---|---|
-| 90 | `90-local-development-plan-v0.2.md` | 个人八周排期、阶段一纵向切片和执行范围 | 已由 `.gitignore` 忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.2.md` | 个人学习、服务拆分依据与面试知识映射 | 已由 `.gitignore` 忽略 |
-| 92 | `92-local-frontend-technology-adr-v0.1.md` | 本地前端选型、知识基线和技术风险记录 | 已由 `.gitignore` 忽略 |
-| 93 | `93-local-authentication-interview-guide-v0.2.md` | 登录全链路、JWT、Cookie、安全威胁和面试表达 | 已由 `.gitignore` 忽略 |
-| 94 | `94-local-workspace-document-interview-guide-v0.1.md` | 工作空间、成员隔离、文档树链路、技术栈与场景题 | 已由 `.gitignore` 忽略 |
-| 95 | `95-local-document-block-learning-guide-v0.2.md` | 文档 Block 增删改查、拖动排序、权限校验与代码调用链 | 已由 `.gitignore` 忽略 |
-| 96 | `96-local-frontend-backend-integration-guide-v0.1.md` | 前后端联调、Refresh Cookie 自动续期、CSRF Header、401 处理和打包优化学习记录 | 已由 `.gitignore` 忽略 |
-| 97 | `97-local-project-explanation-and-next-plan-v0.1.md` | 项目讲解稿、面试表达、MVP 总结和下一模块施工计划 | 已由 `.gitignore` 忽略 |
-| 98 | `98-local-workspace-permission-learning-guide-v0.1.md` | 工作区成员与权限模块、RBAC、越权校验和面试表达 | 已由 `.gitignore` 忽略 |
-| 99 | `99-local-document-tree-enhancement-learning-guide-v0.1.md` | 文档树增强、标题编辑、删除、层级移动和树结构防环学习记录 | 已由 `.gitignore` 忽略 |
+| 顺序 | 文档 | 主题 | 版本 | 版本库状态 |
+|---:|---|---|---|---|
+| 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.3.md` | 全栈学习文档总索引、技术栈速查表、证据边界 | V0.3 | 已由 `.gitignore` 忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.1.md` | 前端选型、知识基线和技术风险记录 | V0.1 | 已由 `.gitignore` 忽略 |
+| 93 | `93-local-authentication-interview-guide-v0.2.md` | 登录全链路、JWT、Cookie、安全威胁和面试表达 | V0.2 | 已由 `.gitignore` 忽略 |
+| 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
+| 95 | `95-local-document-block-learning-guide-v0.3.md` | Block 编辑、乐观锁、冲突检测、Tiptap 集成 | V0.3 | 已由 `.gitignore` 忽略 |
+| 96 | `96-local-frontend-backend-integration-guide-v0.1.md` | 前后端联调、Refresh 自动续期、CSRF Header、401 处理 | V0.1 | 已由 `.gitignore` 忽略 |
+| 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
+| 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
 
-本地技术选型和执行材料不得作为产品范围、架构决策或完成状态的唯一依据。
+每份本地学习文档覆盖一个独立技术主题，按面试 4 维度（技术栈是什么 → 解决了什么问题/带来什么提升 → 业务闭环流程 → 架构设计原因）组织。91 为总索引，收录全部技术栈速查表。
 
 ## 3. 文档维护规则
 

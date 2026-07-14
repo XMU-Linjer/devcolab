@@ -1,14 +1,19 @@
 # Local execution and interview materials
-docs/90-local-development-plan-v0.2.md
-docs/91-local-interview-knowledge-map-v0.2.md
+docs/90-local-search-outbox-es-learning-v0.1.md
+docs/91-local-interview-knowledge-map-v0.3.md
 docs/92-local-frontend-technology-adr-v0.1.md
 docs/93-local-authentication-interview-guide-v0.2.md
+docs/94-local-workspace-document-permission-v0.2.md
+docs/95-local-document-block-learning-guide-v0.3.md
+docs/96-local-frontend-backend-integration-guide-v0.1.md
+docs/97-local-project-explanation-v0.2.md
+docs/98-local-document-lifecycle-review-learning-v0.1.md
+
+# Legacy local learning files kept for reference
+docs/90-local-development-plan-v0.2.md
+docs/91-local-interview-knowledge-map-v0.2.md
 docs/94-local-workspace-document-interview-guide-v0.1.md
 docs/95-local-document-block-learning-guide-v0.2.md
-docs/96-local-frontend-backend-integration-guide-v0.1.md
-docs/97-local-project-explanation-and-next-plan-v0.1.md
-docs/98-local-workspace-permission-learning-guide-v0.1.md
-docs/99-local-document-tree-enhancement-learning-guide-v0.1.md
 
 # Environment variables and local secrets
 .env
