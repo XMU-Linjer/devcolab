@@ -46,10 +46,34 @@
     />
 
     <div v-if="searched" class="workspace-search-results">
+      <div class="workspace-search-summary">
+        <div>
+          <span class="workspace-search-summary-label">搜索范围</span>
+          <strong>{{ scopeText(lastSearchScope) }}</strong>
+        </div>
+        <div>
+          <span class="workspace-search-summary-label">关键词</span>
+          <strong>“{{ lastSearchKeyword }}”</strong>
+        </div>
+        <div>
+          <span class="workspace-search-summary-label">命中</span>
+          <strong>{{ results.length }} 条</strong>
+        </div>
+      </div>
+
       <el-empty
         v-if="!searching && results.length === 0"
-        description="没有匹配的文档或正文"
-      />
+        :description="emptyDescription"
+      >
+        <el-button
+          v-if="lastSearchScope !== 'ALL'"
+          text
+          type="primary"
+          @click="searchAllScopes"
+        >
+          改为搜索全部范围
+        </el-button>
+      </el-empty>
 
       <button
         v-for="result in results"
@@ -83,7 +107,7 @@
 
 <script setup lang="ts">
 import { Search } from '@element-plus/icons-vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   searchWorkspace,
@@ -107,6 +131,8 @@ const results = ref<SearchHit[]>([]);
 const searching = ref(false);
 const searched = ref(false);
 const errorMessage = ref('');
+const lastSearchKeyword = ref('');
+const lastSearchScope = ref<SearchScope>('ALL');
 
 async function handleSearch() {
   const trimmedKeyword = keyword.value.trim();
@@ -118,6 +144,8 @@ async function handleSearch() {
   searching.value = true;
   searched.value = true;
   errorMessage.value = '';
+  lastSearchKeyword.value = trimmedKeyword;
+  lastSearchScope.value = scope.value;
 
   try {
     results.value = await searchWorkspace(
@@ -142,10 +170,26 @@ function clearResults() {
   results.value = [];
   searched.value = false;
   errorMessage.value = '';
+  lastSearchKeyword.value = '';
+  lastSearchScope.value = scope.value;
 }
 
 function typeText(type: SearchHitType) {
   return type === 'DOCUMENT_TITLE' ? '标题命中' : '正文命中';
+}
+
+function scopeText(value: SearchScope) {
+  const scopeMap: Record<SearchScope, string> = {
+    ALL: '全部',
+    TITLE: '标题',
+    CONTENT: '正文',
+  };
+  return scopeMap[value];
+}
+
+function searchAllScopes() {
+  scope.value = 'ALL';
+  void handleSearch();
 }
 
 function openSearchResult(result: SearchHit) {
@@ -208,4 +252,20 @@ function formatTime(value: string) {
     timeStyle: 'short',
   }).format(new Date(value));
 }
+
+const emptyDescription = computed(() => {
+  if (!lastSearchKeyword.value) {
+    return '还没有输入搜索关键词';
+  }
+
+  if (lastSearchScope.value === 'TITLE') {
+    return `标题中没有找到“${lastSearchKeyword.value}”，可以改为搜索全部范围。`;
+  }
+
+  if (lastSearchScope.value === 'CONTENT') {
+    return `正文中没有找到“${lastSearchKeyword.value}”，可以改为搜索全部范围。`;
+  }
+
+  return `没有找到包含“${lastSearchKeyword.value}”的文档标题或正文。`;
+});
 </script>
