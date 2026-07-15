@@ -137,15 +137,41 @@ public class DocProjectionService {
     }
 
     private static UUID uuid(JsonNode payload, String field) {
-        return UUID.fromString(payload.get(field).asText());
+        String value = requiredText(payload, field);
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "Outbox event payload field is not a UUID: field=" + field,
+                    exception
+            );
+        }
     }
 
     private static String text(JsonNode payload, String field) {
-        return payload.get(field).asText();
+        return requiredText(payload, field);
     }
 
     private static Instant instant(JsonNode payload, String field) {
-        return Instant.parse(payload.get(field).asText());
+        String value = requiredText(payload, field);
+        try {
+            return Instant.parse(value);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException(
+                    "Outbox event payload field is not an Instant: field=" + field,
+                    exception
+            );
+        }
+    }
+
+    private static String requiredText(JsonNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || value.isNull() || value.asText().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Outbox event payload missing required field: field=" + field
+            );
+        }
+        return value.asText();
     }
 
     private Map<String, Object> queryOneRow(String sql, Object... args) {

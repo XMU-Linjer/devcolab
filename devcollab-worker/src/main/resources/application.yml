@@ -1,8 +1,6 @@
 spring:
   application:
     name: devcollab-worker
-  main:
-    web-application-type: none
   datasource:
     url: ${DEVCOLLAB_DB_URL:jdbc:postgresql://localhost:5432/devcollab}
     username: ${DEVCOLLAB_DB_USERNAME:devcollab}
@@ -20,6 +18,10 @@ spring:
     listener:
       ack-mode: record
 
+server:
+  port: ${DEVCOLLAB_WORKER_SERVER_PORT:8082}
+  shutdown: graceful
+
 devcollab:
   worker:
     kafka:
@@ -33,10 +35,23 @@ devcollab:
     notification:
       enabled: ${DEVCOLLAB_WORKER_NOTIFICATION_ENABLED:true}
       group-id: ${DEVCOLLAB_WORKER_NOTIFICATION_GROUP_ID:devcollab-notification-projection}
-    consumer-inbox:
-      enabled: ${DEVCOLLAB_CONSUMER_INBOX_ENABLED:true}
+  consumer-inbox:
+    enabled: ${DEVCOLLAB_CONSUMER_INBOX_ENABLED:true}
   search:
     elasticsearch:
       enabled: ${DEVCOLLAB_ELASTICSEARCH_ENABLED:true}
       url: ${DEVCOLLAB_ELASTICSEARCH_URL:http://localhost:9200}
       index-name: ${DEVCOLLAB_ELASTICSEARCH_INDEX:devcollab-search}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: devcollab-worker

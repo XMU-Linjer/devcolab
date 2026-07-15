@@ -9,8 +9,6 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class WorkerApplication {
 
     public static void main(String[] args) {
-        SpringApplication app = new SpringApplication(WorkerApplication.class);
-        app.setWebApplicationType(org.springframework.boot.WebApplicationType.NONE);
-        app.run(args);
+        SpringApplication.run(WorkerApplication.class, args);
     }
 }

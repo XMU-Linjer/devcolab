@@ -2,6 +2,7 @@ package com.devcollab.worker.kafka;
 
 import com.devcollab.worker.consumerinbox.ConsumerInboxRepository;
 import com.devcollab.worker.notification.NotificationProjectionService;
+import com.devcollab.worker.observability.WorkerEventMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -28,14 +29,17 @@ public class NotificationProjectionConsumer {
 
     private final ConsumerInboxRepository inboxRepository;
     private final NotificationProjectionService projectionService;
+    private final WorkerEventMetrics metrics;
     private final ObjectMapper objectMapper;
 
     public NotificationProjectionConsumer(
             ConsumerInboxRepository inboxRepository,
-            NotificationProjectionService projectionService
+            NotificationProjectionService projectionService,
+            WorkerEventMetrics metrics
     ) {
         this.inboxRepository = inboxRepository;
         this.projectionService = projectionService;
+        this.metrics = metrics;
         this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule());
     }
@@ -57,6 +61,7 @@ public class NotificationProjectionConsumer {
         }
 
         if (inboxRepository.hasConsumed(CONSUMER_NAME, event.eventId())) {
+            metrics.duplicateSkipped(CONSUMER_NAME, event.eventType());
             log.debug(
                     "Skipping already-consumed event {} (consumer={})",
                     event.eventId(),
@@ -65,12 +70,17 @@ public class NotificationProjectionConsumer {
             return;
         }
 
-        projectionService.project(
-                event.eventId(),
-                event.eventType(),
-                payload.get(),
-                event.occurredAt()
-        );
+        try {
+            projectionService.project(
+                    event.eventId(),
+                    event.eventType(),
+                    payload.get(),
+                    event.occurredAt()
+            );
+        } catch (RuntimeException e) {
+            metrics.projectionFailed(CONSUMER_NAME, event.eventType());
+            throw e;
+        }
 
         if (!inboxRepository.markConsumed(CONSUMER_NAME, event.eventId())) {
             log.debug(
@@ -78,6 +88,7 @@ public class NotificationProjectionConsumer {
                     event.eventId()
             );
         }
+        metrics.projectionSucceeded(CONSUMER_NAME, event.eventType());
     }
 
     private Optional<KafkaOutboxMessage> parseMessage(String message) {
@@ -87,6 +98,7 @@ public class NotificationProjectionConsumer {
                     KafkaOutboxMessage.class
             ));
         } catch (Exception e) {
+            metrics.messageMalformed(CONSUMER_NAME);
             log.warn(
                     "Skipping malformed Kafka outbox message: {}",
                     abbreviate(message)
@@ -100,6 +112,7 @@ public class NotificationProjectionConsumer {
         try {
             return Optional.of(objectMapper.readTree(event.payload()));
         } catch (Exception e) {
+            metrics.payloadMalformed(CONSUMER_NAME, event.eventType());
             log.warn(
                     "Skipping Kafka outbox event with malformed payload: eventId={} payload={}",
                     event.eventId(),

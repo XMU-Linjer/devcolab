@@ -2,7 +2,9 @@ package com.devcollab.worker.kafka;
 
 import com.devcollab.worker.consumerinbox.ConsumerInboxRepository;
 import com.devcollab.worker.notification.NotificationProjectionService;
+import com.devcollab.worker.observability.WorkerEventMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -24,8 +26,15 @@ class NotificationProjectionConsumerTests {
             mock(ConsumerInboxRepository.class);
     private final NotificationProjectionService projectionService =
             mock(NotificationProjectionService.class);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final WorkerEventMetrics metrics =
+            new WorkerEventMetrics(meterRegistry);
     private final NotificationProjectionConsumer consumer =
-            new NotificationProjectionConsumer(inboxRepository, projectionService);
+            new NotificationProjectionConsumer(
+                    inboxRepository,
+                    projectionService,
+                    metrics
+            );
 
     @Test
     void skipsAlreadyConsumedEvent() {
@@ -41,6 +50,7 @@ class NotificationProjectionConsumerTests {
         verifyNoInteractions(projectionService);
         verify(inboxRepository, never())
                 .markConsumed("notification-projection", eventId);
+        assertCounter("devcollab.worker.event.duplicate_skipped", 1.0);
     }
 
     @Test
@@ -61,6 +71,7 @@ class NotificationProjectionConsumerTests {
                 eq(Instant.parse("2026-07-15T10:00:00Z"))
         );
         verify(inboxRepository).markConsumed("notification-projection", eventId);
+        assertCounter("devcollab.worker.event.projected", 1.0);
     }
 
     @Test
@@ -86,6 +97,7 @@ class NotificationProjectionConsumerTests {
 
         verify(inboxRepository, never())
                 .markConsumed("notification-projection", eventId);
+        assertCounter("devcollab.worker.event.projection_failed", 1.0);
     }
 
     @Test
@@ -93,6 +105,7 @@ class NotificationProjectionConsumerTests {
         consumer.onEvent("{bad-json");
 
         verifyNoInteractions(inboxRepository, projectionService);
+        assertCounter("devcollab.worker.event.malformed", 1.0);
     }
 
     @Test
@@ -102,6 +115,13 @@ class NotificationProjectionConsumerTests {
         consumer.onEvent(message(eventId, "{bad-payload"));
 
         verifyNoInteractions(inboxRepository, projectionService);
+        assertCounter("devcollab.worker.event.payload_malformed", 1.0);
+    }
+
+    private void assertCounter(String name, double expectedCount) {
+        org.assertj.core.api.Assertions.assertThat(
+                meterRegistry.get(name).counter().count()
+        ).isEqualTo(expectedCount);
     }
 
     private static String message(UUID eventId, String payload) {

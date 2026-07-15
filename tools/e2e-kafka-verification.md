@@ -241,3 +241,35 @@ payload 中故意缺少 workspaceId / title / updatedAt
 - 失败事件被隔离，不会伪装成成功消费。
 
 注意：脚本用 `kafka-get-offsets.sh` 验证 DLQ offset 增量，而不是用 `kafka-console-consumer.sh` 直接读消息。原因是 Kafka console consumer 在非交互脚本/管道环境下，输出和退出码行为可能不稳定，容易导致误判。
+
+## 15. Worker 可观测性验证
+
+Worker 暴露管理端口后，可以运行：
+
+```powershell
+node tools\e2e-worker-observability-check.mjs
+```
+
+前置条件：
+
+- Worker 正在运行；
+- 已经执行过一次 DLQ 故障注入，让自定义计数器产生数据。
+
+预期结果：
+
+```text
+[worker-observe-e2e] health=UP
+[worker-observe-e2e] metric devcollab_worker_event_projection_failed_total
+[worker-observe-e2e] metric devcollab_worker_kafka_retry_total
+[worker-observe-e2e] metric devcollab_worker_kafka_dlq_total
+[worker-observe-e2e] metric spring_kafka_listener_seconds_count
+[worker-observe-e2e] exception=IllegalArgumentException
+[worker-observe-e2e] PASS
+```
+
+验收含义：
+
+- `/actuator/health` 可用于容器健康检查；
+- `/actuator/prometheus` 可被 Prometheus 抓取；
+- Worker 可以量化投影失败、Kafka 重试、DLQ 进入次数；
+- 毒消息失败原因不再表现为空指针，而是明确的 `IllegalArgumentException`。
