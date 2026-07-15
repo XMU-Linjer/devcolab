@@ -22,7 +22,7 @@ export const useAuthStore = defineStore('auth', {
     initialized: false,
   }),
   getters: {
-    isAuthenticated: () => Boolean(getAccessToken()),
+    isAuthenticated: (state) => Boolean(state.currentUser && getAccessToken()),
   },
   actions: {
     async login(payload: LoginPayload) {
@@ -33,6 +33,7 @@ export const useAuthStore = defineStore('auth', {
         username: response.username,
         displayName: response.displayName,
       };
+      this.initialized = true;
       return response;
     },
     async register(payload: RegisterPayload) {
@@ -43,6 +44,7 @@ export const useAuthStore = defineStore('auth', {
         username: response.username,
         displayName: response.displayName,
       };
+      this.initialized = true;
       return response;
     },
     async loadCurrentUser() {
@@ -71,6 +73,7 @@ export const useAuthStore = defineStore('auth', {
     clear() {
       setAccessToken(null);
       this.currentUser = null;
+      this.initialized = true;
     },
   },
 });
