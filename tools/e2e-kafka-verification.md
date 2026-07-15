@@ -158,3 +158,54 @@ docker compose down -v
 ## 11. 验证结论口径
 
 默认单元测试不依赖 Kafka，因为单元测试验证业务规则和状态流转；真实 Kafka 链路通过独立端到端验证执行。生产策略没有降级成本地 Handler，Kafka 不可用时事件留在 PostgreSQL `outbox_events` 中，等待恢复后重试投递。
+
+## 12. 自动验收脚本
+
+除了手动执行上面的 SQL 和 curl，也可以直接运行自动验收脚本：
+
+```powershell
+node tools\e2e-kafka-es-check.mjs
+```
+
+脚本会自动完成：
+
+```text
+注册用户
+  -> 创建工作区
+  -> 创建文档
+  -> 创建 Block
+  -> 等待 outbox_events 变成 PUBLISHED
+  -> 等待 search-projection 写入 consumer_inbox
+  -> 查询 Elasticsearch 是否有索引
+  -> 通过 Core 搜索 API 查询是否命中
+```
+
+通过时会看到：
+
+```text
+[kafka-es-e2e] outbox published rows=2
+[kafka-es-e2e] consumer_inbox search rows=2
+[kafka-es-e2e] elasticsearch hits=2
+[kafka-es-e2e] core search hits=2
+[kafka-es-e2e] PASS ...
+```
+
+脚本内部会调用 Docker 查询 Kafka topic 和 PostgreSQL 表，所以必须在有 Docker 权限的终端执行。
+
+## 13. 本地历史数据较多时的推荐启动方式
+
+如果本地 `outbox_events` 有大量历史 `PENDING`，新事件可能排在后面，导致验收脚本等待超时。可以临时放大 Core Relay 批量，让系统按正常路径补投递历史事件：
+
+```powershell
+$env:DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE="10000"
+```
+
+如果 Kafka topic 中历史消息很多，搜索消费者组可能需要长时间追旧 offset。为了只验证新链路，可以给 Worker 使用临时 E2E 消费者组，并从 latest 开始：
+
+```powershell
+$env:DEVCOLLAB_WORKER_SEARCH_GROUP_ID="devcollab-search-e2e-20260716"
+$env:SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET="latest"
+$env:DEVCOLLAB_WORKER_NOTIFICATION_ENABLED="false"
+```
+
+这只是本地验收隔离策略，不是生产策略。生产环境仍然应该通过 lag 监控、重试、死信队列和告警处理积压。
