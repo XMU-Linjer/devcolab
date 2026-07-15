@@ -13,6 +13,7 @@ import com.devcollab.knowledgecore.document.application.exception.InvalidDocumen
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.ReviewIssueNotFoundException;
+import com.devcollab.knowledgecore.notification.application.exception.NotificationNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
@@ -241,6 +242,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "REVIEW_ISSUE_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNotificationNotFound(
+            NotificationNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "NOTIFICATION_NOT_FOUND",
                 exception.getMessage(),
                 request
         );

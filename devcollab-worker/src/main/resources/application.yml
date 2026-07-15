@@ -21,6 +21,11 @@ devcollab:
   worker:
     kafka:
       topic: ${DEVCOLLAB_OUTBOX_KAFKA_TOPIC:devcollab.domain-events}
+    search:
+      group-id: ${DEVCOLLAB_WORKER_SEARCH_GROUP_ID:devcollab-search-projection}
+    notification:
+      enabled: ${DEVCOLLAB_WORKER_NOTIFICATION_ENABLED:true}
+      group-id: ${DEVCOLLAB_WORKER_NOTIFICATION_GROUP_ID:devcollab-notification-projection}
     consumer-inbox:
       enabled: ${DEVCOLLAB_CONSUMER_INBOX_ENABLED:true}
   search:

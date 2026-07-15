@@ -1,7 +1,7 @@
 package com.devcollab.worker.kafka;
 
 import com.devcollab.worker.consumerinbox.ConsumerInboxRepository;
-import com.devcollab.worker.search.projection.DocProjectionService;
+import com.devcollab.worker.notification.NotificationProjectionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
@@ -10,32 +10,26 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-/**
- * Kafka consumer for search projection.
- *
- * <p>Consumes {@code devcollab.domain-events} and projects document mutations
- * into Elasticsearch. Uses {@code consumer_inbox} table for idempotency after
- * the projection side effect succeeds.
- */
 @Component
 @ConditionalOnProperty(
-        name = "devcollab.search.elasticsearch.enabled",
-        havingValue = "true"
+        name = "devcollab.worker.notification.enabled",
+        havingValue = "true",
+        matchIfMissing = true
 )
-public class SearchProjectionConsumer {
+public class NotificationProjectionConsumer {
 
     private static final Logger log =
-            LoggerFactory.getLogger(SearchProjectionConsumer.class);
+            LoggerFactory.getLogger(NotificationProjectionConsumer.class);
 
-    private static final String CONSUMER_NAME = "search-projection";
+    private static final String CONSUMER_NAME = "notification-projection";
 
     private final ConsumerInboxRepository inboxRepository;
-    private final DocProjectionService projectionService;
+    private final NotificationProjectionService projectionService;
     private final ObjectMapper objectMapper;
 
-    public SearchProjectionConsumer(
+    public NotificationProjectionConsumer(
             ConsumerInboxRepository inboxRepository,
-            DocProjectionService projectionService
+            NotificationProjectionService projectionService
     ) {
         this.inboxRepository = inboxRepository;
         this.projectionService = projectionService;
@@ -45,7 +39,7 @@ public class SearchProjectionConsumer {
 
     @KafkaListener(
             topics = "${devcollab.worker.kafka.topic:devcollab.domain-events}",
-            groupId = "${devcollab.worker.search.group-id:devcollab-search-projection}"
+            groupId = "${devcollab.worker.notification.group-id:devcollab-notification-projection}"
     )
     public void onEvent(String message) {
         KafkaOutboxMessage event = parseMessage(message);
@@ -59,18 +53,11 @@ public class SearchProjectionConsumer {
             return;
         }
 
-        log.debug(
-                "Processing outbox event {} type={} aggregate={}/{}",
-                event.eventId(),
-                event.eventType(),
-                event.aggregateType(),
-                event.aggregateId()
-        );
-
         projectionService.project(
                 event.eventId(),
                 event.eventType(),
-                event.payload()
+                readPayload(event),
+                event.occurredAt()
         );
 
         if (!inboxRepository.markConsumed(CONSUMER_NAME, event.eventId())) {
@@ -87,6 +74,19 @@ public class SearchProjectionConsumer {
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to deserialize Kafka outbox message",
+                    e
+            );
+        }
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode readPayload(
+            KafkaOutboxMessage event
+    ) {
+        try {
+            return objectMapper.readTree(event.payload());
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to deserialize Kafka outbox payload",
                     e
             );
         }
