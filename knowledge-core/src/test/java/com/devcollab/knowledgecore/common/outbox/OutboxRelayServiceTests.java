@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.common.outbox;
 
-import com.devcollab.knowledgecore.common.outbox.application.OutboxEventHandler;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
@@ -19,14 +20,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OutboxRelayServiceTests {
 
     @Test
-    void shouldPublishPendingEventsWhenHandlerSucceeds() {
+    void shouldPublishPendingEventsWhenPublisherSucceeds() {
         InMemoryOutboxEventRepository repository =
                 new InMemoryOutboxEventRepository();
         OutboxEvent event = repository.save(pendingEvent("DOCUMENT_CREATED"));
+        OutboxMessagePublisher noopPublisher = message -> {
+        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                handledEvent -> {
-                }
+                noopPublisher
         );
 
         OutboxRelayResult result = relayService.relayPendingEvents();
@@ -42,16 +44,16 @@ class OutboxRelayServiceTests {
     }
 
     @Test
-    void shouldMarkEventFailedWhenHandlerThrows() {
+    void shouldMarkEventFailedWhenPublisherThrows() {
         InMemoryOutboxEventRepository repository =
                 new InMemoryOutboxEventRepository();
         OutboxEvent event = repository.save(pendingEvent("DOCUMENT_DELETED"));
-        OutboxEventHandler failingHandler = handledEvent -> {
-            throw new IllegalStateException("simulated downstream failure");
+        OutboxMessagePublisher failingPublisher = message -> {
+            throw new IllegalStateException("simulated kafka failure");
         };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                failingHandler
+                failingPublisher
         );
 
         OutboxRelayResult result = relayService.relayPendingEvents();
@@ -64,7 +66,7 @@ class OutboxRelayServiceTests {
         assertThat(failed.status()).isEqualTo(OutboxEventStatus.FAILED);
         assertThat(failed.retryCount()).isEqualTo(1);
         assertThat(failed.lastError())
-                .isEqualTo("simulated downstream failure");
+                .isEqualTo("simulated kafka failure");
         assertThat(failed.publishedAt()).isNull();
     }
 

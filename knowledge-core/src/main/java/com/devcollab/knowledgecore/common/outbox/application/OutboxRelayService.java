@@ -13,14 +13,14 @@ public class OutboxRelayService {
     private static final int DEFAULT_BATCH_SIZE = 50;
 
     private final OutboxEventRepository eventRepository;
-    private final OutboxEventHandler eventHandler;
+    private final OutboxMessagePublisher messagePublisher;
 
     public OutboxRelayService(
             OutboxEventRepository eventRepository,
-            OutboxEventHandler eventHandler
+            OutboxMessagePublisher messagePublisher
     ) {
         this.eventRepository = eventRepository;
-        this.eventHandler = eventHandler;
+        this.messagePublisher = messagePublisher;
     }
 
     @Transactional
@@ -54,7 +54,7 @@ public class OutboxRelayService {
 
         for (OutboxEvent event : pendingEvents) {
             try {
-                eventHandler.handle(event);
+                messagePublisher.publish(OutboxKafkaMessage.from(event));
                 eventRepository.markPublished(event.id());
                 published++;
             } catch (RuntimeException exception) {

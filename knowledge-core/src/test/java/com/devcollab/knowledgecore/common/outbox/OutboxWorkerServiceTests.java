@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.common.outbox;
 
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
@@ -31,10 +33,11 @@ class OutboxWorkerServiceTests {
                 "DOCUMENT_UPDATED",
                 Instant.parse("2026-07-14T00:00:01Z")
         ));
+        OutboxMessagePublisher noopPublisher = message -> {
+        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                handledEvent -> {
-                }
+                noopPublisher
         );
         OutboxWorkerService workerService = new OutboxWorkerService(
                 relayService,
@@ -61,10 +64,11 @@ class OutboxWorkerServiceTests {
                 Instant.parse("2026-07-14T00:00:00Z"),
                 1
         ));
+        OutboxMessagePublisher noopPublisher2 = message -> {
+        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                handledEvent -> {
-                }
+                noopPublisher2
         );
         OutboxWorkerService workerService = new OutboxWorkerService(
                 relayService,
@@ -89,10 +93,11 @@ class OutboxWorkerServiceTests {
                 Instant.parse("2026-07-14T00:00:00Z"),
                 3
         ));
+        OutboxMessagePublisher noopPublisher3 = message -> {
+        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                handledEvent -> {
-                }
+                noopPublisher3
         );
         OutboxWorkerService workerService = new OutboxWorkerService(
                 relayService,

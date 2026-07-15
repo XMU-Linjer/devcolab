@@ -11,6 +11,14 @@ spring:
     redis:
       host: ${DEVCOLLAB_REDIS_HOST:localhost}
       port: ${DEVCOLLAB_REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${DEVCOLLAB_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
@@ -32,6 +40,9 @@ devcollab:
       enabled: ${DEVCOLLAB_ELASTICSEARCH_ENABLED:false}
       url: ${DEVCOLLAB_ELASTICSEARCH_URL:http://localhost:9200}
       index-name: ${DEVCOLLAB_ELASTICSEARCH_INDEX:devcollab-search}
+  outbox:
+    kafka:
+      topic: ${DEVCOLLAB_OUTBOX_KAFKA_TOPIC:devcollab.domain-events}
   worker:
     outbox:
       enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:false}

@@ -16,6 +16,9 @@ devcollab:
       enabled: false
       url: http://localhost:9200
       index-name: devcollab-search-test
+  outbox:
+    kafka:
+      topic: devcollab.domain-events
   worker:
     outbox:
       enabled: false

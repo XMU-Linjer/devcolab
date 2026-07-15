@@ -2,6 +2,8 @@ package com.devcollab.knowledgecore.common.outbox;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventRepository;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventStatus;
@@ -9,8 +11,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -18,6 +23,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -41,6 +47,9 @@ class OutboxEventIntegrationTests {
 
     @Autowired
     private OutboxRelayService outboxRelayService;
+
+    @Autowired
+    private RecordingOutboxMessagePublisher outboxMessagePublisher;
 
     @Test
     void shouldWriteDocumentCreatedEventWithBusinessData()
@@ -69,6 +78,7 @@ class OutboxEventIntegrationTests {
 
     @Test
     void shouldRelayPendingEventsToPublishedStatus() throws Exception {
+        outboxMessagePublisher.clear();
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(token).get("id").asText();
         int before = outboxEventRepository.findAll().size();
@@ -93,6 +103,9 @@ class OutboxEventIntegrationTests {
         assertThat(published.status()).isEqualTo(OutboxEventStatus.PUBLISHED);
         assertThat(published.publishedAt()).isNotNull();
         assertThat(published.lastError()).isNull();
+        assertThat(outboxMessagePublisher.publishedMessages())
+                .extracting(OutboxKafkaMessage::eventId)
+                .contains(pending.id());
     }
 
     @Test
@@ -395,5 +408,35 @@ class OutboxEventIntegrationTests {
     }
 
     private record MoveBlockBody(int targetIndex) {
+    }
+
+    @TestConfiguration
+    static class OutboxPublisherTestConfig {
+
+        @Bean
+        @Primary
+        RecordingOutboxMessagePublisher recordingOutboxMessagePublisher() {
+            return new RecordingOutboxMessagePublisher();
+        }
+    }
+
+    static final class RecordingOutboxMessagePublisher
+            implements OutboxMessagePublisher {
+
+        private final List<OutboxKafkaMessage> publishedMessages =
+                new CopyOnWriteArrayList<>();
+
+        @Override
+        public void publish(OutboxKafkaMessage event) {
+            publishedMessages.add(event);
+        }
+
+        void clear() {
+            publishedMessages.clear();
+        }
+
+        List<OutboxKafkaMessage> publishedMessages() {
+            return List.copyOf(publishedMessages);
+        }
     }
 }

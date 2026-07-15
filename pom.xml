@@ -21,6 +21,7 @@
 
     <modules>
         <module>knowledge-core</module>
+        <module>devcollab-worker</module>
     </modules>
 
     <properties>
