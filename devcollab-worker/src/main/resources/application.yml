@@ -14,6 +14,9 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     listener:
       ack-mode: record
 
@@ -21,6 +24,10 @@ devcollab:
   worker:
     kafka:
       topic: ${DEVCOLLAB_OUTBOX_KAFKA_TOPIC:devcollab.domain-events}
+      dlq-topic: ${DEVCOLLAB_WORKER_KAFKA_DLQ_TOPIC:devcollab.domain-events.dlq}
+      retry:
+        interval: ${DEVCOLLAB_WORKER_KAFKA_RETRY_INTERVAL:PT1S}
+        max-attempts: ${DEVCOLLAB_WORKER_KAFKA_RETRY_MAX_ATTEMPTS:2}
     search:
       group-id: ${DEVCOLLAB_WORKER_SEARCH_GROUP_ID:devcollab-search-projection}
     notification:

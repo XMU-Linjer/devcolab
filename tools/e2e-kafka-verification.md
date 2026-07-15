@@ -209,3 +209,35 @@ $env:DEVCOLLAB_WORKER_NOTIFICATION_ENABLED="false"
 ```
 
 这只是本地验收隔离策略，不是生产策略。生产环境仍然应该通过 lag 监控、重试、死信队列和告警处理积压。
+
+## 14. DLQ 故障注入验证
+
+Worker 增加 DLQ 后，可以运行：
+
+```powershell
+node tools\e2e-kafka-dlq-check.mjs
+```
+
+脚本会投递一条格式合法、但搜索投影必然失败的事件：
+
+```text
+DOCUMENT_CREATED
+payload 中故意缺少 workspaceId / title / updatedAt
+```
+
+预期结果：
+
+```text
+[kafka-dlq-e2e] dlq offset 3->4
+[kafka-dlq-e2e] consumer_inbox rows=0
+[kafka-dlq-e2e] PASS ...
+```
+
+验收含义：
+
+- Worker 会重试失败事件；
+- 重试后仍失败则写入 `devcollab.domain-events.dlq`；
+- 投影失败不会写 `consumer_inbox`；
+- 失败事件被隔离，不会伪装成成功消费。
+
+注意：脚本用 `kafka-get-offsets.sh` 验证 DLQ offset 增量，而不是用 `kafka-console-consumer.sh` 直接读消息。原因是 Kafka console consumer 在非交互脚本/管道环境下，输出和退出码行为可能不稳定，容易导致误判。
