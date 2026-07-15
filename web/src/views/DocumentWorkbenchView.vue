@@ -86,6 +86,8 @@
               :document-id="document.id"
               :focus-block-id="focusBlockId"
               :readonly="isReadonly"
+              @editing-start="startEditing"
+              @editing-stop="stopEditing"
             />
           </template>
 
@@ -138,6 +140,73 @@
                 :loading="sideLoading"
               />
             </el-tab-pane>
+
+            <el-tab-pane label="协作" name="collaboration">
+              <section class="workbench-tab-panel collaboration-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <p class="eyebrow">Collaboration</p>
+                    <h3>在线协作</h3>
+                  </div>
+                  <el-tag :type="collaborationConnected ? 'success' : 'info'" effect="light">
+                    {{ collaborationConnected ? '已连接' : '未连接' }}
+                  </el-tag>
+                </div>
+
+                <el-alert
+                  v-if="collaborationError"
+                  class="collaboration-alert"
+                  :title="collaborationError"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                />
+
+                <section class="collaboration-section">
+                  <h4>在线成员</h4>
+                  <el-empty
+                    v-if="collaborationMembers.length === 0"
+                    description="暂无在线成员"
+                  />
+                  <div v-else class="collaboration-list">
+                    <article
+                      v-for="member in collaborationMembers"
+                      :key="member.sessionId"
+                      class="collaboration-item"
+                    >
+                      <span class="collaboration-avatar">
+                        {{ member.username.slice(0, 1).toUpperCase() }}
+                      </span>
+                      <div>
+                        <strong>{{ member.username }}</strong>
+                        <p>{{ formatTime(member.joinedAt) }} 加入</p>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+
+                <section class="collaboration-section">
+                  <h4>正在编辑</h4>
+                  <el-empty
+                    v-if="collaborationEditingStates.length === 0"
+                    description="暂无编辑中的内容块"
+                  />
+                  <div v-else class="collaboration-list">
+                    <article
+                      v-for="state in collaborationEditingStates"
+                      :key="state.blockId"
+                      class="collaboration-item"
+                    >
+                      <span class="collaboration-dot" />
+                      <div>
+                        <strong>{{ state.username }} 正在编辑</strong>
+                        <p>Block {{ shortId(state.blockId) }}</p>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+              </section>
+            </el-tab-pane>
           </el-tabs>
         </aside>
       </section>
@@ -175,6 +244,7 @@ import ReviewIssuePanel from '@/components/document/ReviewIssuePanel.vue';
 import VersionHistoryPanel from '@/components/document/VersionHistoryPanel.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
 import { readableError } from '@/utils/error';
+import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
 
 const route = useRoute();
 const router = useRouter();
@@ -189,7 +259,7 @@ const documentLoading = ref(false);
 const sideLoading = ref(false);
 const errorMessage = ref('');
 const busyAction = ref<'submit' | 'approve' | 'reject' | 'deprecate' | null>(null);
-const rightTab = ref<'timeline' | 'issues' | 'versions'>('timeline');
+const rightTab = ref<'timeline' | 'issues' | 'versions' | 'collaboration'>('timeline');
 const focusBlockId = ref<string | null>(null);
 
 const workspaceId = computed(() => route.params.workspaceId as string);
@@ -204,6 +274,14 @@ const isReadonly = computed(() => (
   document.value?.reviewStatus === 'DEPRECATED'
   || document.value?.reviewStatus === 'SUPERSEDED'
 ));
+const {
+  connected: collaborationConnected,
+  members: collaborationMembers,
+  editingStates: collaborationEditingStates,
+  errorMessage: collaborationError,
+  startEditing,
+  stopEditing,
+} = useDocumentCollaboration(workspaceId, documentId);
 
 onMounted(() => {
   focusBlockId.value = typeof route.query.blockId === 'string'
@@ -410,5 +488,9 @@ function formatTime(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function shortId(value: string) {
+  return value.slice(0, 8);
 }
 </script>

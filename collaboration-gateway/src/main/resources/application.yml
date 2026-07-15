@@ -1,0 +1,21 @@
+server:
+  port: ${DEVCOLLAB_GATEWAY_PORT:8090}
+
+spring:
+  application:
+    name: devcollab-collaboration-gateway
+  data:
+    redis:
+      host: ${DEVCOLLAB_REDIS_HOST:localhost}
+      port: ${DEVCOLLAB_REDIS_PORT:6379}
+
+devcollab:
+  gateway:
+    core-base-url: ${DEVCOLLAB_CORE_BASE_URL:http://localhost:8080}
+    presence-ttl: ${DEVCOLLAB_GATEWAY_PRESENCE_TTL:PT1M}
+    editing-ttl: ${DEVCOLLAB_GATEWAY_EDITING_TTL:PT1M}
+  security:
+    jwt:
+      issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
+      audience: ${DEVCOLLAB_JWT_AUDIENCE:devcollab-web}
+      secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}

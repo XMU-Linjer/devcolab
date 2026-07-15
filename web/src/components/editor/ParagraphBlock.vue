@@ -45,7 +45,8 @@
       :autosize="{ minRows: 3, maxRows: 14 }"
       placeholder="输入段落内容，离开输入框后自动保存"
       :disabled="busy || readonly"
-      @blur="save"
+      @focus="handleFocus"
+      @blur="handleBlur"
     />
 
     <div class="block-footer">
@@ -84,6 +85,8 @@ const emit = defineEmits<{
   delete: [block: DocumentBlock];
   'move-up': [block: DocumentBlock];
   'move-down': [block: DocumentBlock];
+  'editing-start': [block: DocumentBlock];
+  'editing-stop': [block: DocumentBlock];
 }>();
 
 const draft = ref(props.block.content.text);
@@ -106,6 +109,21 @@ watch(
     draft.value = text;
   },
 );
+
+function handleFocus() {
+  if (props.busy || props.readonly) {
+    return;
+  }
+  emit('editing-start', props.block);
+}
+
+function handleBlur() {
+  save();
+  if (props.readonly) {
+    return;
+  }
+  emit('editing-stop', props.block);
+}
 
 function save() {
   if (!dirty.value || props.busy || props.readonly) {

@@ -1046,6 +1046,71 @@ h1 {
   margin-top: 10px;
 }
 
+.collaboration-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.collaboration-alert {
+  margin-bottom: 4px;
+}
+
+.collaboration-section {
+  display: grid;
+  gap: 10px;
+}
+
+.collaboration-section h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.collaboration-list {
+  display: grid;
+  gap: 10px;
+}
+
+.collaboration-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #edf1f7;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.collaboration-item strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.collaboration-item p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.collaboration-avatar {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.collaboration-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+}
+
 .document-placeholder {
   display: grid;
   min-height: 480px;

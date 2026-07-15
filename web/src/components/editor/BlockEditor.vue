@@ -86,6 +86,8 @@
         @delete="handleDelete"
         @move-up="handleMove(block, index - 1)"
         @move-down="handleMove(block, index + 1)"
+        @editing-start="emit('editing-start', block.id)"
+        @editing-stop="emit('editing-stop', block.id)"
       />
     </div>
   </section>
@@ -110,6 +112,11 @@ const props = defineProps<{
   documentId: string;
   focusBlockId?: string | null;
   readonly?: boolean;
+}>();
+
+const emit = defineEmits<{
+  'editing-start': [blockId: string];
+  'editing-stop': [blockId: string];
 }>();
 
 const blocks = ref<DocumentBlock[]>([]);
