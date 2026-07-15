@@ -2,6 +2,7 @@ package com.devcollab.worker.kafka;
 
 import com.devcollab.worker.consumerinbox.ConsumerInboxRepository;
 import com.devcollab.worker.notification.NotificationProjectionService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
@@ -9,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+
+import java.util.Optional;
 
 @Component
 @ConditionalOnProperty(
@@ -42,7 +45,16 @@ public class NotificationProjectionConsumer {
             groupId = "${devcollab.worker.notification.group-id:devcollab-notification-projection}"
     )
     public void onEvent(String message) {
-        KafkaOutboxMessage event = parseMessage(message);
+        Optional<KafkaOutboxMessage> parsed = parseMessage(message);
+        if (parsed.isEmpty()) {
+            return;
+        }
+
+        KafkaOutboxMessage event = parsed.get();
+        Optional<JsonNode> payload = readPayload(event);
+        if (payload.isEmpty()) {
+            return;
+        }
 
         if (inboxRepository.hasConsumed(CONSUMER_NAME, event.eventId())) {
             log.debug(
@@ -56,7 +68,7 @@ public class NotificationProjectionConsumer {
         projectionService.project(
                 event.eventId(),
                 event.eventType(),
-                readPayload(event),
+                payload.get(),
                 event.occurredAt()
         );
 
@@ -68,27 +80,42 @@ public class NotificationProjectionConsumer {
         }
     }
 
-    private KafkaOutboxMessage parseMessage(String message) {
+    private Optional<KafkaOutboxMessage> parseMessage(String message) {
         try {
-            return objectMapper.readValue(message, KafkaOutboxMessage.class);
+            return Optional.of(objectMapper.readValue(
+                    message,
+                    KafkaOutboxMessage.class
+            ));
         } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to deserialize Kafka outbox message",
-                    e
+            log.warn(
+                    "Skipping malformed Kafka outbox message: {}",
+                    abbreviate(message)
             );
+            log.debug("Malformed Kafka outbox message detail", e);
+            return Optional.empty();
         }
     }
 
-    private com.fasterxml.jackson.databind.JsonNode readPayload(
-            KafkaOutboxMessage event
-    ) {
+    private Optional<JsonNode> readPayload(KafkaOutboxMessage event) {
         try {
-            return objectMapper.readTree(event.payload());
+            return Optional.of(objectMapper.readTree(event.payload()));
         } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to deserialize Kafka outbox payload",
-                    e
+            log.warn(
+                    "Skipping Kafka outbox event with malformed payload: eventId={} payload={}",
+                    event.eventId(),
+                    abbreviate(event.payload())
             );
+            log.debug("Malformed Kafka outbox payload detail", e);
+            return Optional.empty();
         }
+    }
+
+    private String abbreviate(String value) {
+        if (value == null) {
+            return "<null>";
+        }
+        return value.length() <= 200
+                ? value
+                : value.substring(0, 200) + "...";
     }
 }

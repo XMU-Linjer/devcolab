@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 /**
  * Kafka consumer for search projection.
  *
@@ -48,7 +50,12 @@ public class SearchProjectionConsumer {
             groupId = "${devcollab.worker.search.group-id:devcollab-search-projection}"
     )
     public void onEvent(String message) {
-        KafkaOutboxMessage event = parseMessage(message);
+        Optional<KafkaOutboxMessage> parsed = parseMessage(message);
+        if (parsed.isEmpty()) {
+            return;
+        }
+
+        KafkaOutboxMessage event = parsed.get();
 
         if (inboxRepository.hasConsumed(CONSUMER_NAME, event.eventId())) {
             log.debug(
@@ -81,14 +88,28 @@ public class SearchProjectionConsumer {
         }
     }
 
-    private KafkaOutboxMessage parseMessage(String message) {
+    private Optional<KafkaOutboxMessage> parseMessage(String message) {
         try {
-            return objectMapper.readValue(message, KafkaOutboxMessage.class);
+            return Optional.of(objectMapper.readValue(
+                    message,
+                    KafkaOutboxMessage.class
+            ));
         } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to deserialize Kafka outbox message",
-                    e
+            log.warn(
+                    "Skipping malformed Kafka outbox message: {}",
+                    abbreviate(message)
             );
+            log.debug("Malformed Kafka outbox message detail", e);
+            return Optional.empty();
         }
+    }
+
+    private String abbreviate(String value) {
+        if (value == null) {
+            return "<null>";
+        }
+        return value.length() <= 200
+                ? value
+                : value.substring(0, 200) + "...";
     }
 }

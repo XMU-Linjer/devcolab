@@ -74,10 +74,8 @@ class SearchProjectionConsumerTests {
     }
 
     @Test
-    void rejectsMalformedMessage() {
-        assertThrows(IllegalArgumentException.class, () ->
-                consumer.onEvent("{bad-json")
-        );
+    void skipsMalformedMessage() {
+        consumer.onEvent("{bad-json");
 
         verifyNoInteractions(inboxRepository, projectionService);
     }
