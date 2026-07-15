@@ -29,6 +29,7 @@
           <h1>工作区</h1>
         </div>
         <div class="topbar-actions">
+          <NotificationCenter />
           <span class="current-user">
             {{ authStore.currentUser?.displayName || authStore.currentUser?.username }}
           </span>
@@ -124,6 +125,7 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from '@/api/workspace';
+import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { readableError } from '@/utils/error';

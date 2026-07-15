@@ -118,6 +118,87 @@ button {
   font-size: 14px;
 }
 
+.notification-badge {
+  display: inline-flex;
+}
+
+.notification-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.notification-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-header h3 {
+  margin: 0 0 6px;
+  color: #172033;
+  font-size: 17px;
+}
+
+.notification-header p {
+  margin: 0;
+  color: #66758c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notification-list {
+  display: grid;
+  max-height: 420px;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #e4eaf3;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.notification-item.is-unread {
+  border-color: #b9cbff;
+  background: #f6f8ff;
+}
+
+.notification-item-main {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.notification-item-title {
+  display: grid;
+  gap: 7px;
+}
+
+.notification-item-title strong {
+  color: #172033;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.notification-item p {
+  margin: 7px 0;
+  color: #53627a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notification-item-time {
+  color: #8793a8;
+  font-size: 12px;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: #6d7890;

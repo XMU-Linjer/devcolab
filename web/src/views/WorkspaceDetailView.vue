@@ -25,6 +25,7 @@
           <h1>{{ workspace?.name || '工作区详情' }}</h1>
         </div>
         <div class="topbar-actions">
+          <NotificationCenter />
           <el-button :icon="Back" @click="router.push('/workspaces')">
             返回列表
           </el-button>
@@ -171,6 +172,7 @@ import {
 } from '@/api/document';
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
+import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import DocumentTree, {
   type FlatDocumentTreeNode,
 } from '@/components/document/DocumentTree.vue';
