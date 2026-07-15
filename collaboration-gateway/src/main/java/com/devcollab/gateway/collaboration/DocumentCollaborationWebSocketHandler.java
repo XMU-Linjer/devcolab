@@ -14,6 +14,7 @@ import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
 import java.net.URLDecoder;
@@ -52,14 +53,16 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
-        ConnectionContext context;
-        try {
-            context = authenticate(session);
-        } catch (Exception e) {
-            log.warn("Rejected collaboration websocket: {}", e.getMessage());
-            return session.close(CloseStatus.POLICY_VIOLATION);
-        }
+        return Mono.fromCallable(() -> authenticate(session))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(this::handleAuthenticated)
+                .onErrorResume(e -> {
+                    log.warn("Rejected collaboration websocket: {}", e.getMessage());
+                    return session.close(CloseStatus.POLICY_VIOLATION);
+                });
+    }
 
+    private Mono<Void> handleAuthenticated(ConnectionContext context) {
         sessionRegistry.register(context);
         presenceStore.join(context.documentId(), context.sessionId(), context.user());
         publishPresence(context.documentId());
@@ -67,14 +70,14 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                 presenceStore.editingStates(context.documentId())
         ));
 
-        Mono<Void> inbound = session.receive()
+        Mono<Void> inbound = context.session().receive()
                 .map(WebSocketMessage::getPayloadAsText)
                 .flatMap(message -> handleClientMessage(context, message))
                 .doFinally(signalType -> context.outbound().tryEmitComplete())
                 .then();
 
-        Mono<Void> outbound = session.send(
-                context.outbound().asFlux().map(session::textMessage)
+        Mono<Void> outbound = context.session().send(
+                context.outbound().asFlux().map(context.session()::textMessage)
         );
 
         return Mono.when(inbound, outbound)

@@ -64,6 +64,14 @@ http://localhost:5173
 8. 另一边能看到“某用户正在编辑 Block xxxx”；
 9. 输入框失焦或关闭页面后，编辑状态消失。
 
+也可以直接执行自动验收脚本：
+
+```powershell
+node tools/e2e-gateway-check.mjs
+```
+
+脚本会自动创建一次性用户、工作区、文档和 Block，并模拟两个 WebSocket 客户端验证在线成员与编辑状态广播。
+
 ## 6. Redis 验证
 
 ```powershell
