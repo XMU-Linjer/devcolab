@@ -38,4 +38,20 @@ public class GatewaySessionRegistry {
             connection.outbound().tryEmitNext(message);
         }
     }
+
+    public void broadcastExcept(
+            UUID documentId,
+            String excludedSessionId,
+            String message
+    ) {
+        Set<ConnectionContext> connections = rooms.get(documentId);
+        if (connections == null) {
+            return;
+        }
+        for (ConnectionContext connection : connections) {
+            if (!connection.sessionId().equals(excludedSessionId)) {
+                connection.outbound().tryEmitNext(message);
+            }
+        }
+    }
 }

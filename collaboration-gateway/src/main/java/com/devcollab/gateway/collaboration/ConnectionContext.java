@@ -11,6 +11,7 @@ public record ConnectionContext(
         Sinks.Many<String> outbound,
         UUID workspaceId,
         UUID documentId,
+        String accessToken,
         GatewayUser user
 ) {
 

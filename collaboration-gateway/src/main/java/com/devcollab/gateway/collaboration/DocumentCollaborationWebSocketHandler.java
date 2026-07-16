@@ -3,7 +3,10 @@ package com.devcollab.gateway.collaboration;
 import com.devcollab.gateway.auth.GatewayTokenService;
 import com.devcollab.gateway.auth.GatewayTokenService.GatewayUser;
 import com.devcollab.gateway.collaboration.CollaborationMessages.ClientMessage;
+import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationBroadcast;
+import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationResult;
 import com.devcollab.gateway.collaboration.CollaborationMessages.ServerMessage;
+import com.devcollab.gateway.collaboration.CoreBlockOperationClient.CoreBlockUpdateResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +36,8 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
     private final GatewayTokenService tokenService;
     private final CoreDocumentAccessVerifier accessVerifier;
+    private final CoreBlockOperationClient blockOperationClient;
+    private final GatewayOperationDeduplicator operationDeduplicator;
     private final PresenceStore presenceStore;
     private final GatewaySessionRegistry sessionRegistry;
     private final ObjectMapper objectMapper;
@@ -40,12 +45,16 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     public DocumentCollaborationWebSocketHandler(
             GatewayTokenService tokenService,
             CoreDocumentAccessVerifier accessVerifier,
+            CoreBlockOperationClient blockOperationClient,
+            GatewayOperationDeduplicator operationDeduplicator,
             PresenceStore presenceStore,
             GatewaySessionRegistry sessionRegistry,
             ObjectMapper objectMapper
     ) {
         this.tokenService = tokenService;
         this.accessVerifier = accessVerifier;
+        this.blockOperationClient = blockOperationClient;
+        this.operationDeduplicator = operationDeduplicator;
         this.presenceStore = presenceStore;
         this.sessionRegistry = sessionRegistry;
         this.objectMapper = objectMapper;
@@ -99,6 +108,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                 Sinks.many().replay().limit(32),
                 workspaceId,
                 documentId,
+                token,
                 user
         );
     }
@@ -133,6 +143,22 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                             message.blockId()
                     ));
                 }
+                case "DOCUMENT_OPERATION" -> {
+                    return Mono.fromRunnable(() ->
+                                    handleDocumentOperation(context, message)
+                            )
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .onErrorResume(e -> {
+                                log.warn(
+                                        "Failed to handle document operation: {}",
+                                        e.getMessage()
+                                );
+                                log.debug("Document operation failure detail", e);
+                                send(context, ServerMessage.error("文档操作处理失败"));
+                                return Mono.empty();
+                            })
+                            .then();
+                }
                 default -> send(context, ServerMessage.error(
                         "Unsupported message type: " + message.type()
                 ));
@@ -143,6 +169,102 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
             send(context, ServerMessage.error("消息格式不正确"));
         }
         return Mono.empty();
+    }
+
+    private void handleDocumentOperation(
+            ConnectionContext context,
+            ClientMessage message
+    ) {
+        requireOperation(message);
+        if (!"UPDATE_TEXT".equals(message.operationType())) {
+            send(context, ServerMessage.operationResult(
+                    DocumentOperationResult.rejected(
+                            message.clientOperationId(),
+                            message.blockId(),
+                            message.operationType(),
+                            "Unsupported operation type: " + message.operationType()
+                    )
+            ));
+            return;
+        }
+
+        if (!operationDeduplicator.markFirstSeen(
+                context.documentId(),
+                context.user().userId(),
+                message.clientOperationId()
+        )) {
+            send(context, ServerMessage.operationResult(
+                    DocumentOperationResult.duplicate(
+                            message.clientOperationId(),
+                            message.blockId(),
+                            message.operationType()
+                    )
+            ));
+            return;
+        }
+
+        CoreBlockUpdateResult result;
+        try {
+            result = blockOperationClient.updateText(
+                    context.documentId(),
+                    message.blockId(),
+                    context.accessToken(),
+                    message.content().text(),
+                    message.expectedVersion()
+            );
+        } catch (RuntimeException e) {
+            operationDeduplicator.forget(
+                    context.documentId(),
+                    context.user().userId(),
+                    message.clientOperationId()
+            );
+            throw e;
+        }
+
+        switch (result.status()) {
+            case "APPLIED" -> {
+                send(context, ServerMessage.operationResult(
+                        DocumentOperationResult.applied(
+                                message.clientOperationId(),
+                                message.blockId(),
+                                message.operationType(),
+                                result.block()
+                        )
+                ));
+                broadcastToOthers(
+                        context,
+                        ServerMessage.operationBroadcast(
+                                new DocumentOperationBroadcast(
+                                        message.clientOperationId(),
+                                        message.blockId(),
+                                        message.operationType(),
+                                        context.user().userId(),
+                                        context.user().username(),
+                                        result.block()
+                                )
+                        )
+                );
+            }
+            case "CONFLICT" -> send(context, ServerMessage.operationResult(
+                    DocumentOperationResult.conflict(
+                            message.clientOperationId(),
+                            message.blockId(),
+                            message.operationType(),
+                            result.message()
+                    )
+            ));
+            case "REJECTED" -> send(context, ServerMessage.operationResult(
+                    DocumentOperationResult.rejected(
+                            message.clientOperationId(),
+                            message.blockId(),
+                            message.operationType(),
+                            result.message()
+                    )
+            ));
+            default -> throw new IllegalStateException(
+                    "Unknown core operation result: " + result.status()
+            );
+        }
     }
 
     private void cleanup(ConnectionContext context) {
@@ -169,6 +291,17 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
         sessionRegistry.broadcast(
                 context.documentId(),
                 write(ServerMessage.editing(editingStates))
+        );
+    }
+
+    private void broadcastToOthers(
+            ConnectionContext context,
+            ServerMessage message
+    ) {
+        sessionRegistry.broadcastExcept(
+                context.documentId(),
+                context.sessionId(),
+                write(message)
         );
     }
 
@@ -227,6 +360,24 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     private void requireBlockId(ClientMessage message) {
         if (message.blockId() == null) {
             throw new IllegalArgumentException("blockId is required");
+        }
+    }
+
+    private void requireOperation(ClientMessage message) {
+        requireBlockId(message);
+        if (message.clientOperationId() == null) {
+            throw new IllegalArgumentException("clientOperationId is required");
+        }
+        if (message.operationType() == null || message.operationType().isBlank()) {
+            throw new IllegalArgumentException("operationType is required");
+        }
+        if (message.expectedVersion() == null || message.expectedVersion() < 0) {
+            throw new IllegalArgumentException(
+                    "expectedVersion must be zero or greater"
+            );
+        }
+        if (message.content() == null || message.content().text() == null) {
+            throw new IllegalArgumentException("content.text is required");
         }
     }
 }
