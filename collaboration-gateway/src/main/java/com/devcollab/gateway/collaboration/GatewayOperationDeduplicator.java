@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,7 +27,7 @@ public class GatewayOperationDeduplicator {
 
     private final StringRedisTemplate redisTemplate;
     private final GatewayProperties properties;
-    private final ConcurrentHashMap<OperationKey, Boolean> localFallbackAccepted =
+    private final ConcurrentHashMap<UUID, Instant> localFallbackAccepted =
             new ConcurrentHashMap<>();
 
     public GatewayOperationDeduplicator(
@@ -81,11 +82,32 @@ public class GatewayOperationDeduplicator {
             );
             log.debug("Gateway operation forget Redis failure detail", e);
         }
-        localFallbackAccepted.remove(operationKey);
+        localFallbackAccepted.remove(clientOperationId);
     }
 
     private boolean markFirstSeenLocally(OperationKey operationKey) {
-        return localFallbackAccepted.putIfAbsent(operationKey, Boolean.TRUE) == null;
+        UUID operationId = operationKey.clientOperationId();
+        Instant now = Instant.now();
+        Instant expiresAt = now.plus(properties.operationDedupTtl());
+        while (true) {
+            Instant existing = localFallbackAccepted.get(operationId);
+            if (existing == null) {
+                if (localFallbackAccepted.putIfAbsent(
+                        operationId, expiresAt
+                ) == null) {
+                    return true;
+                }
+                continue;
+            }
+            if (existing.isAfter(now)) {
+                return false;
+            }
+            if (localFallbackAccepted.replace(
+                    operationId, existing, expiresAt
+            )) {
+                return true;
+            }
+        }
     }
 
     private String redisKey(OperationKey operationKey) {

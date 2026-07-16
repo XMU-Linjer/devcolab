@@ -83,8 +83,35 @@ class GatewayOperationDeduplicatorTests {
 
         assertThat(deduplicator.markFirstSeen(documentId, userId, operationId))
                 .isTrue();
-        assertThat(deduplicator.markFirstSeen(documentId, userId, operationId))
+        assertThat(deduplicator.markFirstSeen(
+                UUID.randomUUID(), UUID.randomUUID(), operationId
+        ))
                 .isFalse();
+    }
+
+    @Test
+    void localFallbackEntryExpires() throws Exception {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        when(redis.execute(any(), anyList(), anyString(), anyString()))
+                .thenReturn(null);
+        GatewayOperationDeduplicator deduplicator = new GatewayOperationDeduplicator(
+                redis,
+                new GatewayProperties(
+                        "http://core.example",
+                        Duration.ofMinutes(1),
+                        Duration.ofMinutes(1),
+                        Duration.ofMillis(1)
+                )
+        );
+        UUID operationId = UUID.randomUUID();
+
+        assertThat(deduplicator.markFirstSeen(
+                UUID.randomUUID(), UUID.randomUUID(), operationId
+        )).isTrue();
+        Thread.sleep(10);
+        assertThat(deduplicator.markFirstSeen(
+                UUID.randomUUID(), UUID.randomUUID(), operationId
+        )).isTrue();
     }
 
     @Test
