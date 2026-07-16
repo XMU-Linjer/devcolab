@@ -17,6 +17,33 @@ Nginx container -> host.docker.internal:8080 -> Knowledge Core
 Nginx container -> host.docker.internal:8090 -> Collaboration Gateway
 ```
 
+## 0. 推荐：一条命令启动和验收
+
+从仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 start -VerifyAfterStart
+```
+
+脚本依次完成：
+
+1. 构建 `web/dist`；
+2. 启动 PostgreSQL、Redis、Kafka、Elasticsearch；
+3. 创建领域事件 Topic 和 DLQ Topic；
+4. 隐藏启动 Knowledge Core、Worker、Collaboration Gateway，并把日志写到 `logs/local-demo/`；
+5. 启动 Nginx；
+6. 验证静态资源、SPA history 回退、Core API 反代和 Gateway WebSocket 广播。
+
+常用管理命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 status
+powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 verify
+powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 stop
+```
+
+若本机 6379 已被其他项目占用，脚本会为 DevCollab Redis 自动选择 `16379-16479` 范围内的空闲宿主机端口，并把三个 Java 服务同步指向该端口。它不会停止或修改占用 6379 的其他项目。
+
 ## 1. 构建前端静态资源
 
 ```powershell

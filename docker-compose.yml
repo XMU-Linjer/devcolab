@@ -112,7 +112,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - wget --spider -q http://localhost/nginx-health || exit 1
+        - wget --spider -q http://127.0.0.1/nginx-health || exit 1
       interval: 10s
       timeout: 5s
       retries: 5
