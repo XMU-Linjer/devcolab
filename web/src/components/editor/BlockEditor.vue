@@ -106,12 +106,18 @@ import {
   updateBlock,
   type DocumentBlock,
 } from '@/api/block';
+import { CollaborationOperationError } from '@/composables/useDocumentCollaboration';
 import { isConflictError, readableError } from '@/utils/error';
 
 const props = defineProps<{
   documentId: string;
   focusBlockId?: string | null;
   readonly?: boolean;
+  remoteBlock?: DocumentBlock | null;
+  saveViaCollaboration?: (
+    block: DocumentBlock,
+    text: string,
+  ) => Promise<DocumentBlock>;
 }>();
 
 const emit = defineEmits<{
@@ -143,6 +149,16 @@ watch(
   () => props.focusBlockId,
   () => {
     void focusRequestedBlock();
+  },
+);
+
+watch(
+  () => props.remoteBlock,
+  (block) => {
+    if (!block || block.documentId !== props.documentId) {
+      return;
+    }
+    replaceBlock(block);
   },
 );
 
@@ -220,16 +236,24 @@ async function handleSave(block: DocumentBlock, text: string) {
   conflictMessage.value = '';
 
   try {
-    const updated = await updateBlock(props.documentId, block.id, {
-      content: {
-        text,
-      },
-      expectedVersion: block.version,
-    });
+    const updated = props.saveViaCollaboration
+      ? await props.saveViaCollaboration(block, text)
+      : await updateBlock(props.documentId, block.id, {
+          content: {
+            text,
+          },
+          expectedVersion: block.version,
+        });
     replaceBlock(updated);
   } catch (error) {
     const message = readableError(error, '段落保存失败');
-    if (isConflictError(error)) {
+    if (
+      isConflictError(error)
+      || (
+        error instanceof CollaborationOperationError
+        && error.status === 'CONFLICT'
+      )
+    ) {
       conflictMessage.value = '当前段落已被其他操作修改，请刷新内容后再继续编辑。';
     }
     ElMessage.error(message);

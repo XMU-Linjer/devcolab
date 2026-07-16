@@ -86,6 +86,8 @@
               :document-id="document.id"
               :focus-block-id="focusBlockId"
               :readonly="isReadonly"
+              :remote-block="collaborationRemoteBlock"
+              :save-via-collaboration="saveBlockViaCollaboration"
               @editing-start="startEditing"
               @editing-stop="stopEditing"
             />
@@ -234,6 +236,7 @@ import {
   type DocumentTreeNode,
   type DocumentVersion,
 } from '@/api/document';
+import type { DocumentBlock } from '@/api/block';
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentStatusBar from '@/components/document/DocumentStatusBar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
@@ -278,9 +281,11 @@ const {
   connected: collaborationConnected,
   members: collaborationMembers,
   editingStates: collaborationEditingStates,
+  latestRemoteBlock: collaborationRemoteBlock,
   errorMessage: collaborationError,
   startEditing,
   stopEditing,
+  updateText: updateBlockTextViaCollaboration,
 } = useDocumentCollaboration(workspaceId, documentId);
 
 onMounted(() => {
@@ -364,6 +369,13 @@ function openDocument(nextDocumentId: string) {
 
 function noopTreeAction(_node: FlatDocumentTreeNode) {
   ElMessage.info('文档树结构操作请回到空间详情页处理。');
+}
+
+async function saveBlockViaCollaboration(
+  block: DocumentBlock,
+  text: string,
+) {
+  return updateBlockTextViaCollaboration(block.id, text, block.version);
 }
 
 async function handleSubmit() {

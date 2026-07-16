@@ -1,6 +1,7 @@
 import { onUnmounted, ref, watch, type Ref } from 'vue';
 
 import { getAccessToken } from '@/api/http';
+import type { DocumentBlock } from '@/api/block';
 
 export interface PresenceMember {
   sessionId: string;
@@ -21,6 +22,45 @@ interface ServerMessage<T = unknown> {
   payload: T;
 }
 
+interface RoomStateSnapshot {
+  members: PresenceMember[];
+  editingStates: EditingState[];
+}
+
+interface DocumentOperationResult {
+  clientOperationId: string;
+  blockId: string;
+  operationType: string;
+  status: 'APPLIED' | 'CONFLICT' | 'REJECTED' | 'DUPLICATE';
+  block?: DocumentBlock;
+  message?: string;
+}
+
+interface DocumentOperationBroadcast {
+  clientOperationId: string;
+  blockId: string;
+  operationType: string;
+  userId: string;
+  username: string;
+  block: DocumentBlock;
+}
+
+interface PendingOperation {
+  resolve: (block: DocumentBlock) => void;
+  reject: (error: CollaborationOperationError) => void;
+  timer: number;
+}
+
+export class CollaborationOperationError extends Error {
+  constructor(
+    public readonly status: DocumentOperationResult['status'] | 'TIMEOUT' | 'DISCONNECTED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CollaborationOperationError';
+  }
+}
+
 export function useDocumentCollaboration(
   workspaceId: Ref<string>,
   documentId: Ref<string>,
@@ -28,10 +68,12 @@ export function useDocumentCollaboration(
   const connected = ref(false);
   const members = ref<PresenceMember[]>([]);
   const editingStates = ref<EditingState[]>([]);
+  const latestRemoteBlock = ref<DocumentBlock | null>(null);
   const errorMessage = ref('');
 
   let socket: WebSocket | null = null;
   let heartbeatTimer: number | null = null;
+  const pendingOperations = new Map<string, PendingOperation>();
 
   watch(
     [workspaceId, documentId],
@@ -88,6 +130,7 @@ export function useDocumentCollaboration(
 
   function disconnect() {
     clearHeartbeat();
+    rejectPendingOperations('DISCONNECTED', '协作网关已断开，请稍后重试');
     if (socket && socket.readyState !== WebSocket.CLOSED) {
       socket.close();
     }
@@ -95,6 +138,7 @@ export function useDocumentCollaboration(
     connected.value = false;
     members.value = [];
     editingStates.value = [];
+    latestRemoteBlock.value = null;
   }
 
   function startEditing(blockId: string) {
@@ -111,6 +155,47 @@ export function useDocumentCollaboration(
     });
   }
 
+  function updateText(
+    blockId: string,
+    text: string,
+    expectedVersion: number,
+  ): Promise<DocumentBlock> {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new CollaborationOperationError(
+        'DISCONNECTED',
+        '协作网关未连接，暂时无法通过实时链路保存',
+      ));
+    }
+
+    const clientOperationId = operationId();
+    return new Promise<DocumentBlock>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        pendingOperations.delete(clientOperationId);
+        reject(new CollaborationOperationError(
+          'TIMEOUT',
+          '协作保存超时，请稍后重试',
+        ));
+      }, 10_000);
+
+      pendingOperations.set(clientOperationId, {
+        resolve,
+        reject,
+        timer,
+      });
+
+      send({
+        type: 'DOCUMENT_OPERATION',
+        clientOperationId,
+        operationType: 'UPDATE_TEXT',
+        blockId,
+        expectedVersion,
+        content: {
+          text,
+        },
+      });
+    });
+  }
+
   function send(message: Record<string, unknown>) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
@@ -121,6 +206,12 @@ export function useDocumentCollaboration(
   function handleMessage(raw: string) {
     try {
       const message = JSON.parse(raw) as ServerMessage;
+      if (message.type === 'ROOM_STATE_SNAPSHOT') {
+        const snapshot = message.payload as RoomStateSnapshot;
+        members.value = snapshot.members;
+        editingStates.value = snapshot.editingStates;
+        return;
+      }
       if (message.type === 'PRESENCE_UPDATED') {
         members.value = message.payload as PresenceMember[];
         return;
@@ -133,6 +224,15 @@ export function useDocumentCollaboration(
         errorMessage.value = String(
           (message.payload as { message?: string })?.message ?? '协作消息处理失败',
         );
+        return;
+      }
+      if (message.type === 'DOCUMENT_OPERATION_RESULT') {
+        handleOperationResult(message.payload as DocumentOperationResult);
+        return;
+      }
+      if (message.type === 'DOCUMENT_OPERATION_BROADCAST') {
+        const payload = message.payload as DocumentOperationBroadcast;
+        latestRemoteBlock.value = payload.block;
       }
     } catch {
       errorMessage.value = '协作消息格式异常';
@@ -146,13 +246,63 @@ export function useDocumentCollaboration(
     }
   }
 
+  function handleOperationResult(result: DocumentOperationResult) {
+    const pending = pendingOperations.get(result.clientOperationId);
+    if (!pending) {
+      return;
+    }
+
+    window.clearTimeout(pending.timer);
+    pendingOperations.delete(result.clientOperationId);
+
+    if (result.status === 'APPLIED' && result.block) {
+      pending.resolve(result.block);
+      return;
+    }
+
+    pending.reject(new CollaborationOperationError(
+      result.status,
+      result.message ?? operationStatusText(result.status),
+    ));
+  }
+
+  function rejectPendingOperations(
+    status: CollaborationOperationError['status'],
+    message: string,
+  ) {
+    pendingOperations.forEach((pending) => {
+      window.clearTimeout(pending.timer);
+      pending.reject(new CollaborationOperationError(status, message));
+    });
+    pendingOperations.clear();
+  }
+
+  function operationStatusText(status: DocumentOperationResult['status']) {
+    const statusMap: Record<DocumentOperationResult['status'], string> = {
+      APPLIED: '协作操作已应用',
+      CONFLICT: '当前段落已被其他操作修改，请刷新内容后再继续编辑。',
+      REJECTED: '协作操作被拒绝，请检查权限或文档状态。',
+      DUPLICATE: '该协作操作已经处理过。',
+    };
+    return statusMap[status];
+  }
+
+  function operationId() {
+    if (window.crypto?.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
   return {
     connected,
     members,
     editingStates,
+    latestRemoteBlock,
     errorMessage,
     startEditing,
     stopEditing,
+    updateText,
     reconnect: connect,
     disconnect,
   };
