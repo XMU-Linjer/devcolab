@@ -136,6 +136,49 @@ Kafka consumer sending record to DLQ
 - 通知 E2E 脚本增加超时诊断；
 - 超时时自动打印当前文档相关的 `outbox_events`、`consumer_inbox`、`notifications`；
 - 后续再次失败时，优先看 `outbox_events.status`：
-  - `PENDING`：Core Relay 没扫到或没启动；
+- `PENDING`：Core Relay 没扫到或没启动；
   - `FAILED`：Kafka 发布失败，看 `last_error`；
   - `PUBLISHED`：继续看 Worker/通知消费者。
+
+### 进一步定位：PENDING + retry_count=0 + last_error 空
+
+实际输出：
+
+```text
+DOCUMENT_REVIEW_SUBMITTED|PENDING|0||
+DOCUMENT_CREATED|PENDING|0||
+```
+
+含义：
+
+- Core 业务事务已经写入 `outbox_events`；
+- 事件还没有被 Outbox Relay 尝试发布；
+- 不是 Kafka 发布失败，因为 `retry_count` 没增加；
+- 不是 Worker 消费失败，因为消息还没从 Core 发布到 Kafka。
+
+最常见原因：
+
+```text
+Knowledge Core 启动时没有设置：
+DEVCOLLAB_OUTBOX_WORKER_ENABLED=true
+```
+
+处理方式：
+
+1. 停掉 Knowledge Core；
+2. 在同一个 PowerShell 窗口设置环境变量；
+3. 重新启动 Knowledge Core。
+
+```powershell
+$env:DEVCOLLAB_OUTBOX_WORKER_ENABLED="true"
+$env:DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE="1000"
+$env:DEVCOLLAB_OUTBOX_WORKER_INITIAL_DELAY_MS="1000"
+$env:DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS="3000"
+.\mvnw.cmd -pl knowledge-core spring-boot:run
+```
+
+启动后 Core 日志应看到：
+
+```text
+Outbox worker tick completed: scanned=..., published=..., failed=...
+```

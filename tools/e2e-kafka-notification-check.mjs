@@ -167,7 +167,10 @@ async function waitForOutboxPublished(documentId, eventType) {
     const rows = queryOutbox(documentId, eventType);
     const published = rows.find(row => row.status === 'PUBLISHED');
     return published ?? null;
-  }, waitTimeoutMs, () => printDiagnostics(documentId));
+  }, waitTimeoutMs, () => {
+    printDiagnostics(documentId);
+    printOutboxHint(documentId, eventType);
+  });
 }
 
 function queryOutbox(documentId, eventType) {
@@ -255,6 +258,23 @@ function printDiagnostics(documentId) {
      order by created_at desc
      limit 20;
   `);
+}
+
+function printOutboxHint(documentId, eventType) {
+  const rows = queryOutbox(documentId, eventType);
+  const latest = rows[0];
+  if (!latest) {
+    console.error(`[kafka-notification-e2e] hint no ${eventType} outbox row found; check whether the business API created the event.`);
+    return;
+  }
+  if (latest.status === 'PENDING' && latest.retryCount === 0 && !latest.lastError) {
+    console.error('[kafka-notification-e2e] hint outbox event is still PENDING with retry_count=0 and empty last_error.');
+    console.error('[kafka-notification-e2e] hint Core probably started without DEVCOLLAB_OUTBOX_WORKER_ENABLED=true, or the scheduler has not run yet.');
+    console.error('[kafka-notification-e2e] hint restart Knowledge Core with DEVCOLLAB_OUTBOX_WORKER_ENABLED=true before running this script.');
+  }
+  if (latest.status === 'FAILED') {
+    console.error(`[kafka-notification-e2e] hint outbox publish failed; inspect last_error=${latest.lastError || '<empty>'}`);
+  }
 }
 
 function printRows(label, sql) {
