@@ -1,4 +1,4 @@
-# DevCollab 可观测性设计与本地验收 V0.1
+# DevCollab 可观测性设计与本地验收 V0.2
 
 ## 文档信息
 
@@ -6,7 +6,7 @@
 |---|---|
 | 文档类型 | 可观测性架构与本地验收基线 |
 | 文档状态 | 草案 |
-| 版本 | V0.1 |
+| 版本 | V0.2 |
 | 更新日期 | 2026-07-17 |
 | 适用范围 | DevCollab 本地演示环境、架构联调、故障定位与后续生产化设计 |
 | 版本库状态 | 应提交 |
@@ -99,7 +99,35 @@ observability-e2e PASS
 
 该结果只证明本机演示环境可用，不代表生产容量、跨机器部署或长期稳定性。
 
-## 6. 已知风险与后续升级
+## 6. 故障演练口径
+
+可观测性不能只验证“正常时有数据”，还需要验证“故障发生时能被发现，恢复后能被确认”。
+
+本阶段新增 Worker 停机演练：
+
+```text
+读取 logs/local-demo/processes.json
+  -> 停止脚本托管的 devcollab-worker 进程树
+  -> 等待 Worker actuator 端口关闭
+  -> 等待 Prometheus 中 up{job="devcollab-worker"} = 0
+  -> 重新启动 Worker
+  -> 等待 Worker actuator 恢复 UP
+  -> 等待 Prometheus 中 up{job="devcollab-worker"} = 1
+  -> 再运行 observability-e2e 总验收
+```
+
+2026-07-17 本地故障演练结果：
+
+```text
+fault-drill: Prometheus detected worker DOWN
+fault-drill: worker recovered
+observability-e2e PASS
+fault-drill PASS
+```
+
+该演练证明 Prometheus 能识别 Worker 进程级故障和恢复；它暂不覆盖 Kafka 消费积压、DLQ、Nginx 反代失败、数据库故障或跨机器网络分区。
+
+## 7. 已知风险与后续升级
 
 | 风险 | 当前处理 | 后续升级 |
 |---|---|---|
@@ -109,8 +137,8 @@ observability-e2e PASS
 | Kafka lag 未纳入指标 | 暂不覆盖 | 接入 Kafka exporter 或 Worker 消费位点指标 |
 | Trace 采样仅适合本地 | 本地默认可提高采样 | 生产按流量和成本设置采样率 |
 
-## 7. 参考文档
+## 8. 参考文档
 
 - `02-devcollab-system-architecture-v0.3.md`
 - `03-devcollab-architecture-verification-v0.1.md`
-- `90-local-architecture-integration-troubleshooting-v0.3.md`
+- `90-local-architecture-integration-troubleshooting-v0.4.md`
