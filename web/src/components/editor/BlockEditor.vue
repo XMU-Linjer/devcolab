@@ -106,6 +106,7 @@ import {
   updateBlock,
   type DocumentBlock,
 } from '@/api/block';
+import ParagraphBlock from '@/components/editor/ParagraphBlock.vue';
 import { CollaborationOperationError } from '@/composables/useDocumentCollaboration';
 import { isConflictError, readableError } from '@/utils/error';
 
