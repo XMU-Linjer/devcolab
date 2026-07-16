@@ -63,6 +63,23 @@ async function main() {
   );
   console.log(`[gateway-e2e] B broadcast operation=${broadcast.payload.operationType} version=${broadcast.payload.block.version}`);
 
+  wsA.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: operationId,
+    operationType: 'UPDATE_TEXT',
+    blockId: block.id,
+    expectedVersion: block.version,
+    content: {
+      text: 'duplicate update through gateway',
+    },
+  }));
+
+  const duplicate = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === operationId
+    && message.payload?.status === 'DUPLICATE',
+  );
+  console.log(`[gateway-e2e] duplicate result=${duplicate.payload.status}`);
+
   const conflictOperationId = randomUUID();
   wsA.send(JSON.stringify({
     type: 'DOCUMENT_OPERATION',

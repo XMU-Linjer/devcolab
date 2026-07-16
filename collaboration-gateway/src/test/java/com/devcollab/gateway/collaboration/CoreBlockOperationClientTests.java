@@ -103,7 +103,8 @@ class CoreBlockOperationClientTests {
                 new GatewayProperties(
                         "http://core.example",
                         Duration.ofMinutes(1),
-                        Duration.ofMinutes(1)
+                        Duration.ofMinutes(1),
+                        Duration.ofMinutes(5)
                 )
         );
     }

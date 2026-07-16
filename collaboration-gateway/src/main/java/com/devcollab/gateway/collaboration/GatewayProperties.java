@@ -8,7 +8,8 @@ import java.time.Duration;
 public record GatewayProperties(
         String coreBaseUrl,
         Duration presenceTtl,
-        Duration editingTtl
+        Duration editingTtl,
+        Duration operationDedupTtl
 ) {
 
     public GatewayProperties {
@@ -20,6 +21,11 @@ public record GatewayProperties(
         }
         if (editingTtl == null || editingTtl.isNegative() || editingTtl.isZero()) {
             throw new IllegalArgumentException("editing-ttl 必须大于 0");
+        }
+        if (operationDedupTtl == null
+                || operationDedupTtl.isNegative()
+                || operationDedupTtl.isZero()) {
+            throw new IllegalArgumentException("operation-dedup-ttl 必须大于 0");
         }
     }
 }

@@ -14,6 +14,7 @@ devcollab:
     core-base-url: ${DEVCOLLAB_CORE_BASE_URL:http://localhost:8080}
     presence-ttl: ${DEVCOLLAB_GATEWAY_PRESENCE_TTL:PT1M}
     editing-ttl: ${DEVCOLLAB_GATEWAY_EDITING_TTL:PT1M}
+    operation-dedup-ttl: ${DEVCOLLAB_GATEWAY_OPERATION_DEDUP_TTL:PT5M}
   security:
     jwt:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
