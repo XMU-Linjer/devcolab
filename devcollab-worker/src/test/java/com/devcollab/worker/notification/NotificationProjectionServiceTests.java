@@ -88,6 +88,7 @@ class NotificationProjectionServiceTests {
 
         assertThat(countNotifications()).isEqualTo(1);
         assertThat(firstRecipient()).isEqualTo(adminId);
+        assertThat(firstTitle()).isEqualTo("文档待评审：接口设计");
     }
 
     @Test
@@ -115,6 +116,7 @@ class NotificationProjectionServiceTests {
         assertThat(countNotifications()).isEqualTo(1);
         assertThat(firstRecipient()).isEqualTo(authorId);
         assertThat(firstType()).isEqualTo("DOCUMENT_REVIEW_APPROVED");
+        assertThat(firstTitle()).isEqualTo("文档已发布：登录需求");
     }
 
     @Test
@@ -191,6 +193,13 @@ class NotificationProjectionServiceTests {
     private String firstType() {
         return jdbcTemplate.queryForObject(
                 "SELECT type FROM notifications LIMIT 1",
+                String.class
+        );
+    }
+
+    private String firstTitle() {
+        return jdbcTemplate.queryForObject(
+                "SELECT title FROM notifications LIMIT 1",
                 String.class
         );
     }
