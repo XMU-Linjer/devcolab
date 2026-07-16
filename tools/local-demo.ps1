@@ -6,6 +6,7 @@ param(
     [int] $StartupTimeoutSeconds = 180,
     [switch] $SkipFrontendBuild,
     [switch] $VerifyAfterStart,
+    [switch] $WithObservability,
     [switch] $KeepInfrastructure
 )
 
@@ -70,10 +71,19 @@ function Test-ContainerRunning {
 
 function Resolve-RedisHostPort {
     $configuredPort = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379")
-    if (-not (Test-TcpPort -HostName "localhost" -Port $configuredPort)) {
-        return
-    }
     if (Test-ContainerRunning -ContainerName "devcollab-redis") {
+        $bindings = @(& docker port devcollab-redis "6379/tcp" 2>$null)
+        $binding = $bindings | Select-Object -First 1
+        if ($LASTEXITCODE -eq 0 -and $binding -match ":(?<port>\d+)$") {
+            $runningPort = [int] $Matches.port
+            [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "$runningPort", "Process")
+            if ($runningPort -ne $configuredPort) {
+                Write-Step "using running DevCollab Redis host port $runningPort"
+            }
+            return
+        }
+    }
+    if (-not (Test-TcpPort -HostName "localhost" -Port $configuredPort)) {
         return
     }
 
@@ -254,6 +264,25 @@ function Ensure-KafkaTopics {
     }
 }
 
+function Ensure-ObservabilityImages {
+    $services = @("tempo", "loki", "otel-collector", "alloy", "prometheus", "grafana")
+    foreach ($service in $services) {
+        $pulled = $false
+        foreach ($attempt in 1..3) {
+            Write-Step "pulling observability image service=$service attempt=$attempt/3"
+            & docker compose --profile observability pull $service
+            if ($LASTEXITCODE -eq 0) {
+                $pulled = $true
+                break
+            }
+            Start-Sleep -Seconds 2
+        }
+        if (-not $pulled) {
+            throw "Failed to pull observability image for $service after 3 attempts"
+        }
+    }
+}
+
 function Set-SharedServiceEnvironment {
     $nginxPort = Get-EnvOrDefault -Name "NGINX_HOST_PORT" -DefaultValue "8088"
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_DB_URL", (Get-EnvOrDefault "DEVCOLLAB_DB_URL" "jdbc:postgresql://localhost:5432/devcollab"), "Process")
@@ -311,6 +340,28 @@ function Start-LocalDemo {
     Wait-TcpPort -Name "Elasticsearch" -Port 9200
     Ensure-KafkaTopics
 
+    if ($WithObservability) {
+        [Environment]::SetEnvironmentVariable("DEVCOLLAB_TRACING_ENABLED", "true", "Process")
+        [Environment]::SetEnvironmentVariable("DEVCOLLAB_OTLP_TRACES_ENDPOINT", "http://localhost:4318/v1/traces", "Process")
+        Write-Step "starting Prometheus, Loki, Tempo, OpenTelemetry Collector, Alloy and Grafana"
+        Push-Location $RepoRoot
+        try {
+            Ensure-ObservabilityImages
+            Invoke-Checked -FilePath "docker" -Arguments @(
+                "compose", "--profile", "observability", "up", "-d", "--pull", "never",
+                "tempo", "loki", "otel-collector", "alloy", "prometheus", "grafana"
+            )
+        }
+        finally {
+            Pop-Location
+        }
+        Wait-TcpPort -Name "OpenTelemetry Collector" -Port 4318
+        Wait-TcpPort -Name "Prometheus" -Port 9091
+        Wait-TcpPort -Name "Loki" -Port 3100
+        Wait-TcpPort -Name "Tempo" -Port 3200
+        Wait-TcpPort -Name "Grafana" -Port 3000
+    }
+
     $managed = @()
     try {
         [Environment]::SetEnvironmentVariable("DEVCOLLAB_OUTBOX_WORKER_ENABLED", "true", "Process")
@@ -361,6 +412,10 @@ function Stop-LocalDemo {
         Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "nginx")
         if (-not $KeepInfrastructure) {
             Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "postgres", "redis", "kafka", "elasticsearch")
+            Invoke-Checked -FilePath "docker" -Arguments @(
+                "compose", "--profile", "observability", "stop",
+                "prometheus", "loki", "tempo", "otel-collector", "alloy", "grafana"
+            )
         }
     }
     finally {
@@ -375,7 +430,12 @@ function Show-LocalDemoStatus {
         @{ name = "Knowledge Core"; port = 8080 },
         @{ name = "Worker"; port = 8082 },
         @{ name = "Gateway"; port = 8090 },
-        @{ name = "Nginx"; port = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088") }
+        @{ name = "Nginx"; port = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088") },
+        @{ name = "Prometheus"; port = [int](Get-EnvOrDefault "PROMETHEUS_HOST_PORT" "9091") },
+        @{ name = "Loki"; port = [int](Get-EnvOrDefault "LOKI_HOST_PORT" "3100") },
+        @{ name = "Tempo"; port = [int](Get-EnvOrDefault "TEMPO_HOST_PORT" "3200") },
+        @{ name = "OTel Collector"; port = [int](Get-EnvOrDefault "OTEL_HTTP_HOST_PORT" "4318") },
+        @{ name = "Grafana"; port = [int](Get-EnvOrDefault "GRAFANA_HOST_PORT" "3000") }
     )
     foreach ($check in $checks) {
         $state = if (Test-TcpPort -HostName "localhost" -Port $check.port) { "UP" } else { "DOWN" }
@@ -396,6 +456,10 @@ function Invoke-LocalDemoVerification {
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_CORE_BASE_URL", $baseUrl, "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_GATEWAY_WS_URL", $wsUrl, "Process")
     Invoke-Checked -FilePath "node" -Arguments @((Join-Path $RepoRoot "tools\e2e-gateway-check.mjs"))
+
+    if ($WithObservability) {
+        Invoke-Checked -FilePath "node" -Arguments @((Join-Path $RepoRoot "tools\e2e-observability-check.mjs"))
+    }
 }
 
 switch ($Action) {

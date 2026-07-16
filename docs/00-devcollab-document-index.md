@@ -11,6 +11,7 @@
 | 05 | `05-devcollab-document-governance-v0.1.md` | 统一文档目录、编号、命名、提交属性、正文结构和维护流程 | V0.1 | 应提交 |
 | 06 | `06-devcollab-authentication-design-v0.4.md` | 定义注册、登录、Token、Cookie、会话、限流、安全及验收 | V0.4 | 应提交 |
 | 07 | `07-devcollab-agent-rag-architecture-v0.1.md` | 定义 LangChain/LangGraph、RAG 入库、混合检索、Reviewer、Evidence、安全和评测 | V0.1 | 应提交 |
+| 08 | `08-devcollab-observability-design-v0.1.md` | 定义本地指标、日志、链路追踪、Grafana 展示与验收口径 | V0.1 | 应提交 |
 
 正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 
@@ -39,6 +40,6 @@
 | 编号 | 文档 | 主题 | 版本 | 版本库状态 |
 |---:|---|---|---|---|
 | 90 | `90-local-outbox-kafka-notification-learning-v0.6.md` | Transactional Outbox、Kafka 第二消费者、Worker 通知中心和真实排错复盘 | V0.6 | 已由 `.gitignore` 忽略 |
-| 90 | `90-local-architecture-integration-troubleshooting-v0.2.md` | Nginx 统一入口、跨服务联调、演示编排和真实故障排查 | V0.2 | 已由 `.gitignore` 忽略 |
+| 90 | `90-local-architecture-integration-troubleshooting-v0.3.md` | Nginx 统一入口、可观测性、跨服务联调、演示编排和真实故障排查 | V0.3 | 已由 `.gitignore` 忽略 |
 
 > 说明：本索引历史内容存在编码乱码风险，待单独进行文档治理修复。本次先明确当前 Kafka/通知中心学习材料的规范入口，避免继续引用旧的乱码版本；v0.6 为当前有效学习版本。

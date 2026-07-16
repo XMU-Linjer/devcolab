@@ -20,3 +20,27 @@ devcollab:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
       audience: ${DEVCOLLAB_JWT_AUDIENCE:devcollab-web}
       secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    enabled: ${DEVCOLLAB_TRACING_ENABLED:false}
+    sampling:
+      probability: ${DEVCOLLAB_TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${DEVCOLLAB_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:devcollab-collaboration-gateway},%X{traceId:-},%X{spanId:-}] "

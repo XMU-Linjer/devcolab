@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: DevCollab
+    orgId: 1
+    folder: DevCollab
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

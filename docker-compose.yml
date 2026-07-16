@@ -119,11 +119,125 @@ services:
     networks:
       - devcollab-local
 
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.5.0}
+    container_name: devcollab-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=24h
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9091}:9090"
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus-rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - devcollab-local
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.5.1}
+    container_name: devcollab-loki
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "${LOKI_HOST_PORT:-3100}:3100"
+    volumes:
+      - ./deploy/observability/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks:
+      - devcollab-local
+
+  tempo:
+    image: grafana/tempo:${TEMPO_VERSION:-2.8.2}
+    container_name: devcollab-tempo
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "${TEMPO_HOST_PORT:-3200}:3200"
+    volumes:
+      - ./deploy/observability/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    networks:
+      - devcollab-local
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.130.1}
+    container_name: devcollab-otel-collector
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    ports:
+      - "${OTEL_GRPC_HOST_PORT:-4317}:4317"
+      - "${OTEL_HTTP_HOST_PORT:-4318}:4318"
+      - "${OTEL_HEALTH_HOST_PORT:-13133}:13133"
+    volumes:
+      - ./deploy/observability/otel-collector.yml:/etc/otelcol-contrib/config.yml:ro
+    depends_on:
+      - tempo
+    networks:
+      - devcollab-local
+
+  alloy:
+    image: grafana/alloy:${ALLOY_VERSION:-v1.10.0}
+    container_name: devcollab-alloy
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    ports:
+      - "${ALLOY_HOST_PORT:-12345}:12345"
+    volumes:
+      - ./deploy/observability/alloy.config:/etc/alloy/config.alloy:ro
+      - ./logs/local-demo:/var/log/devcollab:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    networks:
+      - devcollab-local
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-12.1.0}
+    container_name: devcollab-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-devcollab}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - devcollab-local
+
 volumes:
   postgres-data:
   redis-data:
   kafka-data:
   elasticsearch-data:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  alloy-data:
+  grafana-data:
 
 networks:
   devcollab-local:
