@@ -24,17 +24,20 @@ public class AuthenticationApplicationService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final RefreshTokenService refreshTokenService;
+    private final LoginAttemptLimiter loginAttemptLimiter;
 
     public AuthenticationApplicationService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenService jwtTokenService,
-            RefreshTokenService refreshTokenService
+            RefreshTokenService refreshTokenService,
+            LoginAttemptLimiter loginAttemptLimiter
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.refreshTokenService = refreshTokenService;
+        this.loginAttemptLimiter = loginAttemptLimiter;
     }
 
     @Transactional
@@ -64,6 +67,14 @@ public class AuthenticationApplicationService {
     public AuthenticatedUser login(LoginCommand command) {
         String normalizedUsername = normalizeUsername(command.username());
 
+        var limitDecision = loginAttemptLimiter.acquire(normalizedUsername);
+        if (!limitDecision.allowed()) {
+            throw new com.devcollab.knowledgecore.common.redis.RateLimitExceededException(
+                    "登录尝试过于频繁，请稍后重试",
+                    limitDecision.retryAfterMillis()
+            );
+        }
+
         UserAccount userAccount = userRepository
                 .findByNormalizedUsername(normalizedUsername)
                 .orElseThrow(this::invalidCredentials);
@@ -76,6 +87,7 @@ public class AuthenticationApplicationService {
             throw invalidCredentials();
         }
 
+        loginAttemptLimiter.reset(normalizedUsername);
         return createAuthenticatedUser(userAccount);
     }
 

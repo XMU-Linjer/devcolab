@@ -14,6 +14,7 @@ import com.devcollab.knowledgecore.document.application.exception.InvalidDocumen
 import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.ReviewIssueNotFoundException;
 import com.devcollab.knowledgecore.notification.application.exception.NotificationNotFoundException;
+import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
@@ -30,6 +31,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(
+            RateLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", Long.toString(exception.retryAfterSeconds()))
+                .body(ApiErrorResponse.of(
+                        HttpStatus.TOO_MANY_REQUESTS.value(),
+                        "RATE_LIMIT_EXCEEDED",
+                        exception.getMessage(),
+                        request.getRequestURI()
+                ));
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidationException(

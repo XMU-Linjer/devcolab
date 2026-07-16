@@ -3,6 +3,7 @@ package com.devcollab.gateway.collaboration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -10,6 +11,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class GatewayOperationDeduplicator {
+
+    private static final DefaultRedisScript<Long> MARK_FIRST_SEEN_SCRIPT =
+            new DefaultRedisScript<>("""
+                    if redis.call('EXISTS', KEYS[1]) == 1 then
+                        return 0
+                    end
+                    redis.call('PSETEX', KEYS[1], ARGV[1], ARGV[2])
+                    return 1
+                    """, Long.class);
 
     private static final Logger log =
             LoggerFactory.getLogger(GatewayOperationDeduplicator.class);
@@ -35,13 +45,14 @@ public class GatewayOperationDeduplicator {
         OperationKey operationKey =
                 new OperationKey(documentId, userId, clientOperationId);
         try {
-            Boolean inserted = redisTemplate.opsForValue().setIfAbsent(
-                    redisKey(operationKey),
-                    "1",
-                    properties.operationDedupTtl()
+            Long inserted = redisTemplate.execute(
+                    MARK_FIRST_SEEN_SCRIPT,
+                    java.util.List.of(redisKey(operationKey)),
+                    Long.toString(properties.operationDedupTtl().toMillis()),
+                    operationKey.documentId() + ":" + operationKey.userId()
             );
             if (inserted != null) {
-                return inserted;
+                return inserted == 1L;
             }
             log.warn("Redis returned null while marking gateway operation, using local fallback");
         } catch (RuntimeException e) {
@@ -78,11 +89,7 @@ public class GatewayOperationDeduplicator {
     }
 
     private String redisKey(OperationKey operationKey) {
-        return "gateway:document:%s:operation:%s:%s".formatted(
-                operationKey.documentId(),
-                operationKey.userId(),
-                operationKey.clientOperationId()
-        );
+        return "dedup:" + operationKey.clientOperationId();
     }
 
     private record OperationKey(

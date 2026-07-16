@@ -24,6 +24,14 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
+  redis:
+    coordination:
+      login-limit:
+        max-attempts: ${DEVCOLLAB_LOGIN_LIMIT_MAX_ATTEMPTS:5}
+        window: ${DEVCOLLAB_LOGIN_LIMIT_WINDOW:PT15M}
+      rate-limit:
+        max-operations: ${DEVCOLLAB_RATE_LIMIT_MAX_OPERATIONS:120}
+        window: ${DEVCOLLAB_RATE_LIMIT_WINDOW:PT1M}
   cache:
     enabled: ${DEVCOLLAB_CACHE_ENABLED:true}
     workspace-member-ttl: ${DEVCOLLAB_CACHE_WORKSPACE_MEMBER_TTL:PT10M}
