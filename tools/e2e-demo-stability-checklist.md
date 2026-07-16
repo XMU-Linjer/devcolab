@@ -20,7 +20,7 @@ docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh `
   --bootstrap-server localhost:9092 `
   --create `
   --if-not-exists `
-  --topic devcollab.domain-events `
+  --topic devcollab.document.events `
   --partitions 1 `
   --replication-factor 1
 ```

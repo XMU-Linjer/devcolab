@@ -60,7 +60,7 @@ class NotificationProjectionServiceTests {
     }
 
     @Test
-    void submittedReviewNotifiesWorkspaceAdminsExceptOperator()
+    void reviewRequestedNotifiesWorkspaceAdminsExceptOperator()
             throws Exception {
         UUID workspaceId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
@@ -74,7 +74,7 @@ class NotificationProjectionServiceTests {
 
         projectionService.project(
                 UUID.randomUUID(),
-                "DOCUMENT_REVIEW_SUBMITTED",
+                "REVIEW_REQUESTED",
                 OBJECT_MAPPER.readTree("""
                         {
                           "workspaceId": "%s",
@@ -92,7 +92,7 @@ class NotificationProjectionServiceTests {
     }
 
     @Test
-    void approvedReviewNotifiesDocumentAuthor() throws Exception {
+    void reviewCompletedNotifiesDocumentAuthor() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
         UUID operatorId = UUID.randomUUID();
@@ -101,7 +101,7 @@ class NotificationProjectionServiceTests {
 
         projectionService.project(
                 UUID.randomUUID(),
-                "DOCUMENT_REVIEW_APPROVED",
+                "REVIEW_COMPLETED",
                 OBJECT_MAPPER.readTree("""
                         {
                           "workspaceId": "%s",
@@ -115,8 +115,40 @@ class NotificationProjectionServiceTests {
 
         assertThat(countNotifications()).isEqualTo(1);
         assertThat(firstRecipient()).isEqualTo(authorId);
-        assertThat(firstType()).isEqualTo("DOCUMENT_REVIEW_APPROVED");
+        assertThat(firstType()).isEqualTo("REVIEW_COMPLETED");
         assertThat(firstTitle()).isEqualTo("文档已发布：登录需求");
+    }
+
+    @Test
+    void reviewIssueCreatedNotifiesAssignee() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID operatorId = UUID.randomUUID();
+        UUID assigneeId = UUID.randomUUID();
+
+        projectionService.project(
+                UUID.randomUUID(),
+                "REVIEW_ISSUE_CREATED",
+                OBJECT_MAPPER.readTree("""
+                        {
+                          "workspaceId": "%s",
+                          "documentId": "%s",
+                          "title": "缺少边界说明",
+                          "assigneeId": "%s",
+                          "operatorUserId": "%s"
+                        }
+                        """.formatted(
+                        workspaceId,
+                        documentId,
+                        assigneeId,
+                        operatorId
+                )),
+                Instant.now()
+        );
+
+        assertThat(countNotifications()).isEqualTo(1);
+        assertThat(firstRecipient()).isEqualTo(assigneeId);
+        assertThat(firstType()).isEqualTo("REVIEW_ISSUE_CREATED");
     }
 
     @Test
@@ -139,13 +171,13 @@ class NotificationProjectionServiceTests {
 
         projectionService.project(
                 eventId,
-                "DOCUMENT_REVIEW_SUBMITTED",
+                "REVIEW_REQUESTED",
                 payload,
                 Instant.now()
         );
         projectionService.project(
                 eventId,
-                "DOCUMENT_REVIEW_SUBMITTED",
+                "REVIEW_REQUESTED",
                 payload,
                 Instant.now()
         );

@@ -33,12 +33,50 @@ public class NotificationProjectionService {
             Instant occurredAt
     ) {
         switch (eventType) {
-            case "DOCUMENT_REVIEW_SUBMITTED" ->
-                    notifyAdminsForSubmittedReview(eventId, payload, occurredAt);
-            case "DOCUMENT_REVIEW_APPROVED" ->
-                    notifyDocumentAuthor(eventId, eventType, payload, occurredAt);
-            case "DOCUMENT_REVIEW_REJECTED" ->
-                    notifyDocumentAuthor(eventId, eventType, payload, occurredAt);
+            case "REVIEW_REQUESTED", "DOCUMENT_REVIEW_SUBMITTED" ->
+                    notifyAdminsForReviewRequested(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
+            case "REVIEW_COMPLETED", "DOCUMENT_REVIEW_APPROVED" ->
+                    notifyDocumentAuthorReviewCompleted(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
+            case "REVIEW_FAILED", "DOCUMENT_REVIEW_REJECTED" ->
+                    notifyDocumentAuthorReviewFailed(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
+            case "REVIEW_ISSUE_CREATED" ->
+                    notifyReviewIssueAssignee(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
+            case "REVIEW_ISSUE_RESOLVED",
+                 "REVIEW_ISSUE_ACCEPTED",
+                 "REVIEW_ISSUE_REJECTED" ->
+                    notifyReviewIssueCreator(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
+            case "NOTIFICATION_REQUESTED" ->
+                    notifyRequestedRecipient(
+                            eventId,
+                            eventType,
+                            payload,
+                            occurredAt
+                    );
             default -> log.debug(
                     "Notification projection ignored event type={}",
                     eventType
@@ -46,15 +84,16 @@ public class NotificationProjectionService {
         }
     }
 
-    private void notifyAdminsForSubmittedReview(
+    private void notifyAdminsForReviewRequested(
             UUID eventId,
+            String eventType,
             JsonNode payload,
             Instant occurredAt
     ) {
         UUID workspaceId = uuid(payload, "workspaceId");
         UUID documentId = uuid(payload, "documentId");
         UUID operatorUserId = uuid(payload, "operatorUserId");
-        String title = text(payload, "title");
+        String title = text(payload, "title", "未命名文档");
 
         List<UUID> recipients = jdbcTemplate.query("""
                         SELECT user_id FROM workspace_members
@@ -70,7 +109,7 @@ public class NotificationProjectionService {
                         recipient,
                         workspaceId,
                         documentId,
-                        "DOCUMENT_REVIEW_SUBMITTED",
+                        eventType,
                         "文档待评审：" + title,
                         "有文档提交评审，请进入工作台处理。",
                         eventId,
@@ -80,7 +119,7 @@ public class NotificationProjectionService {
         }
     }
 
-    private void notifyDocumentAuthor(
+    private void notifyDocumentAuthorReviewCompleted(
             UUID eventId,
             String eventType,
             JsonNode payload,
@@ -94,21 +133,34 @@ public class NotificationProjectionService {
             return;
         }
 
-        String title = text(payload, "title");
-        if ("DOCUMENT_REVIEW_APPROVED".equals(eventType)) {
-            insertNotification(
-                    authorId,
-                    workspaceId,
-                    documentId,
-                    eventType,
-                    "文档已发布：" + title,
-                    "你的文档已通过评审并发布。",
-                    eventId,
-                    occurredAt
-            );
+        String title = text(payload, "title", "未命名文档");
+        insertNotification(
+                authorId,
+                workspaceId,
+                documentId,
+                eventType,
+                "文档已发布：" + title,
+                "你的文档已通过评审并发布。",
+                eventId,
+                occurredAt
+        );
+    }
+
+    private void notifyDocumentAuthorReviewFailed(
+            UUID eventId,
+            String eventType,
+            JsonNode payload,
+            Instant occurredAt
+    ) {
+        UUID workspaceId = uuid(payload, "workspaceId");
+        UUID documentId = uuid(payload, "documentId");
+        UUID operatorUserId = uuid(payload, "operatorUserId");
+        UUID authorId = findDocumentAuthor(documentId);
+        if (authorId == null || authorId.equals(operatorUserId)) {
             return;
         }
 
+        String title = text(payload, "title", "未命名文档");
         insertNotification(
                 authorId,
                 workspaceId,
@@ -116,6 +168,82 @@ public class NotificationProjectionService {
                 eventType,
                 "文档被驳回：" + title,
                 "你的文档评审未通过，请根据评审意见修改。",
+                eventId,
+                occurredAt
+        );
+    }
+
+    private void notifyReviewIssueAssignee(
+            UUID eventId,
+            String eventType,
+            JsonNode payload,
+            Instant occurredAt
+    ) {
+        UUID recipient = nullableUuid(payload, "assigneeId");
+        UUID operator = uuid(payload, "operatorUserId");
+        if (recipient == null || recipient.equals(operator)) {
+            return;
+        }
+
+        insertNotification(
+                recipient,
+                uuid(payload, "workspaceId"),
+                uuid(payload, "documentId"),
+                eventType,
+                "新的评审问题：" + text(payload, "title", "未命名问题"),
+                "你被分配了一个 Review Issue，请进入工作台处理。",
+                eventId,
+                occurredAt
+        );
+    }
+
+    private void notifyReviewIssueCreator(
+            UUID eventId,
+            String eventType,
+            JsonNode payload,
+            Instant occurredAt
+    ) {
+        UUID recipient = uuid(payload, "createdBy");
+        UUID operator = uuid(payload, "operatorUserId");
+        if (recipient.equals(operator)) {
+            return;
+        }
+
+        insertNotification(
+                recipient,
+                uuid(payload, "workspaceId"),
+                uuid(payload, "documentId"),
+                eventType,
+                "评审问题状态变更：" + text(payload, "title", "未命名问题"),
+                "你创建的 Review Issue 状态已更新为 "
+                        + text(payload, "status", "UNKNOWN") + "。",
+                eventId,
+                occurredAt
+        );
+    }
+
+    private void notifyRequestedRecipient(
+            UUID eventId,
+            String eventType,
+            JsonNode payload,
+            Instant occurredAt
+    ) {
+        UUID recipient = nullableUuid(payload, "recipientUserId");
+        if (recipient == null) {
+            log.warn(
+                    "NOTIFICATION_REQUESTED ignored because recipientUserId is missing: event={}",
+                    eventId
+            );
+            return;
+        }
+
+        insertNotification(
+                recipient,
+                uuid(payload, "workspaceId"),
+                nullableUuid(payload, "documentId"),
+                eventType,
+                text(payload, "title", "系统通知"),
+                text(payload, "content", ""),
                 eventId,
                 occurredAt
         );
@@ -169,17 +297,27 @@ public class NotificationProjectionService {
     }
 
     private UUID uuid(JsonNode payload, String field) {
+        UUID value = nullableUuid(payload, field);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Notification payload missing UUID field: " + field
+            );
+        }
+        return value;
+    }
+
+    private UUID nullableUuid(JsonNode payload, String field) {
         JsonNode node = payload.get(field);
-        if (node == null || node.isNull()) {
+        if (node == null || node.isNull() || node.asText().isBlank()) {
             return null;
         }
         return UUID.fromString(node.asText());
     }
 
-    private String text(JsonNode payload, String field) {
+    private String text(JsonNode payload, String field, String fallback) {
         JsonNode node = payload.get(field);
         if (node == null || node.isNull() || node.asText().isBlank()) {
-            return "未命名文档";
+            return fallback;
         }
         return node.asText();
     }

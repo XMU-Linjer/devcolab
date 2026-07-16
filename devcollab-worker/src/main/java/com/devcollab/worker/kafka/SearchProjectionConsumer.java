@@ -16,7 +16,7 @@ import java.util.Optional;
 /**
  * Kafka consumer for search projection.
  *
- * <p>Consumes {@code devcollab.domain-events} and projects document mutations
+ * <p>Consumes {@code devcollab.document.events} and projects document mutations
  * into Elasticsearch. Uses {@code consumer_inbox} table for idempotency after
  * the projection side effect succeeds.
  */
@@ -50,7 +50,7 @@ public class SearchProjectionConsumer {
     }
 
     @KafkaListener(
-            topics = "${devcollab.worker.kafka.topic:devcollab.domain-events}",
+            topics = "${devcollab.worker.kafka.document-topic:devcollab.document.events}",
             groupId = "${devcollab.worker.search.group-id:devcollab-search-projection}"
     )
     public void onEvent(String message) {

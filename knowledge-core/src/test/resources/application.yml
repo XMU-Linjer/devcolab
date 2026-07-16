@@ -18,7 +18,10 @@ devcollab:
       index-name: devcollab-search-test
   outbox:
     kafka:
-      topic: devcollab.domain-events
+      document-topic: devcollab.document.events
+      cache-topic: devcollab.cache.events
+      review-topic: devcollab.review.events
+      notification-topic: devcollab.notification.events
   worker:
     outbox:
       enabled: false

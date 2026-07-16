@@ -5,10 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -25,15 +25,15 @@ public class OutboxKafkaPublisher implements OutboxMessagePublisher {
             LoggerFactory.getLogger(OutboxKafkaPublisher.class);
 
     private final KafkaTemplate<String, String> kafkaTemplate;
-    private final String topic;
+    private final OutboxTopicRouter topicRouter;
     private final ObjectMapper objectMapper;
 
     public OutboxKafkaPublisher(
             KafkaTemplate<String, String> kafkaTemplate,
-            @Value("${devcollab.outbox.kafka.topic:devcollab.domain-events}") String topic
+            OutboxTopicRouter topicRouter
     ) {
         this.kafkaTemplate = kafkaTemplate;
-        this.topic = topic;
+        this.topicRouter = topicRouter;
         this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule());
     }
@@ -59,6 +59,18 @@ public class OutboxKafkaPublisher implements OutboxMessagePublisher {
             );
         }
 
+        List<String> topics = topicRouter.route(event);
+        for (String topic : topics) {
+            publishToTopic(event, topic, key, value);
+        }
+    }
+
+    private void publishToTopic(
+            OutboxKafkaMessage event,
+            String topic,
+            String key,
+            String value
+    ) {
         try {
             var future = kafkaTemplate.send(topic, key, value);
             future.get();
@@ -70,12 +82,14 @@ public class OutboxKafkaPublisher implements OutboxMessagePublisher {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(
-                    "Kafka send interrupted for event " + event.eventId(),
+                    "Kafka send interrupted for event " + event.eventId()
+                            + " topic=" + topic,
                     e
             );
         } catch (ExecutionException e) {
             throw new RuntimeException(
-                    "Kafka send failed for event " + event.eventId(),
+                    "Kafka send failed for event " + event.eventId()
+                            + " topic=" + topic,
                     e.getCause()
             );
         }

@@ -42,7 +42,10 @@ devcollab:
       index-name: ${DEVCOLLAB_ELASTICSEARCH_INDEX:devcollab-search}
   outbox:
     kafka:
-      topic: ${DEVCOLLAB_OUTBOX_KAFKA_TOPIC:devcollab.domain-events}
+      document-topic: ${DEVCOLLAB_KAFKA_DOCUMENT_TOPIC:devcollab.document.events}
+      cache-topic: ${DEVCOLLAB_KAFKA_CACHE_TOPIC:devcollab.cache.events}
+      review-topic: ${DEVCOLLAB_KAFKA_REVIEW_TOPIC:devcollab.review.events}
+      notification-topic: ${DEVCOLLAB_KAFKA_NOTIFICATION_TOPIC:devcollab.notification.events}
   worker:
     outbox:
       enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:false}

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 const coreBaseUrl = process.env.DEVCOLLAB_CORE_BASE_URL ?? 'http://localhost:8080';
 const elasticsearchUrl = process.env.DEVCOLLAB_ELASTICSEARCH_URL ?? 'http://localhost:9200';
 const elasticsearchIndex = process.env.DEVCOLLAB_ELASTICSEARCH_INDEX ?? 'devcollab-search';
-const topic = process.env.DEVCOLLAB_OUTBOX_KAFKA_TOPIC ?? 'devcollab.domain-events';
+const topic = process.env.DEVCOLLAB_KAFKA_DOCUMENT_TOPIC ?? 'devcollab.document.events';
 const suffix = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
 const keyword = `e2ekafka${suffix}`;
 const password = 'Password123!';

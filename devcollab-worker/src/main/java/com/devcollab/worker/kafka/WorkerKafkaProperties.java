@@ -7,16 +7,43 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "devcollab.worker.kafka")
 public class WorkerKafkaProperties {
 
-    private String topic = "devcollab.domain-events";
-    private String dlqTopic = "devcollab.domain-events.dlq";
+    private String documentTopic = "devcollab.document.events";
+    private String cacheTopic = "devcollab.cache.events";
+    private String reviewTopic = "devcollab.review.events";
+    private String notificationTopic = "devcollab.notification.events";
+    private String dlqTopic = "devcollab.dead-letter";
     private Retry retry = new Retry();
 
-    public String getTopic() {
-        return topic;
+    public String getDocumentTopic() {
+        return documentTopic;
     }
 
-    public void setTopic(String topic) {
-        this.topic = topic;
+    public void setDocumentTopic(String documentTopic) {
+        this.documentTopic = documentTopic;
+    }
+
+    public String getCacheTopic() {
+        return cacheTopic;
+    }
+
+    public void setCacheTopic(String cacheTopic) {
+        this.cacheTopic = cacheTopic;
+    }
+
+    public String getReviewTopic() {
+        return reviewTopic;
+    }
+
+    public void setReviewTopic(String reviewTopic) {
+        this.reviewTopic = reviewTopic;
+    }
+
+    public String getNotificationTopic() {
+        return notificationTopic;
+    }
+
+    public void setNotificationTopic(String notificationTopic) {
+        this.notificationTopic = notificationTopic;
     }
 
     public String getDlqTopic() {

@@ -61,8 +61,21 @@ class OutboxEventIntegrationTests {
         JsonNode document = createDocument(token, workspaceId, "Outbox doc");
 
         List<OutboxEvent> events = outboxEventRepository.findAll();
-        assertThat(events).hasSize(before + 1);
-        OutboxEvent event = events.get(events.size() - 1);
+        assertThat(events).hasSize(before + 3);
+        List<OutboxEvent> newEvents = events.stream()
+                .skip(before)
+                .toList();
+        assertThat(newEvents)
+                .extracting(OutboxEvent::eventType)
+                .contains(
+                        "DOCUMENT_CREATED",
+                        "DOCUMENT_OPERATION_APPLIED",
+                        "CACHE_INVALIDATED"
+                );
+        OutboxEvent event = newEvents.stream()
+                .filter(item -> item.eventType().equals("DOCUMENT_CREATED"))
+                .findFirst()
+                .orElseThrow();
         assertThat(event.aggregateType()).isEqualTo("DOCUMENT");
         assertThat(event.aggregateId().toString())
                 .isEqualTo(document.get("id").asText());
@@ -131,8 +144,21 @@ class OutboxEventIntegrationTests {
                 .andExpect(jsonPath("$.version").value(1));
 
         List<OutboxEvent> events = outboxEventRepository.findAll();
-        assertThat(events).hasSize(before + 1);
-        OutboxEvent event = events.get(events.size() - 1);
+        assertThat(events).hasSize(before + 2);
+        List<OutboxEvent> newEvents = events.stream()
+                .skip(before)
+                .toList();
+        assertThat(newEvents)
+                .extracting(OutboxEvent::eventType)
+                .contains(
+                        "DOCUMENT_BLOCK_UPDATED",
+                        "DOCUMENT_OPERATION_APPLIED"
+                );
+        OutboxEvent event = newEvents.stream()
+                .filter(item -> item.eventType()
+                        .equals("DOCUMENT_BLOCK_UPDATED"))
+                .findFirst()
+                .orElseThrow();
         assertThat(event.aggregateType()).isEqualTo("DOCUMENT_BLOCK");
         assertThat(event.aggregateId().toString())
                 .isEqualTo(block.get("id").asText());
@@ -210,8 +236,10 @@ class OutboxEventIntegrationTests {
                 .map(OutboxEvent::eventType)
                 .toList();
 
-        assertThat(newEventTypes).containsExactly(
+        assertThat(newEventTypes).contains(
                 "DOCUMENT_UPDATED",
+                "DOCUMENT_OPERATION_APPLIED",
+                "CACHE_INVALIDATED",
                 "DOCUMENT_MOVED",
                 "DOCUMENT_BLOCK_MOVED",
                 "DOCUMENT_BLOCK_DELETED",

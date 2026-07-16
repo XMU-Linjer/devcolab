@@ -247,8 +247,11 @@ function Stop-ManagedProcesses {
 
 function Ensure-KafkaTopics {
     $topics = @(
-        "devcollab.domain-events",
-        "devcollab.domain-events.dlq"
+        "devcollab.document.events",
+        "devcollab.cache.events",
+        "devcollab.review.events",
+        "devcollab.notification.events",
+        "devcollab.dead-letter"
     )
     foreach ($topic in $topics) {
         Write-Step "ensuring Kafka topic $topic"

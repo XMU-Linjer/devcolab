@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.application;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentBlockVersionConflictException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
@@ -74,6 +75,12 @@ public class DocumentBlockApplicationService {
                 saved,
                 currentUserId
         );
+        publishBlockOperationApplied(
+                "DOCUMENT_BLOCK_CREATED",
+                document,
+                saved,
+                currentUserId
+        );
         return saved;
     }
 
@@ -123,6 +130,12 @@ public class DocumentBlockApplicationService {
                 updated,
                 currentUserId
         );
+        publishBlockOperationApplied(
+                "DOCUMENT_BLOCK_UPDATED",
+                document,
+                updated,
+                currentUserId
+        );
         return updated;
     }
 
@@ -148,6 +161,12 @@ public class DocumentBlockApplicationService {
         );
         normalizeSortOrder(documentId);
         publishBlockEvent(
+                "DOCUMENT_BLOCK_DELETED",
+                document,
+                block,
+                currentUserId
+        );
+        publishBlockOperationApplied(
                 "DOCUMENT_BLOCK_DELETED",
                 document,
                 block,
@@ -180,12 +199,20 @@ public class DocumentBlockApplicationService {
         moved.stream()
                 .filter(item -> item.id().equals(block.id()))
                 .findFirst()
-                .ifPresent(movedBlock -> publishBlockEvent(
-                        "DOCUMENT_BLOCK_MOVED",
-                        document,
-                        movedBlock,
-                        currentUserId
-                ));
+                .ifPresent(movedBlock -> {
+                    publishBlockEvent(
+                            "DOCUMENT_BLOCK_MOVED",
+                            document,
+                            movedBlock,
+                            currentUserId
+                    );
+                    publishBlockOperationApplied(
+                            "DOCUMENT_BLOCK_MOVED",
+                            document,
+                            movedBlock,
+                            currentUserId
+                    );
+                });
         documentService.logDocumentOperation(
                 document,
                 "DOCUMENT_BLOCK_MOVED",
@@ -256,5 +283,25 @@ public class DocumentBlockApplicationService {
         payload.put("operatorUserId", currentUserId);
         payload.put("updatedAt", block.updatedAt());
         return payload;
+    }
+
+    private void publishBlockOperationApplied(
+            String operationType,
+            Document document,
+            DocumentBlock block,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>(
+                blockPayload(document, block, currentUserId)
+        );
+        payload.put("operationType", operationType);
+        payload.put("targetType", "DOCUMENT_BLOCK");
+        payload.put("targetId", block.id());
+        outboxEventPublisher.publish(
+                "DOCUMENT",
+                document.id(),
+                OutboxEventTypes.DOCUMENT_OPERATION_APPLIED,
+                payload
+        );
     }
 }

@@ -66,7 +66,7 @@ class NotificationProjectionConsumerTests {
 
         verify(projectionService).project(
                 eq(eventId),
-                eq("DOCUMENT_REVIEW_SUBMITTED"),
+                eq("REVIEW_REQUESTED"),
                 any(JsonNode.class),
                 eq(Instant.parse("2026-07-15T10:00:00Z"))
         );
@@ -83,7 +83,7 @@ class NotificationProjectionConsumerTests {
                 .when(projectionService)
                 .project(
                         eq(eventId),
-                        eq("DOCUMENT_REVIEW_SUBMITTED"),
+                        eq("REVIEW_REQUESTED"),
                         any(JsonNode.class),
                         eq(Instant.parse("2026-07-15T10:00:00Z"))
                 );
@@ -130,7 +130,7 @@ class NotificationProjectionConsumerTests {
                   "eventId": "%s",
                   "aggregateType": "DOCUMENT",
                   "aggregateId": "6ed37fd7-39bb-4b81-ae0d-59b7533ed6d0",
-                  "eventType": "DOCUMENT_REVIEW_SUBMITTED",
+                  "eventType": "REVIEW_REQUESTED",
                   "payload": "%s",
                   "occurredAt": "2026-07-15T10:00:00Z"
                 }

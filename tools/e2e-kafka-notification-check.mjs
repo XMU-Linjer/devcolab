@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 
 const coreBaseUrl = process.env.DEVCOLLAB_CORE_BASE_URL ?? 'http://localhost:8080';
-const topic = process.env.DEVCOLLAB_OUTBOX_KAFKA_TOPIC ?? 'devcollab.domain-events';
+const topic = process.env.DEVCOLLAB_KAFKA_NOTIFICATION_TOPIC ?? 'devcollab.notification.events';
 const suffix = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
 const password = 'Password123!';
 const waitTimeoutMs = Number(process.env.DEVCOLLAB_E2E_WAIT_TIMEOUT_MS ?? '60000');
@@ -62,16 +62,17 @@ async function main() {
     method: 'POST',
   });
 
-  const submittedOutbox = await waitForOutboxPublished(document.id, 'DOCUMENT_REVIEW_SUBMITTED');
+  const submittedOutbox = await waitForOutboxPublished(document.id, 'REVIEW_REQUESTED');
   console.log(`[kafka-notification-e2e] submitted outbox status=${submittedOutbox.status}`);
 
-  await waitForNotificationConsumerInbox(document.id, 'DOCUMENT_REVIEW_SUBMITTED');
-  console.log('[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_SUBMITTED');
+  await waitForNotificationConsumerInbox(document.id, 'REVIEW_REQUESTED');
+  console.log('[kafka-notification-e2e] notification consumer consumed REVIEW_REQUESTED');
 
   const adminNotification = await waitForNotification(
     admin.accessToken,
     document.id,
-    'DOCUMENT_REVIEW_SUBMITTED',
+    'REVIEW_REQUESTED',
+    null,
     '文档待评审：'
   );
   console.log(`[kafka-notification-e2e] admin notification=${adminNotification.id} title=${adminNotification.title}`);
@@ -92,16 +93,17 @@ async function main() {
     },
   });
 
-  const approvedOutbox = await waitForOutboxPublished(document.id, 'DOCUMENT_REVIEW_APPROVED');
+  const approvedOutbox = await waitForOutboxPublished(document.id, 'REVIEW_COMPLETED');
   console.log(`[kafka-notification-e2e] approved outbox status=${approvedOutbox.status}`);
 
-  await waitForNotificationConsumerInbox(document.id, 'DOCUMENT_REVIEW_APPROVED');
-  console.log('[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_APPROVED');
+  await waitForNotificationConsumerInbox(document.id, 'REVIEW_COMPLETED');
+  console.log('[kafka-notification-e2e] notification consumer consumed REVIEW_COMPLETED');
 
   const authorNotification = await waitForNotification(
     author.accessToken,
     document.id,
-    'DOCUMENT_REVIEW_APPROVED',
+    'REVIEW_COMPLETED',
+    null,
     '文档已发布：'
   );
   console.log(`[kafka-notification-e2e] author notification=${authorNotification.id} title=${authorNotification.title}`);
@@ -225,7 +227,7 @@ async function waitForNotification(accessToken, documentId, type, titlePrefix) {
     const match = notifications.find(notification =>
       notification.documentId === documentId
       && notification.type === type
-      && notification.title?.startsWith(titlePrefix)
+      && (!titlePrefix || notification.title?.startsWith(titlePrefix))
       && notification.unread === true
     );
     return match ?? null;

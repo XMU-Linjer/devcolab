@@ -45,7 +45,7 @@ public class NotificationProjectionConsumer {
     }
 
     @KafkaListener(
-            topics = "${devcollab.worker.kafka.topic:devcollab.domain-events}",
+            topics = "${devcollab.worker.kafka.notification-topic:devcollab.notification.events}",
             groupId = "${devcollab.worker.notification.group-id:devcollab-notification-projection}"
     )
     public void onEvent(String message) {

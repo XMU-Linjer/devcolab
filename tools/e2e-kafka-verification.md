@@ -30,7 +30,7 @@ docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh `
   --bootstrap-server localhost:9092 `
   --create `
   --if-not-exists `
-  --topic devcollab.domain-events `
+  --topic devcollab.document.events `
   --partitions 1 `
   --replication-factor 1
 ```
@@ -107,7 +107,7 @@ limit 10;
 ```powershell
 docker exec devcollab-kafka /opt/kafka/bin/kafka-console-consumer.sh `
   --bootstrap-server localhost:9092 `
-  --topic devcollab.domain-events `
+  --topic devcollab.document.events `
   --from-beginning `
   --max-messages 5 `
   --timeout-ms 10000
@@ -236,7 +236,7 @@ payload 中故意缺少 workspaceId / title / updatedAt
 验收含义：
 
 - Worker 会重试失败事件；
-- 重试后仍失败则写入 `devcollab.domain-events.dlq`；
+- 重试后仍失败则写入 `devcollab.dead-letter`；
 - 投影失败不会写 `consumer_inbox`；
 - 失败事件被隔离，不会伪装成成功消费。
 

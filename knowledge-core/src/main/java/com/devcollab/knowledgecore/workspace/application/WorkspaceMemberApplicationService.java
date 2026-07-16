@@ -2,6 +2,9 @@ package com.devcollab.knowledgecore.workspace.application;
 
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
 import com.devcollab.knowledgecore.auth.domain.UserRepository;
+import com.devcollab.knowledgecore.common.cache.CacheKey;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberAlreadyExistsException;
@@ -15,7 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -26,19 +31,22 @@ public class WorkspaceMemberApplicationService {
     private final UserRepository userRepository;
     private final WorkspacePermissionPolicy permissionPolicy;
     private final WorkspaceMemberCacheService memberCache;
+    private final OutboxEventPublisher outboxEventPublisher;
 
     public WorkspaceMemberApplicationService(
             WorkspaceApplicationService workspaceService,
             WorkspaceMemberRepository memberRepository,
             UserRepository userRepository,
             WorkspacePermissionPolicy permissionPolicy,
-            WorkspaceMemberCacheService memberCache
+            WorkspaceMemberCacheService memberCache,
+            OutboxEventPublisher outboxEventPublisher
     ) {
         this.workspaceService = workspaceService;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.permissionPolicy = permissionPolicy;
         this.memberCache = memberCache;
+        this.outboxEventPublisher = outboxEventPublisher;
     }
 
     public List<WorkspaceMemberView> listMembers(
@@ -86,6 +94,12 @@ public class WorkspaceMemberApplicationService {
         );
         memberRepository.save(member);
         memberCache.evict(workspaceId, targetUser.id());
+        publishMemberCacheInvalidated(
+                workspaceId,
+                targetUser.id(),
+                currentUserId,
+                "WORKSPACE_MEMBER_INVITED"
+        );
         return WorkspaceMemberView.from(member, targetUser);
     }
 
@@ -112,6 +126,12 @@ public class WorkspaceMemberApplicationService {
         );
         memberRepository.save(updated);
         memberCache.evict(workspaceId, targetUserId);
+        publishMemberCacheInvalidated(
+                workspaceId,
+                targetUserId,
+                currentUserId,
+                "WORKSPACE_MEMBER_ROLE_UPDATED"
+        );
 
         UserAccount user = userRepository.findById(targetUserId)
                 .orElseThrow(WorkspaceUserNotFoundException::new);
@@ -133,6 +153,12 @@ public class WorkspaceMemberApplicationService {
 
         memberRepository.deleteByWorkspaceIdAndUserId(workspaceId, targetUserId);
         memberCache.evict(workspaceId, targetUserId);
+        publishMemberCacheInvalidated(
+                workspaceId,
+                targetUserId,
+                currentUserId,
+                "WORKSPACE_MEMBER_REMOVED"
+        );
     }
 
     private WorkspaceMember requireMemberManager(
@@ -176,5 +202,30 @@ public class WorkspaceMemberApplicationService {
             throw new IllegalArgumentException("用户名不能为空");
         }
         return username.trim().toLowerCase();
+    }
+
+    private void publishMemberCacheInvalidated(
+            UUID workspaceId,
+            UUID targetUserId,
+            UUID currentUserId,
+            String reason
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", workspaceId);
+        payload.put("userId", targetUserId);
+        payload.put("cacheName", "workspace-member");
+        payload.put("cacheKey", CacheKey.workspaceMember(
+                workspaceId,
+                targetUserId
+        ));
+        payload.put("reason", reason);
+        payload.put("operatorUserId", currentUserId);
+        payload.put("invalidatedAt", Instant.now());
+        outboxEventPublisher.publish(
+                "CACHE",
+                workspaceId,
+                OutboxEventTypes.CACHE_INVALIDATED,
+                payload
+        );
     }
 }

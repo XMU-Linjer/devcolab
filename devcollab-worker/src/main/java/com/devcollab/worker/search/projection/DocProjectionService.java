@@ -55,6 +55,8 @@ public class DocProjectionService {
                  "DOCUMENT_UPDATED",
                  "DOCUMENT_MOVED" -> projectDocument(json);
             case "DOCUMENT_DELETED" -> deleteDocument(json);
+            case "DOCUMENT_OPERATION_APPLIED" ->
+                    projectDocumentOperationApplied(json);
             case "DOCUMENT_BLOCK_CREATED",
                  "DOCUMENT_BLOCK_UPDATED",
                  "DOCUMENT_BLOCK_MOVED" -> projectBlock(json);
@@ -145,6 +147,27 @@ public class DocProjectionService {
                     "Outbox event payload field is not a UUID: field=" + field,
                     exception
             );
+        }
+    }
+
+    private void projectDocumentOperationApplied(JsonNode payload) {
+        String operationType = text(payload, "operationType");
+        String targetType = text(payload, "targetType");
+        if ("DOCUMENT".equals(targetType)) {
+            if ("DOCUMENT_DELETED".equals(operationType)) {
+                deleteDocument(payload);
+                return;
+            }
+            projectDocument(payload);
+            return;
+        }
+
+        if ("DOCUMENT_BLOCK".equals(targetType)) {
+            if ("DOCUMENT_BLOCK_DELETED".equals(operationType)) {
+                deleteBlock(payload);
+                return;
+            }
+            projectBlock(payload);
         }
     }
 

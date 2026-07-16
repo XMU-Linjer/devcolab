@@ -3,8 +3,8 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-const topic = process.env.DEVCOLLAB_OUTBOX_KAFKA_TOPIC ?? 'devcollab.domain-events';
-const dlqTopic = process.env.DEVCOLLAB_WORKER_KAFKA_DLQ_TOPIC ?? 'devcollab.domain-events.dlq';
+const topic = process.env.DEVCOLLAB_KAFKA_DOCUMENT_TOPIC ?? 'devcollab.document.events';
+const dlqTopic = process.env.DEVCOLLAB_KAFKA_DEAD_LETTER_TOPIC ?? 'devcollab.dead-letter';
 const eventId = randomUUID();
 const aggregateId = randomUUID();
 

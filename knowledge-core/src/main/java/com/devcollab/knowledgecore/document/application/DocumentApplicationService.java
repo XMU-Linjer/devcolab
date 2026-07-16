@@ -1,6 +1,8 @@
 package com.devcollab.knowledgecore.document.application;
 
+import com.devcollab.knowledgecore.common.cache.CacheKey;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentParentCycleException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
@@ -107,7 +109,15 @@ public class DocumentApplicationService {
                 now
         );
         publishDocumentEvent("DOCUMENT_CREATED", saved, currentUserId);
+        publishDocumentOperationApplied(
+                "DOCUMENT_CREATED",
+                saved,
+                currentUserId,
+                "DOCUMENT",
+                saved.id()
+        );
         treeCache.evictTree(workspaceId);
+        publishDocumentTreeCacheInvalidated(workspaceId, currentUserId);
         return saved;
     }
 
@@ -163,7 +173,18 @@ public class DocumentApplicationService {
                 saved.updatedAt()
         );
         publishDocumentEvent("DOCUMENT_UPDATED", saved, currentUserId);
+        publishDocumentOperationApplied(
+                "DOCUMENT_UPDATED",
+                saved,
+                currentUserId,
+                "DOCUMENT",
+                saved.id()
+        );
         treeCache.evictTree(document.workspaceId());
+        publishDocumentTreeCacheInvalidated(
+                document.workspaceId(),
+                currentUserId
+        );
         return saved;
     }
 
@@ -204,7 +225,15 @@ public class DocumentApplicationService {
                 saved.updatedAt()
         );
         publishDocumentEvent("DOCUMENT_MOVED", saved, currentUserId);
+        publishDocumentOperationApplied(
+                "DOCUMENT_MOVED",
+                saved,
+                currentUserId,
+                "DOCUMENT",
+                saved.id()
+        );
         treeCache.evictTree(saved.workspaceId());
+        publishDocumentTreeCacheInvalidated(saved.workspaceId(), currentUserId);
         return saved;
     }
 
@@ -226,7 +255,18 @@ public class DocumentApplicationService {
         );
         documentRepository.deleteById(documentId);
         publishDocumentEvent("DOCUMENT_DELETED", document, currentUserId);
+        publishDocumentOperationApplied(
+                "DOCUMENT_DELETED",
+                document,
+                currentUserId,
+                "DOCUMENT",
+                document.id()
+        );
         treeCache.evictTree(document.workspaceId());
+        publishDocumentTreeCacheInvalidated(
+                document.workspaceId(),
+                currentUserId
+        );
     }
 
     @Transactional
@@ -273,6 +313,11 @@ public class DocumentApplicationService {
         );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_SUBMITTED",
+                saved,
+                currentUserId
+        );
+        publishDocumentEvent(
+                OutboxEventTypes.REVIEW_REQUESTED,
                 saved,
                 currentUserId
         );
@@ -326,7 +371,13 @@ public class DocumentApplicationService {
                 saved,
                 currentUserId
         );
+        publishDocumentEvent(
+                OutboxEventTypes.REVIEW_COMPLETED,
+                saved,
+                currentUserId
+        );
         publishDocumentVersionEvent(saved, version, currentUserId);
+        publishSnapshotRequestedEvent(saved, version, currentUserId);
         return saved;
     }
 
@@ -375,6 +426,11 @@ public class DocumentApplicationService {
                 saved,
                 currentUserId
         );
+        publishDocumentEvent(
+                OutboxEventTypes.REVIEW_FAILED,
+                saved,
+                currentUserId
+        );
         return saved;
     }
 
@@ -412,6 +468,13 @@ public class DocumentApplicationService {
                 "DOCUMENT_DEPRECATED",
                 saved,
                 currentUserId
+        );
+        publishDocumentOperationApplied(
+                "DOCUMENT_DEPRECATED",
+                saved,
+                currentUserId,
+                "DOCUMENT",
+                saved.id()
         );
         return saved;
     }
@@ -671,7 +734,67 @@ public class DocumentApplicationService {
         outboxEventPublisher.publish(
                 "DOCUMENT_VERSION",
                 version.id(),
-                "DOCUMENT_VERSION_PUBLISHED",
+                OutboxEventTypes.DOCUMENT_VERSION_PUBLISHED,
+                payload
+        );
+    }
+
+    private void publishSnapshotRequestedEvent(
+            Document document,
+            DocumentVersion version,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", document.workspaceId());
+        payload.put("documentId", document.id());
+        payload.put("versionId", version.id());
+        payload.put("versionNo", version.versionNo());
+        payload.put("operatorUserId", currentUserId);
+        payload.put("requestedAt", version.publishedAt());
+        payload.put("reason", "DOCUMENT_VERSION_PUBLISHED");
+        outboxEventPublisher.publish(
+                "DOCUMENT_VERSION",
+                version.id(),
+                OutboxEventTypes.SNAPSHOT_REQUESTED,
+                payload
+        );
+    }
+
+    private void publishDocumentOperationApplied(
+            String operationType,
+            Document document,
+            UUID currentUserId,
+            String targetType,
+            UUID targetId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>(
+                documentPayload(document, currentUserId)
+        );
+        payload.put("operationType", operationType);
+        payload.put("targetType", targetType);
+        payload.put("targetId", targetId);
+        outboxEventPublisher.publish(
+                "DOCUMENT",
+                document.id(),
+                OutboxEventTypes.DOCUMENT_OPERATION_APPLIED,
+                payload
+        );
+    }
+
+    private void publishDocumentTreeCacheInvalidated(
+            UUID workspaceId,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", workspaceId);
+        payload.put("cacheName", "workspace-documents-tree");
+        payload.put("cacheKey", CacheKey.documentTree(workspaceId));
+        payload.put("operatorUserId", currentUserId);
+        payload.put("invalidatedAt", Instant.now());
+        outboxEventPublisher.publish(
+                "CACHE",
+                workspaceId,
+                OutboxEventTypes.CACHE_INVALIDATED,
                 payload
         );
     }
