@@ -1,0 +1,280 @@
+#!/usr/bin/env node
+
+import { execFileSync } from 'node:child_process';
+
+const coreBaseUrl = process.env.DEVCOLLAB_CORE_BASE_URL ?? 'http://localhost:8080';
+const topic = process.env.DEVCOLLAB_OUTBOX_KAFKA_TOPIC ?? 'devcollab.domain-events';
+const suffix = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+const password = 'Password123!';
+
+async function main() {
+  await assertCore();
+  ensureKafkaTopic();
+
+  const author = await register({
+    username: `notify_author_${suffix}`,
+    displayName: `Notify E2E Author ${suffix}`,
+    password,
+  });
+  const admin = await register({
+    username: `notify_admin_${suffix}`,
+    displayName: `Notify E2E Admin ${suffix}`,
+    password,
+  });
+
+  const workspace = await api(author.accessToken, '/api/v1/workspaces', {
+    method: 'POST',
+    body: {
+      name: `Kafka Notification E2E Workspace ${suffix}`,
+    },
+  });
+
+  await api(author.accessToken, `/api/v1/workspaces/${workspace.id}/members/invitations`, {
+    method: 'POST',
+    body: {
+      username: admin.username,
+      role: 'ADMIN',
+    },
+  });
+
+  const document = await api(author.accessToken, `/api/v1/workspaces/${workspace.id}/documents`, {
+    method: 'POST',
+    body: {
+      title: `Kafka Notification E2E Document ${suffix}`,
+      documentType: 'REQUIREMENT',
+    },
+  });
+
+  await api(author.accessToken, `/api/v1/documents/${document.id}/blocks`, {
+    method: 'POST',
+    body: {
+      type: 'PARAGRAPH',
+      content: {
+        text: `Kafka notification E2E content ${suffix}`,
+      },
+    },
+  });
+
+  console.log(`[kafka-notification-e2e] created workspace=${workspace.id} document=${document.id}`);
+
+  await api(author.accessToken, `/api/v1/documents/${document.id}/submit-review`, {
+    method: 'POST',
+  });
+
+  const submittedOutbox = await waitForOutboxPublished(document.id, 'DOCUMENT_REVIEW_SUBMITTED');
+  console.log(`[kafka-notification-e2e] submitted outbox status=${submittedOutbox.status}`);
+
+  await waitForNotificationConsumerInbox(document.id, 'DOCUMENT_REVIEW_SUBMITTED');
+  console.log('[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_SUBMITTED');
+
+  const adminNotification = await waitForNotification(
+    admin.accessToken,
+    document.id,
+    'DOCUMENT_REVIEW_SUBMITTED',
+    '文档待评审：'
+  );
+  console.log(`[kafka-notification-e2e] admin notification=${adminNotification.id} title=${adminNotification.title}`);
+
+  const readNotification = await api(
+    admin.accessToken,
+    `/api/v1/notifications/${adminNotification.id}/read`,
+    { method: 'PATCH' }
+  );
+  if (readNotification.unread !== false) {
+    throw new Error(`Expected admin notification to become read, got unread=${readNotification.unread}`);
+  }
+
+  await api(admin.accessToken, `/api/v1/documents/${document.id}/approve-review`, {
+    method: 'POST',
+    body: {
+      comment: 'Kafka notification E2E approve',
+    },
+  });
+
+  const approvedOutbox = await waitForOutboxPublished(document.id, 'DOCUMENT_REVIEW_APPROVED');
+  console.log(`[kafka-notification-e2e] approved outbox status=${approvedOutbox.status}`);
+
+  await waitForNotificationConsumerInbox(document.id, 'DOCUMENT_REVIEW_APPROVED');
+  console.log('[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_APPROVED');
+
+  const authorNotification = await waitForNotification(
+    author.accessToken,
+    document.id,
+    'DOCUMENT_REVIEW_APPROVED',
+    '文档已发布：'
+  );
+  console.log(`[kafka-notification-e2e] author notification=${authorNotification.id} title=${authorNotification.title}`);
+  console.log(`[kafka-notification-e2e] PASS workspace=${workspace.id} document=${document.id}`);
+}
+
+async function assertCore() {
+  const response = await fetch(`${coreBaseUrl}/actuator/health`);
+  if (!response.ok && response.status !== 401) {
+    throw new Error(`Core health check failed: ${response.status} ${await response.text()}`);
+  }
+}
+
+function ensureKafkaTopic() {
+  execFileSync('docker', [
+    'exec',
+    'devcollab-kafka',
+    '/opt/kafka/bin/kafka-topics.sh',
+    '--bootstrap-server',
+    'localhost:9092',
+    '--create',
+    '--if-not-exists',
+    '--topic',
+    topic,
+    '--partitions',
+    '1',
+    '--replication-factor',
+    '1',
+  ], { stdio: 'pipe' });
+}
+
+async function register(payload) {
+  return api(null, '/api/v1/auth/register', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+async function api(accessToken, path, options = {}) {
+  const response = await fetch(`${coreBaseUrl}${path}`, {
+    method: options.method ?? 'GET',
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${options.method ?? 'GET'} ${path} failed: ${response.status} ${text}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
+async function waitForOutboxPublished(documentId, eventType) {
+  return waitFor(`${eventType} outbox published`, () => {
+    const rows = queryOutbox(documentId, eventType);
+    const published = rows.find(row => row.status === 'PUBLISHED');
+    return published ?? null;
+  }, 30000);
+}
+
+function queryOutbox(documentId, eventType) {
+  const sql = `
+    select event_type, status, retry_count, coalesce(left(last_error, 160), '') as last_error
+      from outbox_events
+     where aggregate_id = '${documentId}'::uuid
+       and event_type = '${eventType}'
+     order by occurred_at desc;
+  `;
+
+  return psql(sql)
+    .filter(Boolean)
+    .map(line => {
+      const [rowEventType, status, retryCount, lastError] = line.split('|');
+      return { eventType: rowEventType, status, retryCount: Number(retryCount), lastError };
+    });
+}
+
+async function waitForNotificationConsumerInbox(documentId, eventType) {
+  return waitFor(`${eventType} notification consumer inbox`, () => {
+    const rows = queryNotificationConsumerInbox(documentId, eventType);
+    return rows.length > 0 ? rows : null;
+  }, 30000);
+}
+
+function queryNotificationConsumerInbox(documentId, eventType) {
+  const sql = `
+    select oe.event_type, ci.consumer_name, ci.consumed_at
+      from consumer_inbox ci
+      join outbox_events oe on oe.id = ci.event_id
+     where oe.aggregate_id = '${documentId}'::uuid
+       and oe.event_type = '${eventType}'
+       and ci.consumer_name = 'notification-projection'
+     order by ci.consumed_at desc;
+  `;
+
+  return psql(sql)
+    .filter(Boolean)
+    .map(line => {
+      const [rowEventType, consumerName, consumedAt] = line.split('|');
+      return { eventType: rowEventType, consumerName, consumedAt };
+    });
+}
+
+async function waitForNotification(accessToken, documentId, type, titlePrefix) {
+  return waitFor(`${type} notification API result`, async () => {
+    const notifications = await api(
+      accessToken,
+      '/api/v1/notifications?unreadOnly=true&limit=20'
+    );
+    const match = notifications.find(notification =>
+      notification.documentId === documentId
+      && notification.type === type
+      && notification.title?.startsWith(titlePrefix)
+      && notification.unread === true
+    );
+    return match ?? null;
+  }, 30000);
+}
+
+function psql(sql) {
+  const output = execFileSync('docker', [
+    'exec',
+    'devcollab-postgres',
+    'psql',
+    '-U',
+    'devcollab',
+    '-d',
+    'devcollab',
+    '-t',
+    '-A',
+    '-F',
+    '|',
+    '-c',
+    sql,
+  ], { encoding: 'utf8' });
+
+  return output
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+}
+
+async function waitFor(description, action, timeoutMs) {
+  const startedAt = Date.now();
+  let lastError;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const result = await action();
+      if (result) {
+        return result;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(1000);
+  }
+
+  throw new Error(`Timed out waiting for ${description}${lastError ? `: ${lastError.message}` : ''}`);
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+main().catch(error => {
+  console.error(`[kafka-notification-e2e] FAIL ${error.message}`);
+  process.exitCode = 1;
+});
