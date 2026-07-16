@@ -80,6 +80,7 @@
         :is-last="index === blocks.length - 1"
         :busy="busyBlockId === block.id"
         :readonly="readonly"
+        :editing-users="editingUsersByBlock(block.id)"
         :class="{ 'is-focused': focusedBlockId === block.id }"
         :data-block-id="block.id"
         @save="handleSave"
@@ -107,7 +108,10 @@ import {
   type DocumentBlock,
 } from '@/api/block';
 import ParagraphBlock from '@/components/editor/ParagraphBlock.vue';
-import { CollaborationOperationError } from '@/composables/useDocumentCollaboration';
+import {
+  CollaborationOperationError,
+  type EditingState,
+} from '@/composables/useDocumentCollaboration';
 import { isConflictError, readableError } from '@/utils/error';
 
 const props = defineProps<{
@@ -115,6 +119,7 @@ const props = defineProps<{
   focusBlockId?: string | null;
   readonly?: boolean;
   remoteBlock?: DocumentBlock | null;
+  editingStates?: EditingState[];
   saveViaCollaboration?: (
     block: DocumentBlock,
     text: string,
@@ -318,5 +323,9 @@ function replaceBlock(block: DocumentBlock) {
   blocks.value = blocks.value.map((item) => (
     item.id === block.id ? block : item
   ));
+}
+
+function editingUsersByBlock(blockId: string) {
+  return (props.editingStates ?? []).filter((state) => state.blockId === blockId);
 }
 </script>

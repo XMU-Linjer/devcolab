@@ -7,6 +7,19 @@
         <el-tag size="small" effect="plain">{{ block.type }}</el-tag>
       </div>
 
+      <div v-if="editingUsers.length > 0" class="block-editing-users">
+        <span
+          v-for="user in editingUsers"
+          :key="`${user.userId}-${user.startedAt}`"
+          class="block-editing-pill"
+        >
+          <span class="block-editing-avatar">
+            {{ user.username.slice(0, 1).toUpperCase() }}
+          </span>
+          {{ user.username }} 正在编辑
+        </span>
+      </div>
+
       <div class="block-actions">
         <el-tooltip content="上移">
           <el-button
@@ -71,14 +84,18 @@ import { ArrowDown, ArrowUp, Delete } from '@element-plus/icons-vue';
 import { computed, ref, watch } from 'vue';
 
 import type { DocumentBlock } from '@/api/block';
+import type { EditingState } from '@/composables/useDocumentCollaboration';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   block: DocumentBlock;
   isFirst: boolean;
   isLast: boolean;
   busy?: boolean;
   readonly?: boolean;
-}>();
+  editingUsers?: EditingState[];
+}>(), {
+  editingUsers: () => [],
+});
 
 const emit = defineEmits<{
   save: [block: DocumentBlock, text: string];

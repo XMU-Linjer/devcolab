@@ -87,6 +87,7 @@
               :focus-block-id="focusBlockId"
               :readonly="isReadonly"
               :remote-block="collaborationRemoteBlock"
+              :editing-states="collaborationEditingStates"
               :save-via-collaboration="saveBlockViaCollaboration"
               @editing-start="startEditing"
               @editing-stop="stopEditing"

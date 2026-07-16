@@ -889,6 +889,11 @@ h1 {
     box-shadow 0.2s ease;
 }
 
+.paragraph-block:has(.block-editing-users) {
+  border-color: #9db7ff;
+  background: #f8fbff;
+}
+
 .block-toolbar {
   display: flex;
   align-items: center;
@@ -900,6 +905,38 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.block-editing-users {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.block-editing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #c7d7ff;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: #2454d6;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px 3px 4px;
+}
+
+.block-editing-avatar {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: #2454d6;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .block-index,
