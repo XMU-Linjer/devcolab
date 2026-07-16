@@ -32,6 +32,16 @@ public final class CollaborationMessages {
             return new ServerMessage("EDITING_UPDATED", editingStates);
         }
 
+        public static ServerMessage roomState(
+                List<PresenceMember> members,
+                List<EditingState> editingStates
+        ) {
+            return new ServerMessage(
+                    "ROOM_STATE_SNAPSHOT",
+                    new RoomStateSnapshot(members, editingStates)
+            );
+        }
+
         public static ServerMessage error(String message) {
             return new ServerMessage("ERROR", new ErrorPayload(message));
         }
@@ -66,6 +76,12 @@ public final class CollaborationMessages {
             UUID userId,
             String username,
             Instant startedAt
+    ) {
+    }
+
+    public record RoomStateSnapshot(
+            List<PresenceMember> members,
+            List<EditingState> editingStates
     ) {
     }
 

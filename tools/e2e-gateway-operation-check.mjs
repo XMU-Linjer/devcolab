@@ -11,23 +11,36 @@ async function main() {
     throw new Error('This script requires a Node.js runtime with global WebSocket support.');
   }
 
-  const username = `gateway_${Date.now()}`;
-  const client = new ApiClient(coreUrl);
-  const auth = await client.post('/api/v1/auth/register', {
-    username,
-    displayName: `Gateway E2E ${new Date().toISOString()}`,
+  const suffix = Date.now();
+  const usernameA = `gateway_a_${suffix}`;
+  const usernameB = `gateway_b_${suffix}`;
+  const clientA = new ApiClient(coreUrl);
+  const clientB = new ApiClient(coreUrl);
+  const authA = await clientA.post('/api/v1/auth/register', {
+    username: usernameA,
+    displayName: `Gateway E2E A ${new Date().toISOString()}`,
     password,
   });
-  client.accessToken = auth.accessToken;
+  clientA.accessToken = authA.accessToken;
+  const authB = await clientB.post('/api/v1/auth/register', {
+    username: usernameB,
+    displayName: `Gateway E2E B ${new Date().toISOString()}`,
+    password,
+  });
+  clientB.accessToken = authB.accessToken;
 
-  const workspace = await client.post('/api/v1/workspaces', {
+  const workspace = await clientA.post('/api/v1/workspaces', {
     name: `Gateway E2E Workspace ${Date.now()}`,
   });
-  const document = await client.post(`/api/v1/workspaces/${workspace.id}/documents`, {
+  await clientA.post(`/api/v1/workspaces/${workspace.id}/members/invitations`, {
+    username: usernameB,
+    role: 'MEMBER',
+  });
+  const document = await clientA.post(`/api/v1/workspaces/${workspace.id}/documents`, {
     title: `Gateway E2E Document ${Date.now()}`,
     documentType: 'REQUIREMENT',
   });
-  const block = await client.post(`/api/v1/documents/${document.id}/blocks`, {
+  const block = await clientA.post(`/api/v1/documents/${document.id}/blocks`, {
     type: 'PARAGRAPH',
     content: {
       text: 'initial text',
@@ -36,8 +49,36 @@ async function main() {
 
   console.log(`[gateway-e2e] seed workspace=${workspace.id} document=${document.id} block=${block.id}`);
 
-  const wsA = await connect('A', workspace.id, document.id, auth.accessToken);
-  const wsB = await connect('B', workspace.id, document.id, auth.accessToken);
+  const wsA = await connect('A', workspace.id, document.id, authA.accessToken);
+  const wsB = await connect('B', workspace.id, document.id, authB.accessToken);
+
+  const initialSnapshot = await waitForMessage(wsB, 'ROOM_STATE_SNAPSHOT', message =>
+    Array.isArray(message.payload?.members)
+    && message.payload.members.some(member => member.username === usernameA)
+    && message.payload.members.some(member => member.username === usernameB),
+  );
+  console.log(`[gateway-e2e] B snapshot members=${initialSnapshot.payload.members.length} editing=${initialSnapshot.payload.editingStates.length}`);
+
+  wsA.send(JSON.stringify({
+    type: 'BLOCK_EDITING_STARTED',
+    blockId: block.id,
+  }));
+
+  const editingUpdate = await waitForMessage(wsB, 'EDITING_UPDATED', message =>
+    Array.isArray(message.payload)
+    && message.payload.some(state => state.blockId === block.id),
+  );
+  console.log(`[gateway-e2e] B editing states=${editingUpdate.payload.length}`);
+
+  wsB.close();
+  await waitForClose(wsB);
+
+  const wsB2 = await connect('B-reconnect', workspace.id, document.id, authB.accessToken);
+  const reconnectSnapshot = await waitForMessage(wsB2, 'ROOM_STATE_SNAPSHOT', message =>
+    Array.isArray(message.payload?.editingStates)
+    && message.payload.editingStates.some(state => state.blockId === block.id),
+  );
+  console.log(`[gateway-e2e] B reconnect snapshot members=${reconnectSnapshot.payload.members.length} editing=${reconnectSnapshot.payload.editingStates.length}`);
 
   const operationId = randomUUID();
   wsA.send(JSON.stringify({
@@ -57,11 +98,11 @@ async function main() {
   );
   console.log(`[gateway-e2e] A result=${applied.payload.status} version=${applied.payload.block.version}`);
 
-  const broadcast = await waitForMessage(wsB, 'DOCUMENT_OPERATION_BROADCAST', message =>
+  const broadcast = await waitForMessage(wsB2, 'DOCUMENT_OPERATION_BROADCAST', message =>
     message.payload?.clientOperationId === operationId
     && message.payload?.blockId === block.id,
   );
-  console.log(`[gateway-e2e] B broadcast operation=${broadcast.payload.operationType} version=${broadcast.payload.block.version}`);
+  console.log(`[gateway-e2e] B reconnect broadcast operation=${broadcast.payload.operationType} version=${broadcast.payload.block.version}`);
 
   wsA.send(JSON.stringify({
     type: 'DOCUMENT_OPERATION',
@@ -99,7 +140,7 @@ async function main() {
   console.log(`[gateway-e2e] conflict result=${conflict.payload.status}`);
 
   wsA.close();
-  wsB.close();
+  wsB2.close();
   console.log('[gateway-e2e] PASS');
 }
 
@@ -147,6 +188,21 @@ async function waitForMessage(socket, type, predicate, timeoutMs = 10000) {
     await delay(100);
   }
   throw new Error(`Timed out waiting for ${type}; seen=${JSON.stringify(socket.__messages)}`);
+}
+
+async function waitForClose(socket, timeoutMs = 5000) {
+  if (socket.readyState === WebSocket.CLOSED) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(
+      new Error('Timed out waiting for WebSocket close')
+    ), timeoutMs);
+    socket.addEventListener('close', () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+  });
 }
 
 function option(name, fallback) {

@@ -73,11 +73,16 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
     private Mono<Void> handleAuthenticated(ConnectionContext context) {
         sessionRegistry.register(context);
-        presenceStore.join(context.documentId(), context.sessionId(), context.user());
+        List<CollaborationMessages.PresenceMember> members =
+                presenceStore.join(
+                        context.documentId(),
+                        context.sessionId(),
+                        context.user()
+                );
+        List<CollaborationMessages.EditingState> editingStates =
+                presenceStore.editingStates(context.documentId());
+        send(context, ServerMessage.roomState(members, editingStates));
         publishPresence(context.documentId());
-        send(context, ServerMessage.editing(
-                presenceStore.editingStates(context.documentId())
-        ));
 
         Mono<Void> inbound = context.session().receive()
                 .map(WebSocketMessage::getPayloadAsText)
