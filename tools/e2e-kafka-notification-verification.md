@@ -1,17 +1,17 @@
 # Kafka 通知中心端到端验证
 
-这份文档用于验证第二消费者链路：
+这份文档用于验证 Kafka 第二消费者链路：
 
 ```text
 提交/通过文档评审
-  -> outbox_events
-  -> Kafka devcollab.domain-events
-  -> NotificationProjectionConsumer
-  -> notifications
-  -> Core 通知 API
+  -> Core 写 outbox_events
+  -> Core Outbox Relay 发布 Kafka
+  -> NotificationProjectionConsumer 消费事件
+  -> Worker 写 consumer_inbox 和 notifications
+  -> 用户通过 Core 通知 API 读取通知
 ```
 
-## 前置条件
+## 1. 前置条件
 
 启动基础设施：
 
@@ -23,6 +23,9 @@ docker compose up -d postgres kafka elasticsearch
 
 ```powershell
 $env:DEVCOLLAB_OUTBOX_WORKER_ENABLED="true"
+$env:DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE="1000"
+$env:DEVCOLLAB_OUTBOX_WORKER_INITIAL_DELAY_MS="1000"
+$env:DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS="3000"
 $env:DEVCOLLAB_KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
 $env:DEVCOLLAB_DB_URL="jdbc:postgresql://localhost:5432/devcollab"
 $env:DEVCOLLAB_DB_USERNAME="devcollab"
@@ -41,7 +44,7 @@ $env:DEVCOLLAB_WORKER_NOTIFICATION_ENABLED="true"
 .\mvnw.cmd -pl devcollab-worker spring-boot:run
 ```
 
-## 自动验收
+## 2. 自动验收命令
 
 ```powershell
 node tools\e2e-kafka-notification-check.mjs
@@ -61,6 +64,8 @@ node tools\e2e-kafka-notification-check.mjs
   -> 管理员通过 Core API 查到“文档待评审”通知
   -> 管理员标记通知已读
   -> 管理员通过评审
+  -> 等待 outbox_events 变成 PUBLISHED
+  -> 等待 notification-projection 写 consumer_inbox
   -> 作者通过 Core API 查到“文档已发布”通知
 ```
 
@@ -76,7 +81,7 @@ node tools\e2e-kafka-notification-check.mjs
 [kafka-notification-e2e] PASS ...
 ```
 
-## 验收意义
+## 3. 验收意义
 
 这条链路证明：
 
@@ -84,65 +89,19 @@ node tools\e2e-kafka-notification-check.mjs
 - 同一条领域事件可以被不同 consumer group 独立消费；
 - 通知消费者具备幂等消费记录；
 - 通知最终可以通过 Core API 被真实用户读取；
-- Worker 仍然不对浏览器暴露 API，职责边界清晰。
+- Worker 不对浏览器暴露 API，职责边界清晰。
 
-## 常见问题
+## 4. 常见问题
 
-如果超时等待 `outbox_events`：
+### 4.1 超时等待 outbox_events
 
-- 检查 Core 是否开启 `DEVCOLLAB_OUTBOX_WORKER_ENABLED=true`；
-- 检查 Kafka 容器是否运行；
-- 检查 `outbox_events.last_error`。
-- 检查 Core 日志是否出现 `Outbox worker tick completed`。
-- 如果本地历史 `outbox_events` 积压很多，新的评审事件可能还没有被 Relay 扫描到；可以临时调大 `DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE`。
-
-如果超时等待 `consumer_inbox`：
-
-- 检查 Worker 是否启动；
-- 检查 `DEVCOLLAB_WORKER_NOTIFICATION_ENABLED=true`；
-- 检查 Worker 日志是否有数据库或 Kafka 消费错误。
-
-如果通知 API 查不到：
-
-- 检查通知接收人是否正确；
-- `DOCUMENT_REVIEW_SUBMITTED` 通知给工作区 ADMIN，排除提交人；
-- `DOCUMENT_REVIEW_APPROVED` 通知给文档作者，排除操作者。
-
-## 一次真实失败记录
-
-现象：
+如果脚本卡在：
 
 ```text
-[kafka-notification-e2e] created workspace=... document=...
-[kafka-notification-e2e] FAIL Timed out waiting for DOCUMENT_REVIEW_SUBMITTED outbox published
+Timed out waiting for DOCUMENT_REVIEW_SUBMITTED outbox published
 ```
 
-同时 Worker 日志里出现：
-
-```text
-SearchProjectionConsumer.onEvent threw exception
-Kafka consumer sending record to DLQ
-```
-
-判断：
-
-- Worker 已经连上 Kafka；
-- SearchProjectionConsumer 正在处理历史消息并把失败消息送入 DLQ；
-- 但通知脚本此时卡在更早的 Core Outbox Relay 阶段；
-- 所以不能把 SearchProjectionConsumer 的 DLQ 日志当成通知脚本失败的直接根因。
-
-处理：
-
-- 通知 E2E 脚本增加超时诊断；
-- 超时时自动打印当前文档相关的 `outbox_events`、`consumer_inbox`、`notifications`；
-- 后续再次失败时，优先看 `outbox_events.status`：
-- `PENDING`：Core Relay 没扫到或没启动；
-  - `FAILED`：Kafka 发布失败，看 `last_error`；
-  - `PUBLISHED`：继续看 Worker/通知消费者。
-
-### 进一步定位：PENDING + retry_count=0 + last_error 空
-
-实际输出：
+先看脚本自动打印的诊断：
 
 ```text
 DOCUMENT_REVIEW_SUBMITTED|PENDING|0||
@@ -169,16 +128,86 @@ DEVCOLLAB_OUTBOX_WORKER_ENABLED=true
 2. 在同一个 PowerShell 窗口设置环境变量；
 3. 重新启动 Knowledge Core。
 
-```powershell
-$env:DEVCOLLAB_OUTBOX_WORKER_ENABLED="true"
-$env:DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE="1000"
-$env:DEVCOLLAB_OUTBOX_WORKER_INITIAL_DELAY_MS="1000"
-$env:DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS="3000"
-.\mvnw.cmd -pl knowledge-core spring-boot:run
-```
-
 启动后 Core 日志应看到：
 
 ```text
 Outbox worker tick completed: scanned=..., published=..., failed=...
 ```
+
+### 4.2 Worker 日志里 SearchProjectionConsumer 进 DLQ
+
+如果同时看到：
+
+```text
+SearchProjectionConsumer.onEvent threw exception
+Kafka consumer sending record to DLQ
+```
+
+不要立刻判断通知消费者失败。
+
+这通常表示：
+
+- Worker 已经连上 Kafka；
+- SearchProjectionConsumer 正在处理历史消息；
+- 历史坏消息被送入 DLQ；
+- 但通知脚本如果卡在 `outbox published`，根因仍然在 Core Outbox Relay 阶段。
+
+判断顺序应该是：
+
+```text
+outbox_events.status
+  PENDING -> Core Relay 没跑或没扫到
+  FAILED -> Kafka 发布失败，看 last_error
+  PUBLISHED -> 再看 Worker / consumer_inbox / notifications
+```
+
+## 5. 真实验收记录
+
+### 第一次失败
+
+现象：
+
+```text
+[kafka-notification-e2e] created workspace=... document=...
+[kafka-notification-e2e] FAIL Timed out waiting for DOCUMENT_REVIEW_SUBMITTED outbox published
+```
+
+诊断：
+
+```text
+DOCUMENT_REVIEW_SUBMITTED|PENDING|0||
+DOCUMENT_CREATED|PENDING|0||
+consumer_inbox rows=0
+notifications rows=0
+```
+
+结论：
+
+Core 已经写出 Outbox，但 Relay 没有运行。因为 `retry_count=0` 且 `last_error` 为空，说明不是 Kafka 发布失败，而是根本没有尝试发布。
+
+修复：
+
+重新启动 Knowledge Core，并设置：
+
+```powershell
+$env:DEVCOLLAB_OUTBOX_WORKER_ENABLED="true"
+```
+
+### 第二次成功
+
+重新启动 Core 后，脚本输出：
+
+```text
+[kafka-notification-e2e] created workspace=98149909-539b-4650-aca0-11fe028ef133 document=d39f2c1d-ab36-4560-84f1-5c1be3b4e4e9
+[kafka-notification-e2e] submitted outbox status=PUBLISHED
+[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_SUBMITTED
+[kafka-notification-e2e] admin notification=e7032c7d-e854-4f80-a458-6b0fc14a9f7b title=文档待评审：Kafka Notification E2E Document 20260716172547
+[kafka-notification-e2e] approved outbox status=PUBLISHED
+[kafka-notification-e2e] notification consumer consumed DOCUMENT_REVIEW_APPROVED
+[kafka-notification-e2e] author notification=00d2c348-fb03-45ca-a098-65bfea8a1a53 title=文档已发布：Kafka Notification E2E Document 20260716172547
+[kafka-notification-e2e] PASS workspace=98149909-539b-4650-aca0-11fe028ef133 document=d39f2c1d-ab36-4560-84f1-5c1be3b4e4e9
+```
+
+结论：
+
+第二消费者链路已完成真实端到端验收。

@@ -33,3 +33,11 @@
 ## 3. 文档维护规则
 
 所有 Markdown 文档统一存放在 `docs/`，并执行 `05-devcollab-document-governance-v0.1.md`。文件名前两位数字用于固定阅读顺序；本地文档使用 90–99 编号并同步加入 `.gitignore`。
+
+## 当前有效本地学习入口修正
+
+| 编号 | 文档 | 主题 | 版本 | 版本库状态 |
+|---:|---|---|---|---|
+| 90 | `90-local-outbox-kafka-notification-learning-v0.6.md` | Transactional Outbox、Kafka 第二消费者、Worker 通知中心和真实排错复盘 | V0.6 | 已由 `.gitignore` 忽略 |
+
+> 说明：本索引历史内容存在编码乱码风险，待单独进行文档治理修复。本次先明确当前 Kafka/通知中心学习材料的规范入口，避免继续引用旧的乱码版本；v0.6 为当前有效学习版本。
