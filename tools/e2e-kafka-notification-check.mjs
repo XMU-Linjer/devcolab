@@ -6,6 +6,7 @@ const coreBaseUrl = process.env.DEVCOLLAB_CORE_BASE_URL ?? 'http://localhost:808
 const topic = process.env.DEVCOLLAB_OUTBOX_KAFKA_TOPIC ?? 'devcollab.domain-events';
 const suffix = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
 const password = 'Password123!';
+const waitTimeoutMs = Number(process.env.DEVCOLLAB_E2E_WAIT_TIMEOUT_MS ?? '60000');
 
 async function main() {
   await assertCore();
@@ -166,7 +167,7 @@ async function waitForOutboxPublished(documentId, eventType) {
     const rows = queryOutbox(documentId, eventType);
     const published = rows.find(row => row.status === 'PUBLISHED');
     return published ?? null;
-  }, 30000);
+  }, waitTimeoutMs, () => printDiagnostics(documentId));
 }
 
 function queryOutbox(documentId, eventType) {
@@ -190,7 +191,7 @@ async function waitForNotificationConsumerInbox(documentId, eventType) {
   return waitFor(`${eventType} notification consumer inbox`, () => {
     const rows = queryNotificationConsumerInbox(documentId, eventType);
     return rows.length > 0 ? rows : null;
-  }, 30000);
+  }, waitTimeoutMs, () => printDiagnostics(documentId));
 }
 
 function queryNotificationConsumerInbox(documentId, eventType) {
@@ -225,7 +226,47 @@ async function waitForNotification(accessToken, documentId, type, titlePrefix) {
       && notification.unread === true
     );
     return match ?? null;
-  }, 30000);
+  }, waitTimeoutMs, () => printDiagnostics(documentId));
+}
+
+function printDiagnostics(documentId) {
+  console.error(`[kafka-notification-e2e] diagnostics document=${documentId}`);
+  printRows('outbox_events', `
+    select id, event_type, status, retry_count,
+           coalesce(left(last_error, 240), '') as last_error,
+           occurred_at, published_at
+      from outbox_events
+     where aggregate_id = '${documentId}'::uuid
+     order by occurred_at desc
+     limit 20;
+  `);
+  printRows('consumer_inbox', `
+    select oe.event_type, ci.consumer_name, ci.consumed_at
+      from consumer_inbox ci
+      join outbox_events oe on oe.id = ci.event_id
+     where oe.aggregate_id = '${documentId}'::uuid
+     order by ci.consumed_at desc
+     limit 20;
+  `);
+  printRows('notifications', `
+    select type, title, recipient_user_id, read_at, created_at
+      from notifications
+     where document_id = '${documentId}'::uuid
+     order by created_at desc
+     limit 20;
+  `);
+}
+
+function printRows(label, sql) {
+  try {
+    const rows = psql(sql);
+    console.error(`[kafka-notification-e2e] ${label} rows=${rows.length}`);
+    for (const row of rows) {
+      console.error(`[kafka-notification-e2e] ${label} ${row}`);
+    }
+  } catch (error) {
+    console.error(`[kafka-notification-e2e] ${label} diagnostics failed: ${error.message}`);
+  }
 }
 
 function psql(sql) {
@@ -251,7 +292,7 @@ function psql(sql) {
     .filter(line => line.length > 0);
 }
 
-async function waitFor(description, action, timeoutMs) {
+async function waitFor(description, action, timeoutMs, onTimeout) {
   const startedAt = Date.now();
   let lastError;
 
@@ -267,6 +308,9 @@ async function waitFor(description, action, timeoutMs) {
     await delay(1000);
   }
 
+  if (onTimeout) {
+    onTimeout();
+  }
   throw new Error(`Timed out waiting for ${description}${lastError ? `: ${lastError.message}` : ''}`);
 }
 

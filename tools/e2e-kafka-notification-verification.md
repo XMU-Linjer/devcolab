@@ -93,6 +93,8 @@ node tools\e2e-kafka-notification-check.mjs
 - 检查 Core 是否开启 `DEVCOLLAB_OUTBOX_WORKER_ENABLED=true`；
 - 检查 Kafka 容器是否运行；
 - 检查 `outbox_events.last_error`。
+- 检查 Core 日志是否出现 `Outbox worker tick completed`。
+- 如果本地历史 `outbox_events` 积压很多，新的评审事件可能还没有被 Relay 扫描到；可以临时调大 `DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE`。
 
 如果超时等待 `consumer_inbox`：
 
@@ -105,3 +107,35 @@ node tools\e2e-kafka-notification-check.mjs
 - 检查通知接收人是否正确；
 - `DOCUMENT_REVIEW_SUBMITTED` 通知给工作区 ADMIN，排除提交人；
 - `DOCUMENT_REVIEW_APPROVED` 通知给文档作者，排除操作者。
+
+## 一次真实失败记录
+
+现象：
+
+```text
+[kafka-notification-e2e] created workspace=... document=...
+[kafka-notification-e2e] FAIL Timed out waiting for DOCUMENT_REVIEW_SUBMITTED outbox published
+```
+
+同时 Worker 日志里出现：
+
+```text
+SearchProjectionConsumer.onEvent threw exception
+Kafka consumer sending record to DLQ
+```
+
+判断：
+
+- Worker 已经连上 Kafka；
+- SearchProjectionConsumer 正在处理历史消息并把失败消息送入 DLQ；
+- 但通知脚本此时卡在更早的 Core Outbox Relay 阶段；
+- 所以不能把 SearchProjectionConsumer 的 DLQ 日志当成通知脚本失败的直接根因。
+
+处理：
+
+- 通知 E2E 脚本增加超时诊断；
+- 超时时自动打印当前文档相关的 `outbox_events`、`consumer_inbox`、`notifications`；
+- 后续再次失败时，优先看 `outbox_events.status`：
+  - `PENDING`：Core Relay 没扫到或没启动；
+  - `FAILED`：Kafka 发布失败，看 `last_error`；
+  - `PUBLISHED`：继续看 Worker/通知消费者。
