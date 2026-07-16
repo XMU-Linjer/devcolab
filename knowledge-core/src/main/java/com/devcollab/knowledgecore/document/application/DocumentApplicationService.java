@@ -1,6 +1,8 @@
 package com.devcollab.knowledgecore.document.application;
 
 import com.devcollab.knowledgecore.common.cache.CacheKey;
+import com.devcollab.knowledgecore.common.cache.ApprovedAdrCacheService;
+import com.devcollab.knowledgecore.common.cache.PublishedDocumentCacheService;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
 import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
@@ -50,6 +52,8 @@ public class DocumentApplicationService {
     private final OutboxEventPublisher outboxEventPublisher;
     private final ObjectMapper objectMapper;
     private final DocumentTreeCacheService treeCache;
+    private final PublishedDocumentCacheService publishedDocumentCache;
+    private final ApprovedAdrCacheService approvedAdrCache;
 
     public DocumentApplicationService(
             DocumentRepository documentRepository,
@@ -61,7 +65,9 @@ public class DocumentApplicationService {
             WorkspacePermissionPolicy permissionPolicy,
             OutboxEventPublisher outboxEventPublisher,
             ObjectMapper objectMapper,
-            DocumentTreeCacheService treeCache
+            DocumentTreeCacheService treeCache,
+            PublishedDocumentCacheService publishedDocumentCache,
+            ApprovedAdrCacheService approvedAdrCache
     ) {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
@@ -73,6 +79,8 @@ public class DocumentApplicationService {
         this.outboxEventPublisher = outboxEventPublisher;
         this.objectMapper = objectMapper;
         this.treeCache = treeCache;
+        this.publishedDocumentCache = publishedDocumentCache;
+        this.approvedAdrCache = approvedAdrCache;
     }
 
     @Transactional
@@ -262,6 +270,7 @@ public class DocumentApplicationService {
                 "DOCUMENT",
                 document.id()
         );
+        invalidatePublishedVersionCaches(document, currentUserId);
         treeCache.evictTree(document.workspaceId());
         publishDocumentTreeCacheInvalidated(
                 document.workspaceId(),
@@ -378,6 +387,7 @@ public class DocumentApplicationService {
         );
         publishDocumentVersionEvent(saved, version, currentUserId);
         publishSnapshotRequestedEvent(saved, version, currentUserId);
+        invalidatePublishedVersionCaches(saved, currentUserId);
         return saved;
     }
 
@@ -476,6 +486,7 @@ public class DocumentApplicationService {
                 "DOCUMENT",
                 saved.id()
         );
+        invalidatePublishedVersionCaches(saved, currentUserId);
         return saved;
     }
 
@@ -501,9 +512,14 @@ public class DocumentApplicationService {
                 document.workspaceId(),
                 currentUserId
         );
-        return versionRepository.findById(versionId)
-                .filter(version -> version.documentId().equals(documentId))
-                .orElseThrow(DocumentVersionNotFoundException::new);
+        java.util.function.Supplier<DocumentVersion> source = () ->
+                versionRepository.findById(versionId)
+                        .filter(version -> version.documentId().equals(documentId))
+                        .orElseThrow(DocumentVersionNotFoundException::new);
+        if (document.documentType() == DocumentType.ADR) {
+            return approvedAdrCache.get(documentId, versionId, source);
+        }
+        return publishedDocumentCache.get(documentId, versionId, source);
     }
 
     public List<DocumentReviewRecord> listReviewRecords(
@@ -794,6 +810,50 @@ public class DocumentApplicationService {
         outboxEventPublisher.publish(
                 "CACHE",
                 workspaceId,
+                OutboxEventTypes.CACHE_INVALIDATED,
+                payload
+        );
+    }
+
+    private void invalidatePublishedVersionCaches(
+            Document document,
+            UUID currentUserId
+    ) {
+        String keyPattern = document.id() + ":*";
+        publishedDocumentCache.invalidate(keyPattern);
+        publishCacheInvalidated(
+                document,
+                "published-document",
+                keyPattern,
+                currentUserId
+        );
+        if (document.documentType() == DocumentType.ADR) {
+            approvedAdrCache.invalidate(keyPattern);
+            publishCacheInvalidated(
+                    document,
+                    "approved-adr",
+                    keyPattern,
+                    currentUserId
+            );
+        }
+    }
+
+    private void publishCacheInvalidated(
+            Document document,
+            String cacheName,
+            String cacheKey,
+            UUID currentUserId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workspaceId", document.workspaceId());
+        payload.put("documentId", document.id());
+        payload.put("cacheName", cacheName);
+        payload.put("cacheKey", cacheKey);
+        payload.put("operatorUserId", currentUserId);
+        payload.put("invalidatedAt", Instant.now());
+        outboxEventPublisher.publish(
+                "CACHE",
+                document.id(),
                 OutboxEventTypes.CACHE_INVALIDATED,
                 payload
         );

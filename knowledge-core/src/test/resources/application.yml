@@ -10,6 +10,10 @@ spring:
     enabled: true
 
 devcollab:
+  cache:
+    invalidation:
+      enabled: false
+      group-id: devcollab-cache-test
   search:
     engine: postgres
     elasticsearch:
