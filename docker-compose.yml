@@ -98,6 +98,30 @@ services:
     networks:
       - devcollab-local
 
+  minio:
+    image: minio/minio:${MINIO_VERSION:-RELEASE.2025-09-07T16-13-09Z}
+    container_name: devcollab-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-devcollab}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-devcollab-minio-password}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:9000/minio/health/live || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - devcollab-local
+
   nginx:
     image: nginx:1.27-alpine
     container_name: devcollab-nginx
@@ -233,6 +257,7 @@ volumes:
   redis-data:
   kafka-data:
   elasticsearch-data:
+  minio-data:
   prometheus-data:
   loki-data:
   tempo-data:

@@ -40,7 +40,7 @@
 
 | 编号 | 文档 | 主题 | 版本 | 版本库状态 |
 |---:|---|---|---|---|
-| 90 | `90-local-outbox-kafka-notification-learning-v0.6.md` | Transactional Outbox、Kafka 第二消费者、Worker 通知中心和真实排错复盘 | V0.6 | 已由 `.gitignore` 忽略 |
+| 90 | `90-local-outbox-kafka-minio-learning-v0.7.md` | Transactional Outbox、Kafka Worker、MinIO 文档快照及真实排错复盘 | V0.7 | 已由 `.gitignore` 忽略 |
 | 90 | `90-local-architecture-integration-troubleshooting-v0.4.md` | Nginx 统一入口、可观测性、故障演练、跨服务联调、演示编排和真实故障排查 | V0.4 | 已由 `.gitignore` 忽略 |
 
 > 说明：本索引历史内容存在编码乱码风险，待单独进行文档治理修复。本次先明确当前 Kafka/通知中心学习材料的规范入口，避免继续引用旧的乱码版本；v0.6 为当前有效学习版本。

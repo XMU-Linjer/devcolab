@@ -38,6 +38,9 @@ devcollab:
     notification:
       enabled: ${DEVCOLLAB_WORKER_NOTIFICATION_ENABLED:true}
       group-id: ${DEVCOLLAB_WORKER_NOTIFICATION_GROUP_ID:devcollab-notification-projection}
+    snapshot:
+      enabled: ${DEVCOLLAB_WORKER_SNAPSHOT_ENABLED:true}
+      group-id: ${DEVCOLLAB_WORKER_SNAPSHOT_GROUP_ID:devcollab-snapshot-object-storage}
   consumer-inbox:
     enabled: ${DEVCOLLAB_CONSUMER_INBOX_ENABLED:true}
   search:
@@ -45,6 +48,13 @@ devcollab:
       enabled: ${DEVCOLLAB_ELASTICSEARCH_ENABLED:true}
       url: ${DEVCOLLAB_ELASTICSEARCH_URL:http://localhost:9200}
       index-name: ${DEVCOLLAB_ELASTICSEARCH_INDEX:devcollab-search}
+  object-storage:
+    minio:
+      enabled: ${DEVCOLLAB_MINIO_ENABLED:true}
+      endpoint: ${DEVCOLLAB_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${DEVCOLLAB_MINIO_ACCESS_KEY:devcollab}
+      secret-key: ${DEVCOLLAB_MINIO_SECRET_KEY:devcollab-minio-password}
+      snapshot-bucket: ${DEVCOLLAB_MINIO_SNAPSHOT_BUCKET:devcollab-snapshots}
 
 management:
   endpoints:
