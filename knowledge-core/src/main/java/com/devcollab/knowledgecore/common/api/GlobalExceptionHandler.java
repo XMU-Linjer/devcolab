@@ -12,6 +12,7 @@ import com.devcollab.knowledgecore.document.application.exception.InvalidDocumen
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
 import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.document.application.exception.DocumentVersionNotFoundException;
+import com.devcollab.knowledgecore.document.application.exception.CollaborationOperationIdReusedException;
 import com.devcollab.knowledgecore.document.application.exception.ReviewIssueNotFoundException;
 import com.devcollab.knowledgecore.notification.application.exception.NotificationNotFoundException;
 import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
@@ -180,6 +181,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.CONFLICT,
                 "DOCUMENT_BLOCK_VERSION_CONFLICT",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(CollaborationOperationIdReusedException.class)
+    public ResponseEntity<ApiErrorResponse> handleCollaborationOperationIdReused(
+            CollaborationOperationIdReusedException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "DOCUMENT_OPERATION_ID_REUSED",
                 exception.getMessage(),
                 request
         );

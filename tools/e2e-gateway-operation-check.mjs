@@ -81,7 +81,7 @@ async function main() {
   console.log(`[gateway-e2e] B reconnect snapshot members=${reconnectSnapshot.payload.members.length} editing=${reconnectSnapshot.payload.editingStates.length}`);
 
   const operationId = randomUUID();
-  wsA.send(JSON.stringify({
+  const operationRequest = {
     type: 'DOCUMENT_OPERATION',
     clientOperationId: operationId,
     operationType: 'UPDATE_TEXT',
@@ -90,13 +90,14 @@ async function main() {
     content: {
       text: 'updated through gateway',
     },
-  }));
+  };
+  wsA.send(JSON.stringify(operationRequest));
 
   const applied = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
     message.payload?.clientOperationId === operationId
     && message.payload?.status === 'APPLIED',
   );
-  console.log(`[gateway-e2e] A result=${applied.payload.status} version=${applied.payload.block.version}`);
+  console.log(`[gateway-e2e] A result=${applied.payload.status} sequence=${applied.payload.documentSequence} version=${applied.payload.block.version}`);
 
   const broadcast = await waitForMessage(wsB2, 'DOCUMENT_OPERATION_BROADCAST', message =>
     message.payload?.clientOperationId === operationId
@@ -104,22 +105,30 @@ async function main() {
   );
   console.log(`[gateway-e2e] B reconnect broadcast operation=${broadcast.payload.operationType} version=${broadcast.payload.block.version}`);
 
-  wsA.send(JSON.stringify({
-    type: 'DOCUMENT_OPERATION',
-    clientOperationId: operationId,
-    operationType: 'UPDATE_TEXT',
-    blockId: block.id,
-    expectedVersion: block.version,
-    content: {
-      text: 'duplicate update through gateway',
-    },
-  }));
+  wsA.send(JSON.stringify(operationRequest));
 
   const duplicate = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
     message.payload?.clientOperationId === operationId
     && message.payload?.status === 'DUPLICATE',
   );
-  console.log(`[gateway-e2e] duplicate result=${duplicate.payload.status}`);
+  if (duplicate.payload.documentSequence !== applied.payload.documentSequence
+    || duplicate.payload.block?.version !== applied.payload.block.version) {
+    throw new Error('Duplicate operation did not return the original result');
+  }
+  console.log(`[gateway-e2e] duplicate result=${duplicate.payload.status} sequence=${duplicate.payload.documentSequence}`);
+
+  wsA.send(JSON.stringify({
+    ...operationRequest,
+    content: {
+      text: 'same id with changed content',
+    },
+  }));
+
+  const reused = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === operationId
+    && message.payload?.status === 'CONFLICT',
+  );
+  console.log(`[gateway-e2e] reused operation id result=${reused.payload.status}`);
 
   const conflictOperationId = randomUUID();
   wsA.send(JSON.stringify({

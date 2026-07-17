@@ -32,6 +32,7 @@ interface DocumentOperationResult {
   blockId: string;
   operationType: string;
   status: 'APPLIED' | 'CONFLICT' | 'REJECTED' | 'DUPLICATE';
+  documentSequence?: number;
   block?: DocumentBlock;
   message?: string;
 }
@@ -40,6 +41,7 @@ interface DocumentOperationBroadcast {
   clientOperationId: string;
   blockId: string;
   operationType: string;
+  documentSequence: number;
   userId: string;
   username: string;
   block: DocumentBlock;
@@ -49,6 +51,8 @@ interface PendingOperation {
   resolve: (block: DocumentBlock) => void;
   reject: (error: CollaborationOperationError) => void;
   timer: number;
+  message: Record<string, unknown>;
+  retryCount: number;
 }
 
 export class CollaborationOperationError extends Error {
@@ -69,6 +73,7 @@ export function useDocumentCollaboration(
   const members = ref<PresenceMember[]>([]);
   const editingStates = ref<EditingState[]>([]);
   const latestRemoteBlock = ref<DocumentBlock | null>(null);
+  const latestDocumentSequence = ref(0);
   const errorMessage = ref('');
 
   let socket: WebSocket | null = null;
@@ -169,30 +174,25 @@ export function useDocumentCollaboration(
 
     const clientOperationId = operationId();
     return new Promise<DocumentBlock>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        pendingOperations.delete(clientOperationId);
-        reject(new CollaborationOperationError(
-          'TIMEOUT',
-          '协作保存超时，请稍后重试',
-        ));
-      }, 10_000);
-
-      pendingOperations.set(clientOperationId, {
-        resolve,
-        reject,
-        timer,
-      });
-
-      send({
+      const operationMessage = {
         type: 'DOCUMENT_OPERATION',
         clientOperationId,
         operationType: 'UPDATE_TEXT',
         blockId,
         expectedVersion,
-        content: {
-          text,
-        },
+        content: { text },
+      };
+      const timer = scheduleOperationTimeout(clientOperationId);
+
+      pendingOperations.set(clientOperationId, {
+        resolve,
+        reject,
+        timer,
+        message: operationMessage,
+        retryCount: 0,
       });
+
+      send(operationMessage);
     });
   }
 
@@ -232,6 +232,10 @@ export function useDocumentCollaboration(
       }
       if (message.type === 'DOCUMENT_OPERATION_BROADCAST') {
         const payload = message.payload as DocumentOperationBroadcast;
+        latestDocumentSequence.value = Math.max(
+          latestDocumentSequence.value,
+          payload.documentSequence,
+        );
         latestRemoteBlock.value = payload.block;
       }
     } catch {
@@ -255,7 +259,15 @@ export function useDocumentCollaboration(
     window.clearTimeout(pending.timer);
     pendingOperations.delete(result.clientOperationId);
 
-    if (result.status === 'APPLIED' && result.block) {
+    if (result.documentSequence !== undefined) {
+      latestDocumentSequence.value = Math.max(
+        latestDocumentSequence.value,
+        result.documentSequence,
+      );
+    }
+
+    if ((result.status === 'APPLIED' || result.status === 'DUPLICATE')
+      && result.block) {
       pending.resolve(result.block);
       return;
     }
@@ -264,6 +276,27 @@ export function useDocumentCollaboration(
       result.status,
       result.message ?? operationStatusText(result.status),
     ));
+  }
+
+  function scheduleOperationTimeout(clientOperationId: string) {
+    return window.setTimeout(() => {
+      const pending = pendingOperations.get(clientOperationId);
+      if (!pending) {
+        return;
+      }
+      if (pending.retryCount === 0
+        && socket?.readyState === WebSocket.OPEN) {
+        pending.retryCount += 1;
+        send(pending.message);
+        pending.timer = scheduleOperationTimeout(clientOperationId);
+        return;
+      }
+      pendingOperations.delete(clientOperationId);
+      pending.reject(new CollaborationOperationError(
+        'TIMEOUT',
+        '协作保存重试后仍超时，请稍后再试',
+      ));
+    }, 5_000);
   }
 
   function rejectPendingOperations(
@@ -299,6 +332,7 @@ export function useDocumentCollaboration(
     members,
     editingStates,
     latestRemoteBlock,
+    latestDocumentSequence,
     errorMessage,
     startEditing,
     stopEditing,

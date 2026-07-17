@@ -99,6 +99,7 @@ public final class CollaborationMessages {
             UUID blockId,
             String operationType,
             String status,
+            Long documentSequence,
             CoreBlockResponse block,
             String message
     ) {
@@ -106,6 +107,7 @@ public final class CollaborationMessages {
                 UUID clientOperationId,
                 UUID blockId,
                 String operationType,
+                long documentSequence,
                 CoreBlockResponse block
         ) {
             return new DocumentOperationResult(
@@ -113,6 +115,7 @@ public final class CollaborationMessages {
                     blockId,
                     operationType,
                     "APPLIED",
+                    documentSequence,
                     block,
                     null
             );
@@ -121,15 +124,18 @@ public final class CollaborationMessages {
         public static DocumentOperationResult duplicate(
                 UUID clientOperationId,
                 UUID blockId,
-                String operationType
+                String operationType,
+                long documentSequence,
+                CoreBlockResponse block
         ) {
             return new DocumentOperationResult(
                     clientOperationId,
                     blockId,
                     operationType,
                     "DUPLICATE",
-                    null,
-                    "Operation has already been processed by gateway"
+                    documentSequence,
+                    block,
+                    "Operation has already been processed"
             );
         }
 
@@ -144,6 +150,7 @@ public final class CollaborationMessages {
                     blockId,
                     operationType,
                     "CONFLICT",
+                    null,
                     null,
                     message
             );
@@ -161,6 +168,7 @@ public final class CollaborationMessages {
                     operationType,
                     "REJECTED",
                     null,
+                    null,
                     message
             );
         }
@@ -170,6 +178,7 @@ public final class CollaborationMessages {
             UUID clientOperationId,
             UUID blockId,
             String operationType,
+            long documentSequence,
             UUID userId,
             String username,
             CoreBlockResponse block

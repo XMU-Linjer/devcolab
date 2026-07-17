@@ -6,7 +6,7 @@ import com.devcollab.gateway.collaboration.CollaborationMessages.ClientMessage;
 import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationBroadcast;
 import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationResult;
 import com.devcollab.gateway.collaboration.CollaborationMessages.ServerMessage;
-import com.devcollab.gateway.collaboration.CoreBlockOperationClient.CoreBlockUpdateResult;
+import com.devcollab.gateway.collaboration.CoreDocumentOperationClient.CoreDocumentOperationResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +36,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
     private final GatewayTokenService tokenService;
     private final CoreDocumentAccessVerifier accessVerifier;
-    private final CoreBlockOperationClient blockOperationClient;
+    private final CoreDocumentOperationClient operationClient;
     private final GatewayOperationDeduplicator operationDeduplicator;
     private final PresenceStore presenceStore;
     private final GatewaySessionRegistry sessionRegistry;
@@ -45,7 +45,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     public DocumentCollaborationWebSocketHandler(
             GatewayTokenService tokenService,
             CoreDocumentAccessVerifier accessVerifier,
-            CoreBlockOperationClient blockOperationClient,
+            CoreDocumentOperationClient operationClient,
             GatewayOperationDeduplicator operationDeduplicator,
             PresenceStore presenceStore,
             GatewaySessionRegistry sessionRegistry,
@@ -53,7 +53,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     ) {
         this.tokenService = tokenService;
         this.accessVerifier = accessVerifier;
-        this.blockOperationClient = blockOperationClient;
+        this.operationClient = operationClient;
         this.operationDeduplicator = operationDeduplicator;
         this.presenceStore = presenceStore;
         this.sessionRegistry = sessionRegistry;
@@ -193,36 +193,30 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
             return;
         }
 
-        if (!operationDeduplicator.markFirstSeen(
+        boolean firstSeenByGateway = operationDeduplicator.markFirstSeen(
                 context.documentId(),
                 context.user().userId(),
                 message.clientOperationId()
-        )) {
-            send(context, ServerMessage.operationResult(
-                    DocumentOperationResult.duplicate(
-                            message.clientOperationId(),
-                            message.blockId(),
-                            message.operationType()
-                    )
-            ));
-            return;
-        }
+        );
 
-        CoreBlockUpdateResult result;
+        CoreDocumentOperationResult result;
         try {
-            result = blockOperationClient.updateText(
+            result = operationClient.updateText(
                     context.documentId(),
                     message.blockId(),
+                    message.clientOperationId(),
                     context.accessToken(),
                     message.content().text(),
                     message.expectedVersion()
             );
         } catch (RuntimeException e) {
-            operationDeduplicator.forget(
-                    context.documentId(),
-                    context.user().userId(),
-                    message.clientOperationId()
-            );
+            if (firstSeenByGateway) {
+                operationDeduplicator.forget(
+                        context.documentId(),
+                        context.user().userId(),
+                        message.clientOperationId()
+                );
+            }
             throw e;
         }
 
@@ -233,6 +227,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                                 message.clientOperationId(),
                                 message.blockId(),
                                 message.operationType(),
+                                result.documentSequence(),
                                 result.block()
                         )
                 ));
@@ -243,6 +238,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                                         message.clientOperationId(),
                                         message.blockId(),
                                         message.operationType(),
+                                        result.documentSequence(),
                                         context.user().userId(),
                                         context.user().username(),
                                         result.block()
@@ -250,6 +246,18 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                         )
                 );
             }
+            case "DUPLICATE" -> send(
+                    context,
+                    ServerMessage.operationResult(
+                            DocumentOperationResult.duplicate(
+                                    message.clientOperationId(),
+                                    message.blockId(),
+                                    message.operationType(),
+                                    result.documentSequence(),
+                                    result.block()
+                            )
+                    )
+            );
             case "CONFLICT" -> send(context, ServerMessage.operationResult(
                     DocumentOperationResult.conflict(
                             message.clientOperationId(),
