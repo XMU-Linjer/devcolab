@@ -879,6 +879,98 @@ h1 {
   background: #fffdf7;
 }
 
+.tiptap-block.has-remote-update {
+  border-color: #e6a23c;
+  box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.12);
+}
+
+.tiptap-editor-shell {
+  min-height: 96px;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: text;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.tiptap-editor-shell:focus-within {
+  border-color: #2454d6;
+  box-shadow: 0 0 0 3px rgba(36, 84, 214, 0.1);
+}
+
+.tiptap-editor-shell.is-disabled {
+  background: #f5f7fa;
+  cursor: not-allowed;
+}
+
+.block-save-button {
+  border: 0;
+  background: transparent;
+  color: #2454d6;
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.block-save-button:disabled {
+  color: #8a94a6;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.tiptap-content {
+  min-height: 96px;
+  outline: none;
+  padding: 14px 16px;
+  color: #24324a;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.tiptap-content p {
+  margin: 0;
+}
+
+.tiptap-content p + p {
+  margin-top: 6px;
+}
+
+.tiptap-block.is-heading .tiptap-content {
+  color: #172033;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.tiptap-block.is-code .tiptap-editor-shell {
+  border-color: #26334a;
+  background: #111827;
+}
+
+.tiptap-block.is-code .tiptap-content {
+  color: #dbeafe;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.tiptap-block.is-todo .tiptap-editor-shell {
+  border-left: 4px solid #2454d6;
+}
+
+.tiptap-block.is-todo .tiptap-content::before {
+  content: "☐";
+  float: left;
+  margin-right: 9px;
+  color: #2454d6;
+  font-size: 17px;
+}
+
 .paragraph-block.is-focused {
   border-color: #2454d6;
   background: #eef3ff;
@@ -897,6 +989,7 @@ h1 {
 .block-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -904,7 +997,9 @@ h1 {
 .block-identity {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .block-editing-users {
@@ -954,7 +1049,8 @@ h1 {
 .block-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   min-height: 34px;
   color: #748198;
@@ -1247,6 +1343,17 @@ h1 {
   color: #2454d6;
   font-weight: 600;
   text-decoration: none;
+}
+
+@media (max-width: 1440px) {
+  .workbench-layout {
+    grid-template-columns: 240px minmax(420px, 1fr);
+  }
+
+  .workbench-side-panel {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
 }
 
 @media (max-width: 760px) {

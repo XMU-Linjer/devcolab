@@ -2,21 +2,31 @@
   <section ref="editorRoot" class="block-editor">
     <header class="block-editor-header">
       <div>
-        <p class="eyebrow">Blocks</p>
+        <p class="eyebrow">Tiptap Blocks</p>
         <h3>内容编辑区</h3>
         <p class="section-hint">
-          MVP 使用稳定 Block ID + version 做自动保存和冲突检测；后续可平滑升级为 Tiptap 顶层 Node。
+          每个业务 Block 使用独立 Tiptap 编辑内核，并继续通过稳定 Block ID 和 version 自动保存、检测冲突。
         </p>
       </div>
-      <el-button
+
+      <el-dropdown
+        split-button
         type="primary"
-        :icon="Plus"
         :loading="creating"
         :disabled="readonly"
-        @click="handleCreate"
+        @click="handleCreate('PARAGRAPH')"
+        @command="handleCreate"
       >
+        <el-icon><Plus /></el-icon>
         新增段落
-      </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="HEADING">新增标题</el-dropdown-item>
+            <el-dropdown-item command="CODE">新增代码块</el-dropdown-item>
+            <el-dropdown-item command="TODO">新增待办</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </header>
 
     <el-alert
@@ -34,7 +44,7 @@
       :title="conflictMessage"
       type="warning"
       show-icon
-      :closable="true"
+      closable
       @close="conflictMessage = ''"
     >
       <template #default>
@@ -65,14 +75,14 @@
         type="primary"
         :icon="Plus"
         :disabled="readonly"
-        @click="handleCreate"
+        @click="handleCreate('PARAGRAPH')"
       >
         创建第一个段落
       </el-button>
     </el-empty>
 
     <div v-else class="block-list">
-      <ParagraphBlock
+      <TiptapBlock
         v-for="(block, index) in blocks"
         :key="block.id"
         :block="block"
@@ -106,8 +116,9 @@ import {
   moveBlock,
   updateBlock,
   type DocumentBlock,
+  type DocumentBlockType,
 } from '@/api/block';
-import ParagraphBlock from '@/components/editor/ParagraphBlock.vue';
+import TiptapBlock from '@/components/editor/TiptapBlock.vue';
 import {
   CollaborationOperationError,
   type EditingState,
@@ -140,6 +151,13 @@ const focusedBlockId = ref<string | null>(null);
 const conflictMessage = ref('');
 const errorMessage = ref('');
 
+const initialText: Record<DocumentBlockType, string> = {
+  PARAGRAPH: '新的段落',
+  HEADING: '新的标题',
+  CODE: '// 输入代码',
+  TODO: '待办事项',
+};
+
 onMounted(() => {
   void loadBlocks();
 });
@@ -161,10 +179,9 @@ watch(
 watch(
   () => props.remoteBlock,
   (block) => {
-    if (!block || block.documentId !== props.documentId) {
-      return;
+    if (block?.documentId === props.documentId) {
+      replaceBlock(block);
     }
-    replaceBlock(block);
   },
 );
 
@@ -172,7 +189,6 @@ async function loadBlocks() {
   loading.value = true;
   conflictMessage.value = '';
   errorMessage.value = '';
-
   try {
     blocks.value = await listBlocks(props.documentId);
     await focusRequestedBlock();
@@ -188,7 +204,6 @@ async function focusRequestedBlock() {
     focusedBlockId.value = null;
     return;
   }
-
   await nextTick();
   const target = editorRoot.value?.querySelector<HTMLElement>(
     `[data-block-id="${props.focusBlockId}"]`,
@@ -196,13 +211,8 @@ async function focusRequestedBlock() {
   if (!target) {
     return;
   }
-
   focusedBlockId.value = props.focusBlockId;
-  target.scrollIntoView({
-    behavior: 'smooth',
-    block: 'center',
-  });
-
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   window.setTimeout(() => {
     if (focusedBlockId.value === props.focusBlockId) {
       focusedBlockId.value = null;
@@ -210,24 +220,24 @@ async function focusRequestedBlock() {
   }, 2200);
 }
 
-async function handleCreate() {
+async function handleCreate(type: DocumentBlockType) {
   if (props.readonly) {
     return;
   }
-
   creating.value = true;
-
   try {
     const block = await createBlock(props.documentId, {
-      type: 'PARAGRAPH',
-      content: {
-        text: '新的段落',
-      },
+      type,
+      content: { text: initialText[type] },
     });
     blocks.value = [...blocks.value, block];
-    ElMessage.success('段落已创建');
+    await nextTick();
+    editorRoot.value
+      ?.querySelector<HTMLElement>(`[data-block-id="${block.id}"] .tiptap-content`)
+      ?.focus();
+    ElMessage.success('内容块已创建');
   } catch (error) {
-    ElMessage.error(readableError(error, '段落创建失败'));
+    ElMessage.error(readableError(error, '内容块创建失败'));
   } finally {
     creating.value = false;
   }
@@ -237,32 +247,24 @@ async function handleSave(block: DocumentBlock, text: string) {
   if (props.readonly) {
     return;
   }
-
   busyBlockId.value = block.id;
   conflictMessage.value = '';
-
   try {
     const updated = props.saveViaCollaboration
       ? await props.saveViaCollaboration(block, text)
       : await updateBlock(props.documentId, block.id, {
-          content: {
-            text,
-          },
+          content: { text },
           expectedVersion: block.version,
         });
     replaceBlock(updated);
   } catch (error) {
-    const message = readableError(error, '段落保存失败');
     if (
       isConflictError(error)
-      || (
-        error instanceof CollaborationOperationError
-        && error.status === 'CONFLICT'
-      )
+      || (error instanceof CollaborationOperationError && error.status === 'CONFLICT')
     ) {
-      conflictMessage.value = '当前段落已被其他操作修改，请刷新内容后再继续编辑。';
+      conflictMessage.value = '当前内容块已被其他成员修改，请刷新内容后再继续编辑。';
     }
-    ElMessage.error(message);
+    ElMessage.error(readableError(error, '内容块保存失败'));
   } finally {
     busyBlockId.value = null;
   }
@@ -272,11 +274,10 @@ async function handleDelete(block: DocumentBlock) {
   if (props.readonly) {
     return;
   }
-
   try {
     await ElMessageBox.confirm(
-      '删除后该段落会从当前文档移除，此操作暂不支持撤销。',
-      '删除段落',
+      '删除后该内容块会从当前文档移除，此操作暂不支持撤销。',
+      '删除内容块',
       {
         confirmButtonText: '删除',
         cancelButtonText: '取消',
@@ -292,13 +293,10 @@ async function handleDelete(block: DocumentBlock) {
     await deleteBlock(props.documentId, block.id);
     blocks.value = blocks.value
       .filter((item) => item.id !== block.id)
-      .map((item, index) => ({
-        ...item,
-        sortOrder: index,
-      }));
-    ElMessage.success('段落已删除');
+      .map((item, index) => ({ ...item, sortOrder: index }));
+    ElMessage.success('内容块已删除');
   } catch (error) {
-    ElMessage.error(readableError(error, '段落删除失败'));
+    ElMessage.error(readableError(error, '内容块删除失败'));
   } finally {
     busyBlockId.value = null;
   }
@@ -308,12 +306,11 @@ async function handleMove(block: DocumentBlock, targetIndex: number) {
   if (props.readonly || targetIndex < 0 || targetIndex >= blocks.value.length) {
     return;
   }
-
   busyBlockId.value = block.id;
   try {
     blocks.value = await moveBlock(props.documentId, block.id, targetIndex);
   } catch (error) {
-    ElMessage.error(readableError(error, '段落排序失败'));
+    ElMessage.error(readableError(error, '内容块排序失败'));
   } finally {
     busyBlockId.value = null;
   }

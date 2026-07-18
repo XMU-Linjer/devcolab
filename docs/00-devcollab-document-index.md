@@ -20,11 +20,11 @@
 | 顺序 | 文档 | 主题 | 版本 | 版本库状态 |
 |---:|---|---|---|---|
 | 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.3.md` | 全栈学习文档总索引、技术栈速查表、证据边界 | V0.3 | 已由 `.gitignore` 忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.10.md` | 全栈学习文档总索引、技术栈速查表、证据边界 | V0.10 | 已由 `.gitignore` 忽略 |
 | 92 | `92-local-frontend-technology-adr-v0.1.md` | 前端选型、知识基线和技术风险记录 | V0.1 | 已由 `.gitignore` 忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.2.md` | 登录全链路、JWT、Cookie、安全威胁和面试表达 | V0.2 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
-| 95 | `95-local-document-block-learning-guide-v0.3.md` | Block 编辑、乐观锁、冲突检测、Tiptap 集成 | V0.3 | 已由 `.gitignore` 忽略 |
+| 95 | `95-local-document-block-learning-guide-v0.4.md` | Block 编辑、乐观锁、冲突检测、Tiptap 集成与真实排错 | V0.4 | 已由 `.gitignore` 忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.1.md` | 前后端联调、Refresh 自动续期、CSRF Header、401 处理 | V0.1 | 已由 `.gitignore` 忽略 |
 | 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
 | 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
@@ -44,6 +44,7 @@
 | 90 | `90-local-architecture-integration-troubleshooting-v0.4.md` | Nginx 统一入口、可观测性、故障演练、跨服务联调、演示编排和真实故障排查 | V0.4 | 已由 `.gitignore` 忽略 |
 | 90 | `90-local-collaboration-gateway-learning-v0.4.md` | WebSocket 四类可靠操作、documentSequence 游标分页、断线增量补偿与真实排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
 | 90 | `90-local-core-grpc-learning-v0.3.md` | Gateway→Core gRPC 指标、HTTP/gRPC 同语义基准、真实排错与 HTTP Client 删除门槛 | V0.3 | 已由 `.gitignore` 精确忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.9.md` | 当前技术栈、Gateway→Core gRPC 量化证据边界与面试表达总索引 | V0.9 | 已由 `.gitignore` 精确忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.10.md` | 当前技术栈、Tiptap 与 Gateway→Core gRPC 证据边界及面试表达总索引 | V0.10 | 已由 `.gitignore` 精确忽略 |
+| 95 | `95-local-document-block-learning-guide-v0.4.md` | Tiptap Block 编辑、纯文本契约、保存冲突保护与真实布局排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。
