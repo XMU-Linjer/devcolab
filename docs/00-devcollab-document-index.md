@@ -42,7 +42,7 @@
 |---:|---|---|---|---|
 | 90 | `90-local-outbox-kafka-minio-learning-v0.7.md` | Transactional Outbox、Kafka Worker、MinIO 文档快照及真实排错复盘 | V0.7 | 已由 `.gitignore` 忽略 |
 | 90 | `90-local-architecture-integration-troubleshooting-v0.4.md` | Nginx 统一入口、可观测性、故障演练、跨服务联调、演示编排和真实故障排查 | V0.4 | 已由 `.gitignore` 忽略 |
-| 90 | `90-local-collaboration-gateway-learning-v0.2.md` | WebSocket 协作、Core 强幂等、documentSequence、ACK 丢失重试与真实验收 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.4.md` | 当前技术栈、工程闭环、证据边界与面试表达总索引 | V0.4 | 已由 `.gitignore` 精确忽略 |
+| 90 | `90-local-collaboration-gateway-learning-v0.3.md` | WebSocket 四类可靠 Block 操作、Core 强幂等、删除乐观锁、documentSequence 与真实验收 | V0.3 | 已由 `.gitignore` 精确忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.5.md` | 当前技术栈、工程闭环、Gateway 多类型协作证据边界与面试表达总索引 | V0.5 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。

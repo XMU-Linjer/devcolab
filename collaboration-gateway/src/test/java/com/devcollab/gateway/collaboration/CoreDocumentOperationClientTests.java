@@ -55,13 +55,16 @@ class CoreDocumentOperationClientTests {
                 )
         );
 
-        CoreDocumentOperationResult result = client.updateText(
+        CoreDocumentOperationResult result = client.apply(
                 documentId,
                 blockId,
                 operationId,
                 "access-token",
+                "UPDATE_TEXT",
                 "new text",
-                1
+                1L,
+                null,
+                null
         );
 
         assertThat(result.status()).isEqualTo("APPLIED");
@@ -108,13 +111,16 @@ class CoreDocumentOperationClientTests {
                 )
         );
 
-        CoreDocumentOperationResult result = client.updateText(
+        CoreDocumentOperationResult result = client.apply(
                 documentId,
                 blockId,
                 operationId,
                 "access-token",
+                "UPDATE_TEXT",
                 "saved",
-                0
+                0L,
+                null,
+                null
         );
 
         assertThat(result.status()).isEqualTo("DUPLICATE");
@@ -130,13 +136,16 @@ class CoreDocumentOperationClientTests {
                 "{}"
         );
 
-        CoreDocumentOperationResult result = client.updateText(
+        CoreDocumentOperationResult result = client.apply(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 "access-token",
+                "UPDATE_TEXT",
                 "new text",
-                1
+                1L,
+                null,
+                null
         );
 
         assertThat(result.status()).isEqualTo("CONFLICT");

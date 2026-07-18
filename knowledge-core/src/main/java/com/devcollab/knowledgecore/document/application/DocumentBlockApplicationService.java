@@ -150,6 +150,35 @@ public class DocumentBlockApplicationService {
         DocumentBlock block = requireBlock(documentId, blockId);
 
         blockRepository.deleteById(block.id());
+        afterDelete(document, block, currentUserId);
+    }
+
+    @Transactional
+    public synchronized DocumentBlock deleteWithVersion(
+            UUID documentId,
+            UUID blockId,
+            UUID currentUserId,
+            long expectedVersion
+    ) {
+        Document document = documentService.get(documentId, currentUserId);
+        documentService.ensureEditable(document);
+        DocumentBlock block = requireBlock(documentId, blockId);
+        if (!blockRepository.deleteIfVersionMatches(block.id(), expectedVersion)) {
+            throw blockRepository.findById(blockId)
+                    .filter(found -> found.documentId().equals(documentId))
+                    .isPresent()
+                    ? new DocumentBlockVersionConflictException()
+                    : new DocumentBlockNotFoundException();
+        }
+        afterDelete(document, block, currentUserId);
+        return block;
+    }
+
+    private void afterDelete(
+            Document document,
+            DocumentBlock block,
+            UUID currentUserId
+    ) {
         documentService.logDocumentOperation(
                 document,
                 "DOCUMENT_BLOCK_DELETED",
@@ -159,7 +188,7 @@ public class DocumentBlockApplicationService {
                 block.id(),
                 Instant.now()
         );
-        normalizeSortOrder(documentId);
+        normalizeSortOrder(document.id());
         publishBlockEvent(
                 "DOCUMENT_BLOCK_DELETED",
                 document,

@@ -15,6 +15,8 @@ public final class CollaborationMessages {
             UUID clientOperationId,
             String operationType,
             Long expectedVersion,
+            String blockType,
+            Integer targetIndex,
             DocumentOperationContent content
     ) {
     }
@@ -101,6 +103,7 @@ public final class CollaborationMessages {
             String status,
             Long documentSequence,
             CoreBlockResponse block,
+            List<CoreBlockResponse> blocks,
             String message
     ) {
         public static DocumentOperationResult applied(
@@ -108,7 +111,8 @@ public final class CollaborationMessages {
                 UUID blockId,
                 String operationType,
                 long documentSequence,
-                CoreBlockResponse block
+                CoreBlockResponse block,
+                List<CoreBlockResponse> blocks
         ) {
             return new DocumentOperationResult(
                     clientOperationId,
@@ -117,6 +121,7 @@ public final class CollaborationMessages {
                     "APPLIED",
                     documentSequence,
                     block,
+                    blocks,
                     null
             );
         }
@@ -126,7 +131,8 @@ public final class CollaborationMessages {
                 UUID blockId,
                 String operationType,
                 long documentSequence,
-                CoreBlockResponse block
+                CoreBlockResponse block,
+                List<CoreBlockResponse> blocks
         ) {
             return new DocumentOperationResult(
                     clientOperationId,
@@ -135,6 +141,7 @@ public final class CollaborationMessages {
                     "DUPLICATE",
                     documentSequence,
                     block,
+                    blocks,
                     "Operation has already been processed"
             );
         }
@@ -152,6 +159,7 @@ public final class CollaborationMessages {
                     "CONFLICT",
                     null,
                     null,
+                    List.of(),
                     message
             );
         }
@@ -169,6 +177,7 @@ public final class CollaborationMessages {
                     "REJECTED",
                     null,
                     null,
+                    List.of(),
                     message
             );
         }
@@ -181,7 +190,8 @@ public final class CollaborationMessages {
             long documentSequence,
             UUID userId,
             String username,
-            CoreBlockResponse block
+            CoreBlockResponse block,
+            List<CoreBlockResponse> blocks
     ) {
     }
 

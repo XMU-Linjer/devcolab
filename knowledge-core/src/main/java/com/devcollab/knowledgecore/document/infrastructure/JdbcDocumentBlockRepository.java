@@ -115,6 +115,18 @@ public class JdbcDocumentBlockRepository implements DocumentBlockRepository {
     }
 
     @Override
+    public boolean deleteIfVersionMatches(
+            UUID blockId,
+            long expectedVersion
+    ) {
+        return jdbcTemplate.update(
+                "DELETE FROM document_blocks WHERE id = ? AND version = ?",
+                blockId,
+                expectedVersion
+        ) == 1;
+    }
+
+    @Override
     public void deleteById(UUID blockId) {
         jdbcTemplate.update(
                 "DELETE FROM document_blocks WHERE id = ?",

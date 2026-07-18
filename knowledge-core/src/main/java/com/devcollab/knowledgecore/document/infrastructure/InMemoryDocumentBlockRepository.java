@@ -63,6 +63,18 @@ public class InMemoryDocumentBlockRepository
     }
 
     @Override
+    public boolean deleteIfVersionMatches(
+            UUID blockId,
+            long expectedVersion
+    ) {
+        DocumentBlock block = blocks.get(blockId);
+        if (block == null || block.version() != expectedVersion) {
+            return false;
+        }
+        return blocks.remove(blockId, block);
+    }
+
+    @Override
     public void deleteById(UUID blockId) {
         blocks.remove(blockId);
     }

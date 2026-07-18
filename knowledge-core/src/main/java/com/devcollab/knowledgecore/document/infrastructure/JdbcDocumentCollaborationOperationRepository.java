@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.infrastructure;
 
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentCollaborationOperation;
+import com.devcollab.knowledgecore.document.domain.DocumentCollaborationOperationPayload;
 import com.devcollab.knowledgecore.document.domain.DocumentCollaborationOperationRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,7 +36,7 @@ public class JdbcDocumentCollaborationOperationRepository
                 rs.getString("operation_type"),
                 rs.getObject("operator_user_id", UUID.class),
                 rs.getString("request_fingerprint"),
-                readBlock(rs.getString("result_payload")),
+                readResult(rs.getString("result_payload")),
                 rs.getTimestamp("created_at").toInstant()
         );
     }
@@ -114,15 +115,15 @@ public class JdbcDocumentCollaborationOperationRepository
                 operation.operationType(),
                 operation.operatorUserId(),
                 operation.requestFingerprint(),
-                writeBlock(operation.block()),
+                writeResult(operation.result()),
                 Timestamp.from(operation.createdAt())
         );
         return operation;
     }
 
-    private String writeBlock(DocumentBlock block) {
+    private String writeResult(DocumentCollaborationOperationPayload result) {
         try {
-            return objectMapper.writeValueAsString(block);
+            return objectMapper.writeValueAsString(result);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
                     "Failed to serialize collaboration operation result",
@@ -131,9 +132,19 @@ public class JdbcDocumentCollaborationOperationRepository
         }
     }
 
-    private DocumentBlock readBlock(String payload) {
+    private DocumentCollaborationOperationPayload readResult(String payload) {
         try {
-            return objectMapper.readValue(payload, DocumentBlock.class);
+            var tree = objectMapper.readTree(payload);
+            if (tree.has("block") || tree.has("blocks")) {
+                return objectMapper.treeToValue(
+                        tree,
+                        DocumentCollaborationOperationPayload.class
+                );
+            }
+            // V15 originally stored UPDATE_TEXT as a bare block JSON.
+            return DocumentCollaborationOperationPayload.single(
+                    objectMapper.treeToValue(tree, DocumentBlock.class)
+            );
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
                     "Failed to deserialize collaboration operation result",

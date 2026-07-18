@@ -11,7 +11,7 @@ public record DocumentCollaborationOperation(
         String operationType,
         UUID operatorUserId,
         String requestFingerprint,
-        DocumentBlock block,
+        DocumentCollaborationOperationPayload result,
         Instant createdAt
 ) {
 }

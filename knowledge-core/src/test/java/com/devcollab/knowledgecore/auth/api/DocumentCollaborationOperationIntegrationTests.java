@@ -156,6 +156,107 @@ class DocumentCollaborationOperationIntegrationTests {
                 .andExpect(jsonPath("$.documentSequence").value(2));
     }
 
+    @Test
+    void createMoveAndDeleteShareStrongIdempotencyAndSequence()
+            throws Exception {
+        Fixture fixture = fixture();
+        UUID createOperationId = UUID.randomUUID();
+        String createBody = objectMapper.writeValueAsString(new OperationBody(
+                createOperationId,
+                null,
+                "CREATE_BLOCK",
+                null,
+                "PARAGRAPH",
+                null,
+                new ContentBody("Created through collaboration")
+        ));
+
+        JsonNode created = responseJson(apply(fixture, createBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.documentSequence").value(1))
+                .andExpect(jsonPath("$.block.version").value(0))
+                .andReturn());
+        UUID createdBlockId = UUID.fromString(created.get("blockId").asText());
+
+        apply(fixture, createBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DUPLICATE"))
+                .andExpect(jsonPath("$.blockId").value(createdBlockId.toString()))
+                .andExpect(jsonPath("$.documentSequence").value(1));
+
+        apply(fixture, objectMapper.writeValueAsString(new OperationBody(
+                UUID.randomUUID(),
+                createdBlockId,
+                "MOVE_BLOCK",
+                null,
+                null,
+                0,
+                null
+        )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.documentSequence").value(2))
+                .andExpect(jsonPath("$.blocks[0].id")
+                        .value(createdBlockId.toString()));
+
+        UUID deleteOperationId = UUID.randomUUID();
+        String deleteBody = objectMapper.writeValueAsString(new OperationBody(
+                deleteOperationId,
+                createdBlockId,
+                "DELETE_BLOCK",
+                1L,
+                null,
+                null,
+                null
+        ));
+        apply(fixture, deleteBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.documentSequence").value(3))
+                .andExpect(jsonPath("$.blocks.length()").value(1))
+                .andExpect(jsonPath("$.blocks[0].id").value(fixture.blockId()));
+
+        apply(fixture, deleteBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DUPLICATE"))
+                .andExpect(jsonPath("$.documentSequence").value(3))
+                .andExpect(jsonPath("$.block.id")
+                        .value(createdBlockId.toString()));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/blocks",
+                        fixture.documentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(fixture.blockId()));
+    }
+
+    @Test
+    void nonMemberCannotApplyCollaborationOperation() throws Exception {
+        Fixture fixture = fixture();
+        String outsiderToken = registerAndGetAccessToken();
+        String body = objectMapper.writeValueAsString(new OperationBody(
+                UUID.randomUUID(),
+                null,
+                "CREATE_BLOCK",
+                null,
+                "PARAGRAPH",
+                null,
+                new ContentBody("forbidden")
+        ));
+
+        mockMvc.perform(post(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+    }
+
     private org.springframework.test.web.servlet.ResultActions apply(
             Fixture fixture,
             String body
@@ -212,7 +313,9 @@ class DocumentCollaborationOperationIntegrationTests {
                 operationId,
                 UUID.fromString(blockId),
                 "UPDATE_TEXT",
-                expectedVersion,
+                (long) expectedVersion,
+                null,
+                null,
                 new ContentBody(text)
         ));
     }
@@ -247,7 +350,9 @@ class DocumentCollaborationOperationIntegrationTests {
             UUID clientOperationId,
             UUID blockId,
             String operationType,
-            long expectedVersion,
+            Long expectedVersion,
+            String blockType,
+            Integer targetIndex,
             ContentBody content
     ) {
     }

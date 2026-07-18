@@ -275,6 +275,20 @@ class SearchIndexProjectionServiceTests {
         }
 
         @Override
+        public boolean deleteIfVersionMatches(
+                UUID blockId,
+                long expectedVersion
+        ) {
+            if (block == null
+                    || !block.id().equals(blockId)
+                    || block.version() != expectedVersion) {
+                return false;
+            }
+            block = null;
+            return true;
+        }
+
+        @Override
         public void deleteById(UUID blockId) {
         }
     }

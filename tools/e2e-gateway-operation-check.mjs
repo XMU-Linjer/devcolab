@@ -148,6 +148,105 @@ async function main() {
   );
   console.log(`[gateway-e2e] conflict result=${conflict.payload.status}`);
 
+  const createOperationId = randomUUID();
+  const createRequest = {
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: createOperationId,
+    operationType: 'CREATE_BLOCK',
+    blockType: 'PARAGRAPH',
+    content: {
+      text: 'created through gateway',
+    },
+  };
+  wsA.send(JSON.stringify(createRequest));
+  const created = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === createOperationId
+    && message.payload?.status === 'APPLIED',
+  );
+  const createdBlockId = created.payload.block.id;
+  console.log(`[gateway-e2e] create result=${created.payload.status} sequence=${created.payload.documentSequence} block=${createdBlockId}`);
+  await waitForMessage(wsB2, 'DOCUMENT_OPERATION_BROADCAST', message =>
+    message.payload?.clientOperationId === createOperationId
+    && message.payload?.blockId === createdBlockId,
+  );
+
+  wsA.send(JSON.stringify(createRequest));
+  const duplicateCreate = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === createOperationId
+    && message.payload?.status === 'DUPLICATE',
+  );
+  if (duplicateCreate.payload.block?.id !== createdBlockId
+    || duplicateCreate.payload.documentSequence !== created.payload.documentSequence) {
+    throw new Error('Duplicate create did not return the original block');
+  }
+
+  const moveOperationId = randomUUID();
+  wsA.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: moveOperationId,
+    operationType: 'MOVE_BLOCK',
+    blockId: createdBlockId,
+    targetIndex: 0,
+  }));
+  const moved = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === moveOperationId
+    && message.payload?.status === 'APPLIED',
+  );
+  if (moved.payload.blocks?.[0]?.id !== createdBlockId) {
+    throw new Error('Move result did not return the authoritative block order');
+  }
+  console.log(`[gateway-e2e] move result=${moved.payload.status} sequence=${moved.payload.documentSequence} blocks=${moved.payload.blocks.length}`);
+  await waitForMessage(wsB2, 'DOCUMENT_OPERATION_BROADCAST', message =>
+    message.payload?.clientOperationId === moveOperationId
+    && message.payload?.blocks?.[0]?.id === createdBlockId,
+  );
+
+  const deleteOperationId = randomUUID();
+  const deleteRequest = {
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: deleteOperationId,
+    operationType: 'DELETE_BLOCK',
+    blockId: createdBlockId,
+    expectedVersion: moved.payload.block.version,
+  };
+  wsA.send(JSON.stringify(deleteRequest));
+  const deleted = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === deleteOperationId
+    && message.payload?.status === 'APPLIED',
+  );
+  if (deleted.payload.blocks?.some(item => item.id === createdBlockId)) {
+    throw new Error('Delete result still contains the deleted block');
+  }
+  console.log(`[gateway-e2e] delete result=${deleted.payload.status} sequence=${deleted.payload.documentSequence} version=${deleted.payload.block.version}`);
+  await waitForMessage(wsB2, 'DOCUMENT_OPERATION_BROADCAST', message =>
+    message.payload?.clientOperationId === deleteOperationId
+    && message.payload?.blockId === createdBlockId,
+  );
+
+  wsA.send(JSON.stringify(deleteRequest));
+  const duplicateDelete = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === deleteOperationId
+    && message.payload?.status === 'DUPLICATE',
+  );
+  if (duplicateDelete.payload.block?.id !== createdBlockId
+    || duplicateDelete.payload.documentSequence !== deleted.payload.documentSequence) {
+    throw new Error('Duplicate delete did not return the original tombstone');
+  }
+
+  const finalBlocks = await clientA.get(`/api/v1/documents/${document.id}/blocks`);
+  if (finalBlocks.some(item => item.id === createdBlockId)) {
+    throw new Error('Deleted block is still present in Core');
+  }
+  const sequences = [
+    applied.payload.documentSequence,
+    created.payload.documentSequence,
+    moved.payload.documentSequence,
+    deleted.payload.documentSequence,
+  ];
+  if (sequences.join(',') !== '1,2,3,4') {
+    throw new Error(`Unexpected document sequence chain: ${sequences.join(',')}`);
+  }
+
   wsA.close();
   wsB2.close();
   console.log('[gateway-e2e] PASS');
@@ -234,6 +333,10 @@ class ApiClient {
 
   async post(path, body) {
     return this.request('POST', path, body);
+  }
+
+  async get(path) {
+    return this.request('GET', path);
   }
 
   async request(method, path, body) {

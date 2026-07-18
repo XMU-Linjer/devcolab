@@ -181,7 +181,12 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
             ClientMessage message
     ) {
         requireOperation(message);
-        if (!"UPDATE_TEXT".equals(message.operationType())) {
+        if (!List.of(
+                "UPDATE_TEXT",
+                "CREATE_BLOCK",
+                "DELETE_BLOCK",
+                "MOVE_BLOCK"
+        ).contains(message.operationType())) {
             send(context, ServerMessage.operationResult(
                     DocumentOperationResult.rejected(
                             message.clientOperationId(),
@@ -201,13 +206,16 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
         CoreDocumentOperationResult result;
         try {
-            result = operationClient.updateText(
+            result = operationClient.apply(
                     context.documentId(),
                     message.blockId(),
                     message.clientOperationId(),
                     context.accessToken(),
-                    message.content().text(),
-                    message.expectedVersion()
+                    message.operationType(),
+                    message.content() == null ? null : message.content().text(),
+                    message.expectedVersion(),
+                    message.blockType(),
+                    message.targetIndex()
             );
         } catch (RuntimeException e) {
             if (firstSeenByGateway) {
@@ -222,13 +230,17 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
 
         switch (result.status()) {
             case "APPLIED" -> {
+                UUID resultBlockId = result.block() == null
+                        ? message.blockId()
+                        : result.block().id();
                 send(context, ServerMessage.operationResult(
                         DocumentOperationResult.applied(
                                 message.clientOperationId(),
-                                message.blockId(),
+                                resultBlockId,
                                 message.operationType(),
                                 result.documentSequence(),
-                                result.block()
+                                result.block(),
+                                result.blocks()
                         )
                 ));
                 broadcastToOthers(
@@ -236,12 +248,13 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                         ServerMessage.operationBroadcast(
                                 new DocumentOperationBroadcast(
                                         message.clientOperationId(),
-                                        message.blockId(),
+                                        resultBlockId,
                                         message.operationType(),
                                         result.documentSequence(),
                                         context.user().userId(),
                                         context.user().username(),
-                                        result.block()
+                                        result.block(),
+                                        result.blocks()
                                 )
                         )
                 );
@@ -251,10 +264,13 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                     ServerMessage.operationResult(
                             DocumentOperationResult.duplicate(
                                     message.clientOperationId(),
-                                    message.blockId(),
+                                    result.block() == null
+                                            ? message.blockId()
+                                            : result.block().id(),
                                     message.operationType(),
                                     result.documentSequence(),
-                                    result.block()
+                                    result.block(),
+                                    result.blocks()
                             )
                     )
             );
@@ -377,18 +393,51 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     }
 
     private void requireOperation(ClientMessage message) {
-        requireBlockId(message);
         if (message.clientOperationId() == null) {
             throw new IllegalArgumentException("clientOperationId is required");
         }
         if (message.operationType() == null || message.operationType().isBlank()) {
             throw new IllegalArgumentException("operationType is required");
         }
+        switch (message.operationType()) {
+            case "UPDATE_TEXT" -> {
+                requireBlockId(message);
+                requireExpectedVersion(message);
+                requireContent(message);
+            }
+            case "CREATE_BLOCK" -> {
+                if (message.blockType() == null || message.blockType().isBlank()) {
+                    throw new IllegalArgumentException("blockType is required");
+                }
+                requireContent(message);
+            }
+            case "DELETE_BLOCK" -> {
+                requireBlockId(message);
+                requireExpectedVersion(message);
+            }
+            case "MOVE_BLOCK" -> {
+                requireBlockId(message);
+                if (message.targetIndex() == null || message.targetIndex() < 0) {
+                    throw new IllegalArgumentException(
+                            "targetIndex must be zero or greater"
+                    );
+                }
+            }
+            default -> {
+                // Unsupported operations are returned as a structured REJECTED result.
+            }
+        }
+    }
+
+    private void requireExpectedVersion(ClientMessage message) {
         if (message.expectedVersion() == null || message.expectedVersion() < 0) {
             throw new IllegalArgumentException(
                     "expectedVersion must be zero or greater"
             );
         }
+    }
+
+    private void requireContent(ClientMessage message) {
         if (message.content() == null || message.content().text() == null) {
             throw new IllegalArgumentException("content.text is required");
         }

@@ -38,7 +38,11 @@ public class DocumentCollaborationOperationController {
                                 request.blockId(),
                                 request.operationType(),
                                 request.expectedVersion(),
-                                request.content().text()
+                                request.blockType(),
+                                request.targetIndex(),
+                                request.content() == null
+                                        ? null
+                                        : request.content().text()
                         )
                 )
         );

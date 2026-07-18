@@ -22,5 +22,7 @@ public interface DocumentBlockRepository {
             long expectedVersion
     );
 
+    boolean deleteIfVersionMatches(UUID blockId, long expectedVersion);
+
     void deleteById(UUID blockId);
 }

@@ -9,6 +9,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -25,13 +26,16 @@ public class CoreDocumentOperationClient {
                 .build();
     }
 
-    public CoreDocumentOperationResult updateText(
+    public CoreDocumentOperationResult apply(
             UUID documentId,
             UUID blockId,
             UUID clientOperationId,
             String accessToken,
+            String operationType,
             String text,
-            long expectedVersion
+            Long expectedVersion,
+            String blockType,
+            Integer targetIndex
     ) {
         try {
             CoreOperationResponse response = webClient.post()
@@ -43,14 +47,16 @@ public class CoreDocumentOperationClient {
                     .bodyValue(new CoreOperationRequest(
                             clientOperationId,
                             blockId,
-                            "UPDATE_TEXT",
+                            operationType,
                             expectedVersion,
-                            new CoreBlockContent(text)
+                            blockType,
+                            targetIndex,
+                            text == null ? null : new CoreBlockContent(text)
                     ))
                     .retrieve()
                     .bodyToMono(CoreOperationResponse.class)
                     .block(Duration.ofSeconds(3));
-            if (response == null || response.block() == null) {
+            if (response == null) {
                 throw new IllegalStateException(
                         "Core returned an empty collaboration operation result"
                 );
@@ -59,6 +65,7 @@ public class CoreDocumentOperationClient {
                     response.status(),
                     response.documentSequence(),
                     response.block(),
+                    response.blocks() == null ? List.of() : response.blocks(),
                     null
             );
         } catch (WebClientResponseException exception) {
@@ -80,7 +87,9 @@ public class CoreDocumentOperationClient {
             UUID clientOperationId,
             UUID blockId,
             String operationType,
-            long expectedVersion,
+            Long expectedVersion,
+            String blockType,
+            Integer targetIndex,
             CoreBlockContent content
     ) {
     }
@@ -91,7 +100,8 @@ public class CoreDocumentOperationClient {
             String operationType,
             String status,
             long documentSequence,
-            CoreBlockResponse block
+            CoreBlockResponse block,
+            List<CoreBlockResponse> blocks
     ) {
     }
 
@@ -99,6 +109,7 @@ public class CoreDocumentOperationClient {
             String status,
             Long documentSequence,
             CoreBlockResponse block,
+            List<CoreBlockResponse> blocks,
             String message
     ) {
         public static CoreDocumentOperationResult conflict(String message) {
@@ -106,6 +117,7 @@ public class CoreDocumentOperationClient {
                     "CONFLICT",
                     null,
                     null,
+                    List.of(),
                     message
             );
         }
@@ -115,6 +127,7 @@ public class CoreDocumentOperationClient {
                     "REJECTED",
                     null,
                     null,
+                    List.of(),
                     message
             );
         }
