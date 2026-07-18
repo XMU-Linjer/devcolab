@@ -113,6 +113,120 @@ class DocumentBlockIntegrationTests {
     }
 
     @Test
+    void shouldMapBusinessBlockTypesToDedicatedTiptapNodes() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+
+        createStructuredBlock(token, documentId, """
+                {"type":"HEADING","content":{"schemaVersion":1,"document":{
+                  "type":"doc","content":[{"type":"heading","attrs":{"level":1},
+                  "content":[{"type":"text","text":"Contract title"}]}]}}}
+                """)
+                .andExpect(jsonPath("$.content.text").value("Contract title"))
+                .andExpect(jsonPath("$.content.document.content[0].type")
+                        .value("heading"))
+                .andExpect(jsonPath("$.content.document.content[0].attrs.level")
+                        .value(1));
+
+        createStructuredBlock(token, documentId, """
+                {"type":"CODE","content":{"schemaVersion":1,"document":{
+                  "type":"doc","content":[{"type":"codeBlock",
+                  "content":[{"type":"text","text":"line 1\\nline 2"}]}]}}}
+                """)
+                .andExpect(jsonPath("$.content.text").value("line 1\nline 2"))
+                .andExpect(jsonPath("$.content.document.content[0].type")
+                        .value("codeBlock"));
+
+        createStructuredBlock(token, documentId, """
+                {"type":"TODO","content":{"schemaVersion":1,"document":{
+                  "type":"doc","content":[{"type":"taskList","content":[{
+                    "type":"taskItem","attrs":{"checked":true},"content":[{
+                      "type":"paragraph","content":[{"type":"text","text":"Ship it"}]
+                    }]
+                  }]}]}}}
+                """)
+                .andExpect(jsonPath("$.content.text").value("Ship it"))
+                .andExpect(jsonPath("$.content.document.content[0].type")
+                        .value("taskList"))
+                .andExpect(jsonPath("$.content.document.content[0].content[0].attrs.checked")
+                        .value(true));
+    }
+
+    @Test
+    void shouldRejectBusinessTypeAndTiptapNodeMismatch() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"HEADING","content":{"schemaVersion":1,
+                                  "document":{"type":"doc","content":[{
+                                    "type":"paragraph","content":[{
+                                      "type":"text","text":"Wrong shape"
+                                    }]
+                                  }]}
+                                }}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    @Test
+    void shouldSynthesizeDedicatedNodeForLegacySemanticTextRequest() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(blockBody("HEADING", "Legacy heading")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.content.document.content[0].type")
+                        .value("heading"))
+                .andExpect(jsonPath("$.content.document.content[0].attrs.level")
+                        .value(2));
+    }
+
+    @Test
+    void shouldReadKnownLegacyParagraphShapeAsDedicatedSemanticNode() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+
+        MvcResult created = mockMvc.perform(post(
+                        "/api/v1/documents/{id}/blocks",
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(blockBody("HEADING", "Old semantic heading")))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID blockId = UUID.fromString(responseJson(created).get("id").asText());
+        jdbcTemplate.update(
+                "UPDATE document_blocks SET content_json = ? WHERE id = ?",
+                """
+                        {"type":"doc","content":[{"type":"paragraph",
+                        "content":[{"type":"text","text":"Old semantic heading"}]}]}
+                        """,
+                blockId
+        );
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content.document.content[0].type")
+                        .value("heading"))
+                .andExpect(jsonPath("$[0].content.document.content[0].attrs.level")
+                        .value(2));
+    }
+
+    @Test
     void shouldRejectUnsupportedStructuredContentNodeOrSchema() throws Exception {
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(token).get("id").asText();
@@ -469,6 +583,18 @@ class DocumentBlockIntegrationTests {
                 .andExpect(status().isCreated())
                 .andReturn();
         return responseJson(result);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions createStructuredBlock(
+            String token,
+            String documentId,
+            String body
+    ) throws Exception {
+        return mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
     }
 
     private String blockBody(String type, String text) throws Exception {

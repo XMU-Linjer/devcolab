@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 @Component
@@ -23,10 +24,11 @@ public class DocumentBlockContentCodec {
     public static final int MAX_DEPTH = 8;
 
     private static final Set<String> ALLOWED_FIELDS = Set.of(
-            "type", "content", "text"
+            "type", "content", "text", "attrs"
     );
     private static final Set<String> ALLOWED_NODE_TYPES = Set.of(
-            "doc", "paragraph", "text", "hardBreak"
+            "doc", "paragraph", "heading", "codeBlock", "taskList",
+            "taskItem", "text", "hardBreak"
     );
 
     private final ObjectMapper objectMapper;
@@ -43,7 +45,7 @@ public class DocumentBlockContentCodec {
     ) {
         if (document == null || document.isNull()) {
             String text = normalizeText(legacyText);
-            JsonNode synthesized = textDocument(text);
+            JsonNode synthesized = textDocument(blockType, text);
             return new NormalizedContent(
                     text,
                     CURRENT_SCHEMA_VERSION,
@@ -67,6 +69,7 @@ public class DocumentBlockContentCodec {
         }
         Counter counter = new Counter();
         validateNode(document, 1, counter, true);
+        validateBusinessShape(blockType, document);
         String text = normalizeText(extractDocumentText(document));
         return new NormalizedContent(
                 text,
@@ -78,16 +81,40 @@ public class DocumentBlockContentCodec {
 
     public JsonNode document(DocumentBlock block) {
         if (block.contentJson() == null || block.contentJson().isBlank()) {
-            return textDocument(block.text());
+            return textDocument(block.type(), block.text());
         }
         try {
-            return objectMapper.readTree(block.contentJson());
+            JsonNode stored = objectMapper.readTree(block.contentJson());
+            if (isLegacyParagraphShape(block.type(), stored)) {
+                return textDocument(block.type(), block.text());
+            }
+            return stored;
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
                     "Stored Block structured content is invalid",
                     exception
             );
         }
+    }
+
+    private boolean isLegacyParagraphShape(
+            DocumentBlockType blockType,
+            JsonNode document
+    ) {
+        if (blockType == DocumentBlockType.PARAGRAPH
+                || !"doc".equals(document.path("type").asText())) {
+            return false;
+        }
+        JsonNode content = document.get("content");
+        if (content == null || !content.isArray() || content.isEmpty()) {
+            return false;
+        }
+        for (JsonNode child : content) {
+            if (!"paragraph".equals(child.path("type").asText())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public int schemaVersion(DocumentBlock block) {
@@ -133,6 +160,7 @@ public class DocumentBlockContentCodec {
         if (!root && "doc".equals(type)) {
             throw new IllegalArgumentException("Nested doc nodes are not allowed");
         }
+        validateAttributes(node, type);
         JsonNode content = node.get("content");
         if ("text".equals(type)) {
             if (content != null) {
@@ -152,10 +180,8 @@ public class DocumentBlockContentCodec {
             }
             return;
         }
-        if (content == null && "paragraph".equals(type)) {
-            return;
-        }
-        if (content == null && "paragraph".equals(type)) {
+        if (content == null && Set.of("paragraph", "heading", "codeBlock")
+                .contains(type)) {
             return;
         }
         if (content == null || !content.isArray()) {
@@ -163,58 +189,201 @@ public class DocumentBlockContentCodec {
         }
         for (JsonNode child : content) {
             String childType = child.path("type").asText();
-            if (root && !"paragraph".equals(childType)) {
+            if (root && !Set.of(
+                    "paragraph", "heading", "codeBlock", "taskList"
+            ).contains(childType)) {
                 throw new IllegalArgumentException(
-                        "doc may contain paragraph nodes only"
+                        "doc contains an unsupported top-level node"
                 );
             }
-            if ("paragraph".equals(type)
+            if (Set.of("paragraph", "heading").contains(type)
                     && !Set.of("text", "hardBreak").contains(childType)) {
                 throw new IllegalArgumentException(
-                        "paragraph may contain text or hardBreak nodes only"
+                        type + " may contain text or hardBreak nodes only"
+                );
+            }
+            if ("codeBlock".equals(type) && !"text".equals(childType)) {
+                throw new IllegalArgumentException(
+                        "codeBlock may contain text nodes only"
+                );
+            }
+            if ("taskList".equals(type) && !"taskItem".equals(childType)) {
+                throw new IllegalArgumentException(
+                        "taskList may contain taskItem nodes only"
+                );
+            }
+            if ("taskItem".equals(type) && !"paragraph".equals(childType)) {
+                throw new IllegalArgumentException(
+                        "taskItem may contain one paragraph node only"
                 );
             }
             validateNode(child, depth + 1, counter, false);
         }
     }
 
+    private void validateBusinessShape(
+            DocumentBlockType blockType,
+            JsonNode document
+    ) {
+        JsonNode content = document.get("content");
+        if (content == null || !content.isArray() || content.isEmpty()) {
+            throw new IllegalArgumentException("Block document must contain content");
+        }
+        String requiredType = switch (blockType) {
+            case PARAGRAPH -> "paragraph";
+            case HEADING -> "heading";
+            case CODE -> "codeBlock";
+            case TODO -> "taskList";
+        };
+        for (JsonNode child : content) {
+            if (!requiredType.equals(child.path("type").asText())) {
+                throw new IllegalArgumentException(
+                        blockType + " Block must contain " + requiredType + " nodes"
+                );
+            }
+        }
+        if (blockType != DocumentBlockType.PARAGRAPH && content.size() != 1) {
+            throw new IllegalArgumentException(
+                    blockType + " Block must contain exactly one top-level node"
+            );
+        }
+        if (blockType == DocumentBlockType.TODO) {
+            JsonNode items = content.get(0).get("content");
+            if (items == null || !items.isArray() || items.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "TODO Block must contain at least one taskItem"
+                );
+            }
+            for (JsonNode item : items) {
+                JsonNode itemContent = item.get("content");
+                if (itemContent == null || !itemContent.isArray()
+                        || itemContent.size() != 1) {
+                    throw new IllegalArgumentException(
+                            "Each taskItem must contain exactly one paragraph"
+                    );
+                }
+            }
+        }
+    }
+
+    private void validateAttributes(JsonNode node, String type) {
+        JsonNode attrs = node.get("attrs");
+        if ("heading".equals(type)) {
+            if (attrs == null || !attrs.isObject() || attrs.size() != 1
+                    || !attrs.has("level") || !attrs.get("level").canConvertToInt()) {
+                throw new IllegalArgumentException(
+                        "heading attrs must contain level only"
+                );
+            }
+            int level = attrs.get("level").intValue();
+            if (!List.of(1, 2, 3).contains(level)) {
+                throw new IllegalArgumentException(
+                        "heading level must be 1, 2, or 3"
+                );
+            }
+            return;
+        }
+        if ("taskItem".equals(type)) {
+            if (attrs == null || !attrs.isObject() || attrs.size() != 1
+                    || !attrs.has("checked") || !attrs.get("checked").isBoolean()) {
+                throw new IllegalArgumentException(
+                        "taskItem attrs must contain boolean checked only"
+                );
+            }
+            return;
+        }
+        if (attrs != null) {
+            throw new IllegalArgumentException(
+                    type + " does not support attrs"
+            );
+        }
+    }
+
     private String extractDocumentText(JsonNode document) {
         StringBuilder result = new StringBuilder();
-        ArrayNode paragraphs = (ArrayNode) document.get("content");
-        for (int index = 0; index < paragraphs.size(); index++) {
+        ArrayNode blocks = (ArrayNode) document.get("content");
+        for (int index = 0; index < blocks.size(); index++) {
             if (index > 0) {
                 result.append('\n');
             }
-            appendInlineText(paragraphs.get(index).get("content"), result);
+            appendNodeText(blocks.get(index), result);
         }
         return result.toString();
     }
 
-    private void appendInlineText(JsonNode content, StringBuilder result) {
+    private void appendNodeText(JsonNode node, StringBuilder result) {
+        String type = node.path("type").asText();
+        if ("text".equals(type)) {
+            result.append(node.path("text").asText());
+            return;
+        }
+        if ("hardBreak".equals(type)) {
+            result.append('\n');
+            return;
+        }
+        JsonNode content = node.get("content");
         if (content == null || !content.isArray()) {
             return;
         }
-        for (JsonNode child : content) {
-            if ("text".equals(child.path("type").asText())) {
-                result.append(child.path("text").asText());
-            } else if ("hardBreak".equals(child.path("type").asText())) {
+        boolean separateChildren = Set.of("taskList", "taskItem").contains(type);
+        for (int index = 0; index < content.size(); index++) {
+            if (separateChildren && index > 0) {
                 result.append('\n');
             }
+            appendNodeText(content.get(index), result);
         }
     }
 
-    private JsonNode textDocument(String value) {
+    private JsonNode textDocument(DocumentBlockType blockType, String value) {
         String text = value == null ? "" : value;
         ObjectNode root = objectMapper.createObjectNode().put("type", "doc");
-        ArrayNode paragraphs = root.putArray("content");
-        for (String line : text.split("\\R", -1)) {
-            ObjectNode paragraph = paragraphs.addObject().put("type", "paragraph");
-            ArrayNode content = paragraph.putArray("content");
-            if (!line.isEmpty()) {
-                content.addObject().put("type", "text").put("text", line);
+        ArrayNode content = root.putArray("content");
+        switch (blockType) {
+            case PARAGRAPH -> {
+                for (String line : text.split("\\R", -1)) {
+                    ObjectNode paragraph = content.addObject()
+                            .put("type", "paragraph");
+                    appendInlineContent(paragraph, line);
+                }
+            }
+            case HEADING -> {
+                ObjectNode heading = content.addObject().put("type", "heading");
+                heading.putObject("attrs").put("level", 2);
+                appendInlineContent(heading, text);
+            }
+            case CODE -> {
+                ObjectNode codeBlock = content.addObject().put("type", "codeBlock");
+                codeBlock.putArray("content").addObject()
+                        .put("type", "text")
+                        .put("text", text);
+            }
+            case TODO -> {
+                ObjectNode taskItem = content.addObject()
+                        .put("type", "taskList")
+                        .putArray("content")
+                        .addObject()
+                        .put("type", "taskItem");
+                taskItem.putObject("attrs").put("checked", false);
+                ObjectNode paragraph = taskItem.putArray("content")
+                        .addObject()
+                        .put("type", "paragraph");
+                appendInlineContent(paragraph, text);
             }
         }
         return root;
+    }
+
+    private void appendInlineContent(ObjectNode parent, String text) {
+        ArrayNode content = parent.putArray("content");
+        String[] lines = text.split("\\R", -1);
+        for (int index = 0; index < lines.length; index++) {
+            if (index > 0) {
+                content.addObject().put("type", "hardBreak");
+            }
+            if (!lines[index].isEmpty()) {
+                content.addObject().put("type", "text").put("text", lines[index]);
+            }
+        }
     }
 
     private String normalizeText(String text) {

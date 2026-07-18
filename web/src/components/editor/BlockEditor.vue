@@ -164,14 +164,45 @@ function initialContent(type: DocumentBlockType): DocumentBlockContent {
   return {
     text,
     schemaVersion: 1,
-    document: {
-      type: 'doc',
-      content: [{
-        type: 'paragraph',
-        content: [{ type: 'text', text }],
-      }],
-    },
+    document: initialDocument(type, text),
   };
+}
+
+function initialDocument(type: DocumentBlockType, text: string) {
+  const inlineContent = [{ type: 'text', text }];
+  switch (type) {
+    case 'HEADING':
+      return {
+        type: 'doc',
+        content: [{
+          type: 'heading',
+          attrs: { level: 2 },
+          content: inlineContent,
+        }],
+      };
+    case 'CODE':
+      return {
+        type: 'doc',
+        content: [{ type: 'codeBlock', content: inlineContent }],
+      };
+    case 'TODO':
+      return {
+        type: 'doc',
+        content: [{
+          type: 'taskList',
+          content: [{
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: inlineContent }],
+          }],
+        }],
+      };
+    default:
+      return {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: inlineContent }],
+      };
+  }
 }
 
 onMounted(() => {

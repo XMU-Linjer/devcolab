@@ -5,6 +5,7 @@ export type DocumentBlockType = 'PARAGRAPH' | 'HEADING' | 'CODE' | 'TODO';
 export interface TiptapNode {
   type: string;
   text?: string;
+  attrs?: Record<string, unknown>;
   content?: TiptapNode[];
 }
 

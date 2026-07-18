@@ -59,6 +59,30 @@
       </div>
     </div>
 
+    <div v-if="block.type !== 'PARAGRAPH'" class="block-semantic-toolbar">
+      <template v-if="block.type === 'HEADING'">
+        <span>标题级别</span>
+        <el-button-group>
+          <el-button
+            v-for="level in headingLevels"
+            :key="level"
+            size="small"
+            :type="editor?.isActive('heading', { level }) ? 'primary' : 'default'"
+            :disabled="busy || readonly"
+            @mousedown.prevent="setHeadingLevel(level)"
+          >
+            H{{ level }}
+          </el-button>
+        </el-button-group>
+      </template>
+      <span v-else-if="block.type === 'CODE'">
+        代码块会保留缩进与换行
+      </span>
+      <span v-else>
+        点击复选框切换完成状态，回车可新增待办项
+      </span>
+    </div>
+
     <div class="tiptap-editor-shell" :class="{ 'is-disabled': busy || readonly }">
       <editor-content :editor="editor" />
     </div>
@@ -79,6 +103,11 @@
 
 <script setup lang="ts">
 import { ArrowDown, ArrowUp, Delete } from '@element-plus/icons-vue';
+import { Extension } from '@tiptap/core';
+import TaskItem from '@tiptap/extension-task-item';
+import TaskList from '@tiptap/extension-task-list';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Plugin } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
 import { computed, ref, watch } from 'vue';
@@ -117,31 +146,38 @@ const persistedDocument = ref<TiptapNode>(structuredDocument(props.block));
 const draftDocument = ref<TiptapNode>(structuredDocument(props.block));
 const baseVersion = ref(props.block.version);
 const remotePending = ref(false);
+const headingLevels = [1, 2, 3] as const;
+
+const editorExtensions = [
+  StarterKit.configure({
+    blockquote: false,
+    bold: false,
+    bulletList: false,
+    code: false,
+    codeBlock: props.block.type === 'CODE' ? {} : false,
+    dropcursor: false,
+    gapcursor: false,
+    heading: props.block.type === 'HEADING' ? { levels: [1, 2, 3] } : false,
+    horizontalRule: false,
+    italic: false,
+    link: false,
+    listItem: false,
+    listKeymap: false,
+    orderedList: false,
+    strike: false,
+    trailingNode: false,
+    underline: false,
+  }),
+  ...(props.block.type === 'TODO'
+    ? [TaskList, TaskItem.configure({ nested: false })]
+    : []),
+  blockShapeGuard(props.block.type),
+];
 
 const editor = useEditor({
   content: structuredDocument(props.block),
   editable: !props.busy && !props.readonly,
-  extensions: [
-    StarterKit.configure({
-      blockquote: false,
-      bold: false,
-      bulletList: false,
-      code: false,
-      codeBlock: false,
-      dropcursor: false,
-      gapcursor: false,
-      heading: false,
-      horizontalRule: false,
-      italic: false,
-      link: false,
-      listItem: false,
-      listKeymap: false,
-      orderedList: false,
-      strike: false,
-      trailingNode: false,
-      underline: false,
-    }),
-  ],
+  extensions: editorExtensions,
   editorProps: {
     attributes: {
       class: 'tiptap-content',
@@ -149,7 +185,14 @@ const editor = useEditor({
       'aria-multiline': 'true',
       'aria-label': '文档内容块编辑器',
     },
-    transformPastedHTML: (html) => plainTextHtml(html),
+    transformPastedHTML: (html) => plainTextHtml(html, props.block.type),
+    handleKeyDown: (_view, event) => {
+      if (props.block.type === 'HEADING' && event.key === 'Enter') {
+        editor.value?.chain().focus().setHardBreak().run();
+        return true;
+      }
+      return false;
+    },
   },
   onUpdate: ({ editor: current }) => {
     draftText.value = plainText(current);
@@ -262,10 +305,119 @@ function textDocument(text: string) {
 }
 
 function structuredDocument(block: DocumentBlock): TiptapNode {
-  return block.content.document ?? textDocument(block.content.text);
+  const document = block.content.document;
+  const expectedType = expectedRootNodeType(block.type);
+  if (document?.content?.every((node) => node.type === expectedType)) {
+    return document;
+  }
+  return typedTextDocument(block.type, block.content.text);
 }
 
-function plainTextHtml(html: string) {
+function typedTextDocument(type: DocumentBlockType, text: string): TiptapNode {
+  const content = inlineNodes(text);
+  if (type === 'HEADING') {
+    return {
+      type: 'doc',
+      content: [{ type: 'heading', attrs: { level: 2 }, content }],
+    };
+  }
+  if (type === 'CODE') {
+    return {
+      type: 'doc',
+      content: [{
+        type: 'codeBlock',
+        content: text.length > 0 ? [{ type: 'text', text }] : [],
+      }],
+    };
+  }
+  if (type === 'TODO') {
+    return {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [{
+          type: 'taskItem',
+          attrs: { checked: false },
+          content: [{ type: 'paragraph', content }],
+        }],
+      }],
+    };
+  }
+  return textDocument(text);
+}
+
+function inlineNodes(text: string): TiptapNode[] {
+  const nodes: TiptapNode[] = [];
+  text.split(/\r?\n/).forEach((line, index) => {
+    if (index > 0) {
+      nodes.push({ type: 'hardBreak' });
+    }
+    if (line.length > 0) {
+      nodes.push({ type: 'text', text: line });
+    }
+  });
+  return nodes;
+}
+
+function expectedRootNodeType(type: DocumentBlockType) {
+  return {
+    PARAGRAPH: 'paragraph',
+    HEADING: 'heading',
+    CODE: 'codeBlock',
+    TODO: 'taskList',
+  }[type];
+}
+
+function blockShapeGuard(type: DocumentBlockType) {
+  return Extension.create({
+    name: `blockShapeGuard${type}`,
+    addProseMirrorPlugins() {
+      return [new Plugin({
+        filterTransaction: (transaction) => validDocumentShape(transaction.doc, type),
+      })];
+    },
+  });
+}
+
+function validDocumentShape(document: ProseMirrorNode, type: DocumentBlockType) {
+  const expectedType = expectedRootNodeType(type);
+  if (document.childCount === 0) {
+    return false;
+  }
+  for (let index = 0; index < document.childCount; index += 1) {
+    if (document.child(index).type.name !== expectedType) {
+      return false;
+    }
+  }
+  if (type === 'PARAGRAPH') {
+    return true;
+  }
+  if (document.childCount !== 1) {
+    return false;
+  }
+  if (type !== 'TODO') {
+    return true;
+  }
+  const taskList = document.child(0);
+  if (taskList.childCount === 0) {
+    return false;
+  }
+  for (let index = 0; index < taskList.childCount; index += 1) {
+    const taskItem = taskList.child(index);
+    if (taskItem.type.name !== 'taskItem'
+      || taskItem.childCount !== 1
+      || taskItem.child(0).type.name !== 'paragraph') {
+      return false;
+    }
+  }
+  return true;
+}
+
+function setHeadingLevel(level: 1 | 2 | 3) {
+  editor.value?.chain().focus().setHeading({ level }).run();
+}
+
+function plainTextHtml(html: string, type: DocumentBlockType) {
   const document = new DOMParser().parseFromString(html, 'text/html');
   const escaped = (document.body.textContent ?? '')
     .replaceAll('&', '&amp;')
@@ -273,6 +425,16 @@ function plainTextHtml(html: string) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+  const lines = escaped.replace(/\r?\n/g, '<br>');
+  if (type === 'HEADING') {
+    return `<h2>${lines}</h2>`;
+  }
+  if (type === 'CODE') {
+    return `<pre><code>${escaped}</code></pre>`;
+  }
+  if (type === 'TODO') {
+    return `<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>${lines}</p></li></ul>`;
+  }
   return `<p>${escaped.replace(/\r?\n/g, '</p><p>')}</p>`;
 }
 

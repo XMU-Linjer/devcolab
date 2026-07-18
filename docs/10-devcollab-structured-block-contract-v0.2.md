@@ -1,24 +1,22 @@
-# DevCollab 结构化 Block 数据与接口契约 V0.1
+# DevCollab 结构化 Block 数据与接口契约 V0.2
 
 ## 文档信息
 
 | 项目 | 内容 |
 |---|---|
 | 文档类型 | 数据与接口专项设计 |
-| 文档状态 | 已被 V0.2 替代 |
-| 版本 | V0.1 |
+| 文档状态 | 当前实现基线 |
+| 版本 | V0.2 |
 | 日期 | 2026-07-18 |
+| 前置版本 | `10-devcollab-structured-block-contract-v0.1.md` |
 | 适用范围 | Knowledge Core、Collaboration Gateway、gRPC Contract、Vue 文档工作台 |
 | 关联文档 | `02-devcollab-system-architecture-v0.3.md`、`04-devcollab-frontend-design-v0.2.md` |
-| 替代版本 | `10-devcollab-structured-block-contract-v0.2.md` |
 
 ## 1. 结论与边界
 
-> 本版本仅保留历史基线；当前有效契约见 `10-devcollab-structured-block-contract-v0.2.md`。
-
 Document Block 采用“双表示”模型：`content_json` 是编辑结构，`text` 是由服务端从结构中派生的纯文本投影。前端不得把两者作为两个独立权威来源。
 
-V0.1 支持业务类型 `PARAGRAPH`、`HEADING`、`CODE`、`TODO`，结构 Schema 仅开放 Tiptap 的 `doc`、`paragraph`、`text`、`hardBreak` 节点。业务类型决定展示语义，暂不等于一个同名 Tiptap Node。
+V0.2 将业务类型与 Tiptap 顶层 Node 建立确定映射：`PARAGRAPH → paragraph`、`HEADING → heading`、`CODE → codeBlock`、`TODO → taskList/taskItem`。Core 校验业务类型、节点形状和有限属性，前端不能只改标签而提交另一种结构。
 
 本版本不包含：HTML 持久化、任意扩展节点、图片、链接、Mark、OT/CRDT 字符级合并及整篇单 Editor 事务。
 
@@ -71,9 +69,11 @@ V0.1 支持业务类型 `PARAGRAPH`、`HEADING`、`CODE`、`TODO`，结构 Schem
 
 Core 是结构合法性的最终裁决者，执行以下限制：
 
-- 根节点必须为 `doc`；其直接子节点只能是 `paragraph`；
-- `paragraph` 只能为空，或包含 `text`、`hardBreak`；空段落可省略 `content`；
-- 允许字段仅为 `type`、`content`、`text`；未知 `attrs`、`marks` 或节点直接拒绝；
+- 根节点必须为 `doc`，顶层节点按照业务类型固定映射；除 `PARAGRAPH` 外每个业务 Block 只允许一个顶层节点；
+- `paragraph` 与 `heading` 只能包含 `text`、`hardBreak`；`codeBlock` 只能包含 `text`；
+- `taskList` 只能包含 `taskItem`；每个 `taskItem` 只包含一个 `paragraph`；
+- `heading.attrs` 只允许 `level: 1 | 2 | 3`，`taskItem.attrs` 只允许布尔值 `checked`；其他节点禁止 `attrs`；
+- 允许字段仅为 `type`、`content`、`text`、`attrs`；未知字段、`marks` 或节点直接拒绝；
 - 当前 Schema 版本必须为 `1`；
 - JSON 最大 64 KiB、最多 512 个节点、最大深度 8；
 - 派生纯文本最大 20,000 字符且不能为空白。
@@ -109,6 +109,8 @@ gRPC 保留原 `text` 字段并追加 `content_schema_version` 与 `content_json
 - V16 能在 Flyway 测试数据库完成迁移；
 - 旧 `text` 请求创建后返回合法 Schema V1 JSON；
 - Tiptap JSON 经 REST 和 gRPC 保存后可原样回读，`text` 由 Core 派生；
+- 四种业务 Block 分别保存为 paragraph、heading、codeBlock、taskList/taskItem，类型与节点不一致时返回 `INVALID_INPUT`；
+- 版本快照用白名单 Vue 组件按语义只读渲染，不使用 `v-html`；旧纯文本快照仍可展示；
 - 非法 Schema、未知节点或字段返回 `INVALID_INPUT`；
 - `content_json` 为空的历史行仍可读取；
 - 旧版本更新仍返回 409，不因结构化内容绕过乐观锁；
@@ -116,4 +118,4 @@ gRPC 保留原 `text` 字段并追加 `content_schema_version` 与 `content_json
 
 ## 8. 后续演进
 
-真正开放 Heading、Code、Todo 的专用 Tiptap Node 前，必须先扩展 Schema 白名单、定义 attrs/marks、补迁移与快照兼容测试。图片等对象内容还需定义 MinIO 对象引用和权限规则。OT/CRDT 属于独立协作协议升级，不纳入本契约。
+后续可按业务评审增加代码语言、行内 Mark 与链接，但每项都必须先定义字段、服务端白名单、历史快照兼容和安全渲染。图片等对象内容还需定义 MinIO 对象引用和权限规则。OT/CRDT 属于独立协作协议升级，不纳入本契约。

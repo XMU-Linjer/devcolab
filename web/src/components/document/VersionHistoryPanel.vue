@@ -57,7 +57,11 @@
             class="snapshot-block-item"
           >
             <el-tag size="small" effect="plain">{{ block.type }}</el-tag>
-            <p>{{ block.text }}</p>
+            <StructuredBlockPreview
+              :type="block.type"
+              :text="block.text"
+              :document="block.document"
+            />
           </article>
         </div>
         <el-empty v-else description="该版本没有内容 Block" />
@@ -74,6 +78,8 @@ import {
   getDocumentVersion,
   type DocumentVersion,
 } from '@/api/document';
+import type { DocumentBlockType, TiptapNode } from '@/api/block';
+import StructuredBlockPreview from '@/components/document/StructuredBlockPreview.vue';
 import { readableError } from '@/utils/error';
 
 const props = defineProps<{
@@ -95,15 +101,33 @@ const snapshotBlocks = computed(() => {
     const snapshot = JSON.parse(selectedVersion.value.snapshotPayload) as {
       blocks?: Array<{
         id: string;
-        type: string;
+        type: DocumentBlockType;
         text: string;
+        contentJson?: string | null;
       }>;
     };
-    return Array.isArray(snapshot.blocks) ? snapshot.blocks : [];
+    if (!Array.isArray(snapshot.blocks)) {
+      return [];
+    }
+    return snapshot.blocks.map((block) => ({
+      ...block,
+      document: parseStructuredDocument(block.contentJson),
+    }));
   } catch {
     return [];
   }
 });
+
+function parseStructuredDocument(value?: string | null): TiptapNode | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as TiptapNode;
+  } catch {
+    return null;
+  }
+}
 
 async function selectVersion(version: DocumentVersion) {
   detailVisible.value = true;

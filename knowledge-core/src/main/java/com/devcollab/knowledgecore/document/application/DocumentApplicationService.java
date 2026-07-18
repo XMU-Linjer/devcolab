@@ -51,6 +51,7 @@ public class DocumentApplicationService {
     private final WorkspacePermissionPolicy permissionPolicy;
     private final OutboxEventPublisher outboxEventPublisher;
     private final ObjectMapper objectMapper;
+    private final DocumentBlockContentCodec blockContentCodec;
     private final DocumentTreeCacheService treeCache;
     private final PublishedDocumentCacheService publishedDocumentCache;
     private final ApprovedAdrCacheService approvedAdrCache;
@@ -65,6 +66,7 @@ public class DocumentApplicationService {
             WorkspacePermissionPolicy permissionPolicy,
             OutboxEventPublisher outboxEventPublisher,
             ObjectMapper objectMapper,
+            DocumentBlockContentCodec blockContentCodec,
             DocumentTreeCacheService treeCache,
             PublishedDocumentCacheService publishedDocumentCache,
             ApprovedAdrCacheService approvedAdrCache
@@ -78,6 +80,7 @@ public class DocumentApplicationService {
         this.permissionPolicy = permissionPolicy;
         this.outboxEventPublisher = outboxEventPublisher;
         this.objectMapper = objectMapper;
+        this.blockContentCodec = blockContentCodec;
         this.treeCache = treeCache;
         this.publishedDocumentCache = publishedDocumentCache;
         this.approvedAdrCache = approvedAdrCache;
@@ -711,9 +714,12 @@ public class DocumentApplicationService {
                     blockSnapshot.put("text", block.text());
                     blockSnapshot.put(
                             "contentSchemaVersion",
-                            block.contentSchemaVersion()
+                            blockContentCodec.schemaVersion(block)
                     );
-                    blockSnapshot.put("contentJson", block.contentJson());
+                    blockSnapshot.put(
+                            "contentJson",
+                            blockContentCodec.document(block).toString()
+                    );
                     blockSnapshot.put("sortOrder", block.sortOrder());
                     blockSnapshot.put("version", block.version());
                     return blockSnapshot;
