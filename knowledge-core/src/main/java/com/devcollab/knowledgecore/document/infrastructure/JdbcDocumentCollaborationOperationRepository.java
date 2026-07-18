@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -94,6 +95,46 @@ public class JdbcDocumentCollaborationOperationRepository
                 documentId
         );
         return next;
+    }
+
+    @Override
+    public long currentDocumentSequence(UUID documentId) {
+        Long current = jdbcTemplate.queryForObject("""
+                        SELECT collaboration_sequence
+                          FROM documents
+                         WHERE id = ?
+                        """,
+                Long.class,
+                documentId
+        );
+        if (current == null) {
+            throw new IllegalStateException("Document sequence is unavailable");
+        }
+        return current;
+    }
+
+    @Override
+    public List<DocumentCollaborationOperation> findAfterSequence(
+            UUID documentId,
+            long afterSequence,
+            long throughSequence,
+            int limit
+    ) {
+        return jdbcTemplate.query("""
+                        SELECT *
+                          FROM document_collaboration_operations
+                         WHERE document_id = ?
+                           AND document_sequence > ?
+                           AND document_sequence <= ?
+                         ORDER BY document_sequence ASC
+                         LIMIT ?
+                        """,
+                rowMapper,
+                documentId,
+                afterSequence,
+                throughSequence,
+                limit
+        );
     }
 
     @Override

@@ -247,8 +247,81 @@ async function main() {
     throw new Error(`Unexpected document sequence chain: ${sequences.join(',')}`);
   }
 
-  wsA.close();
+  // Simulate B going offline after sequence 4. Two operations are accepted
+  // while it is absent, then B requests deterministic, paged catch-up.
   wsB2.close();
+  await waitForClose(wsB2);
+
+  const offlineCreateOperationId = randomUUID();
+  wsA.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: offlineCreateOperationId,
+    operationType: 'CREATE_BLOCK',
+    blockType: 'PARAGRAPH',
+    content: { text: 'created while B was offline' },
+  }));
+  const offlineCreated = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === offlineCreateOperationId
+    && message.payload?.status === 'APPLIED',
+  );
+
+  const offlineUpdateOperationId = randomUUID();
+  const currentOriginalBlock = finalBlocks.find(item => item.id === block.id);
+  if (!currentOriginalBlock) {
+    throw new Error('Original block is missing before offline update');
+  }
+  wsA.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION',
+    clientOperationId: offlineUpdateOperationId,
+    operationType: 'UPDATE_TEXT',
+    blockId: block.id,
+    expectedVersion: currentOriginalBlock.version,
+    content: { text: 'updated while B was offline' },
+  }));
+  const offlineUpdated = await waitForMessage(wsA, 'DOCUMENT_OPERATION_RESULT', message =>
+    message.payload?.clientOperationId === offlineUpdateOperationId
+    && message.payload?.status === 'APPLIED',
+  );
+  if (offlineCreated.payload.documentSequence !== 5
+    || offlineUpdated.payload.documentSequence !== 6) {
+    throw new Error('Offline operation sequence did not continue at 5,6');
+  }
+
+  const wsB3 = await connect('B-catch-up', workspace.id, document.id, authB.accessToken);
+  await waitForMessage(wsB3, 'ROOM_STATE_SNAPSHOT', () => true);
+  wsB3.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION_CATCH_UP_REQUEST',
+    afterDocumentSequence: 4,
+    limit: 1,
+  }));
+  const catchUpPage1 = await waitForMessage(wsB3, 'DOCUMENT_OPERATION_CATCH_UP', message =>
+    message.payload?.requestedAfterSequence === 4,
+  );
+  if (!catchUpPage1.payload.hasMore
+    || catchUpPage1.payload.latestDocumentSequence !== 6
+    || catchUpPage1.payload.operations?.[0]?.documentSequence !== 5
+    || catchUpPage1.payload.operations?.[0]?.clientOperationId !== offlineCreateOperationId) {
+    throw new Error(`Unexpected first catch-up page: ${JSON.stringify(catchUpPage1.payload)}`);
+  }
+
+  wsB3.send(JSON.stringify({
+    type: 'DOCUMENT_OPERATION_CATCH_UP_REQUEST',
+    afterDocumentSequence: 5,
+    limit: 1,
+  }));
+  const catchUpPage2 = await waitForMessage(wsB3, 'DOCUMENT_OPERATION_CATCH_UP', message =>
+    message.payload?.requestedAfterSequence === 5,
+  );
+  if (catchUpPage2.payload.hasMore
+    || catchUpPage2.payload.latestDocumentSequence !== 6
+    || catchUpPage2.payload.operations?.[0]?.documentSequence !== 6
+    || catchUpPage2.payload.operations?.[0]?.clientOperationId !== offlineUpdateOperationId) {
+    throw new Error(`Unexpected second catch-up page: ${JSON.stringify(catchUpPage2.payload)}`);
+  }
+  console.log('[gateway-e2e] catch-up pages=2 sequences=5,6 latest=6');
+
+  wsA.close();
+  wsB3.close();
   console.log('[gateway-e2e] PASS');
 }
 

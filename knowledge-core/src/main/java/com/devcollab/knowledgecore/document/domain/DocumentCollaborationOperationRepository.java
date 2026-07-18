@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.domain;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface DocumentCollaborationOperationRepository {
@@ -13,6 +14,15 @@ public interface DocumentCollaborationOperationRepository {
     void lockDocument(UUID documentId);
 
     long nextDocumentSequence(UUID documentId);
+
+    long currentDocumentSequence(UUID documentId);
+
+    List<DocumentCollaborationOperation> findAfterSequence(
+            UUID documentId,
+            long afterSequence,
+            long throughSequence,
+            int limit
+    );
 
     DocumentCollaborationOperation save(
             DocumentCollaborationOperation operation

@@ -152,6 +152,55 @@ class CoreDocumentOperationClientTests {
         assertThat(result.message()).contains("conflict");
     }
 
+    @Test
+    void catchUpMapsOrderedPageAndForwardsCursorParameters() {
+        UUID documentId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID blockId = UUID.randomUUID();
+        UUID operatorId = UUID.randomUUID();
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        CoreDocumentOperationClient client = clientWith(
+                captured,
+                HttpStatus.OK,
+                """
+                {
+                  "requestedAfterSequence": 4,
+                  "latestDocumentSequence": 6,
+                  "hasMore": true,
+                  "operations": [{
+                    "clientOperationId": "%s",
+                    "blockId": "%s",
+                    "operationType": "CREATE_BLOCK",
+                    "status": "APPLIED",
+                    "documentSequence": 5,
+                    "operatorUserId": "%s",
+                    "block": null,
+                    "blocks": []
+                  }]
+                }
+                """.formatted(operationId, blockId, operatorId)
+        );
+
+        var result = client.listAfter(
+                documentId,
+                "access-token",
+                4,
+                1
+        );
+
+        assertThat(result.requestedAfterSequence()).isEqualTo(4);
+        assertThat(result.latestDocumentSequence()).isEqualTo(6);
+        assertThat(result.hasMore()).isTrue();
+        assertThat(result.operations()).hasSize(1);
+        assertThat(result.operations().getFirst().documentSequence())
+                .isEqualTo(5);
+        assertThat(result.operations().getFirst().operatorUserId())
+                .isEqualTo(operatorId);
+        assertThat(captured.get().method().name()).isEqualTo("GET");
+        assertThat(captured.get().url().getQuery())
+                .contains("afterSequence=4", "limit=1");
+    }
+
     private CoreDocumentOperationClient clientWith(
             AtomicReference<ClientRequest> captured,
             HttpStatus status,

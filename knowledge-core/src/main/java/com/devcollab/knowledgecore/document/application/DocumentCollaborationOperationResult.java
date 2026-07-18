@@ -11,6 +11,7 @@ public record DocumentCollaborationOperationResult(
         String operationType,
         String status,
         long documentSequence,
+        UUID operatorUserId,
         DocumentBlock block,
         List<DocumentBlock> blocks
 ) {

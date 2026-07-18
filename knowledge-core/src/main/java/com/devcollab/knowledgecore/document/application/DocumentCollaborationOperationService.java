@@ -20,6 +20,8 @@ import java.util.UUID;
 @Service
 public class DocumentCollaborationOperationService {
 
+    public static final int MAX_CATCH_UP_PAGE_SIZE = 200;
+
     public static final String UPDATE_TEXT = "UPDATE_TEXT";
     public static final String CREATE_BLOCK = "CREATE_BLOCK";
     public static final String DELETE_BLOCK = "DELETE_BLOCK";
@@ -68,6 +70,48 @@ public class DocumentCollaborationOperationService {
                 currentUserId,
                 command,
                 fingerprint
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentCollaborationOperationPage listAfter(
+            UUID documentId,
+            UUID currentUserId,
+            long afterSequence,
+            int limit
+    ) {
+        if (afterSequence < 0) {
+            throw new IllegalArgumentException(
+                    "afterSequence must be zero or greater"
+            );
+        }
+        if (limit < 1 || limit > MAX_CATCH_UP_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "limit must be between 1 and " + MAX_CATCH_UP_PAGE_SIZE
+            );
+        }
+
+        documentService.get(documentId, currentUserId);
+        long latestSequence = operationRepository.currentDocumentSequence(
+                documentId
+        );
+        List<DocumentCollaborationOperation> found =
+                operationRepository.findAfterSequence(
+                        documentId,
+                        afterSequence,
+                        latestSequence,
+                        limit + 1
+                );
+        boolean hasMore = found.size() > limit;
+        List<DocumentCollaborationOperationResult> operations = found.stream()
+                .limit(limit)
+                .map(operation -> result(operation, "APPLIED"))
+                .toList();
+        return new DocumentCollaborationOperationPage(
+                afterSequence,
+                latestSequence,
+                hasMore,
+                operations
         );
     }
 
@@ -175,6 +219,7 @@ public class DocumentCollaborationOperationService {
                 operation.operationType(),
                 status,
                 operation.documentSequence(),
+                operation.operatorUserId(),
                 operation.result().block(),
                 operation.result().blocks()
         );

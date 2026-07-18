@@ -164,6 +164,27 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                             })
                             .then();
                 }
+                case "DOCUMENT_OPERATION_CATCH_UP_REQUEST" -> {
+                    return Mono.fromRunnable(() ->
+                                    handleDocumentOperationCatchUp(
+                                            context,
+                                            message
+                                    )
+                            )
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .onErrorResume(e -> {
+                                log.warn(
+                                        "Failed to catch up document operations: {}",
+                                        e.getMessage()
+                                );
+                                log.debug("Document catch-up failure detail", e);
+                                send(context, ServerMessage.error(
+                                        "文档增量补偿失败"
+                                ));
+                                return Mono.empty();
+                            })
+                            .then();
+                }
                 default -> send(context, ServerMessage.error(
                         "Unsupported message type: " + message.type()
                 ));
@@ -174,6 +195,34 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
             send(context, ServerMessage.error("消息格式不正确"));
         }
         return Mono.empty();
+    }
+
+    private void handleDocumentOperationCatchUp(
+            ConnectionContext context,
+            ClientMessage message
+    ) {
+        if (message.afterDocumentSequence() == null
+                || message.afterDocumentSequence() < 0) {
+            throw new IllegalArgumentException(
+                    "afterDocumentSequence must be zero or greater"
+            );
+        }
+        int limit = message.limit() == null ? 100 : message.limit();
+        if (limit < 1
+                || limit > CoreDocumentOperationClient.MAX_CATCH_UP_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "limit must be between 1 and "
+                            + CoreDocumentOperationClient.MAX_CATCH_UP_PAGE_SIZE
+            );
+        }
+        send(context, ServerMessage.operationCatchUp(
+                operationClient.listAfter(
+                        context.documentId(),
+                        context.accessToken(),
+                        message.afterDocumentSequence(),
+                        limit
+                )
+        ));
     }
 
     private void handleDocumentOperation(

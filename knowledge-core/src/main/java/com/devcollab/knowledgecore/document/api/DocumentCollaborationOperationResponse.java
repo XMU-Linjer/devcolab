@@ -11,6 +11,7 @@ public record DocumentCollaborationOperationResponse(
         String operationType,
         String status,
         long documentSequence,
+        UUID operatorUserId,
         DocumentBlockResponse block,
         List<DocumentBlockResponse> blocks
 ) {
@@ -23,6 +24,7 @@ public record DocumentCollaborationOperationResponse(
                 result.operationType(),
                 result.status(),
                 result.documentSequence(),
+                result.operatorUserId(),
                 result.block() == null
                         ? null
                         : DocumentBlockResponse.from(result.block()),

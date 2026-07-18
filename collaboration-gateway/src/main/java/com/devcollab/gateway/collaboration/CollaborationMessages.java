@@ -17,6 +17,8 @@ public final class CollaborationMessages {
             Long expectedVersion,
             String blockType,
             Integer targetIndex,
+            Long afterDocumentSequence,
+            Integer limit,
             DocumentOperationContent content
     ) {
     }
@@ -62,6 +64,12 @@ public final class CollaborationMessages {
                 DocumentOperationBroadcast payload
         ) {
             return new ServerMessage("DOCUMENT_OPERATION_BROADCAST", payload);
+        }
+
+        public static ServerMessage operationCatchUp(
+                DocumentOperationCatchUp payload
+        ) {
+            return new ServerMessage("DOCUMENT_OPERATION_CATCH_UP", payload);
         }
     }
 
@@ -190,6 +198,25 @@ public final class CollaborationMessages {
             long documentSequence,
             UUID userId,
             String username,
+            CoreBlockResponse block,
+            List<CoreBlockResponse> blocks
+    ) {
+    }
+
+    public record DocumentOperationCatchUp(
+            long requestedAfterSequence,
+            long latestDocumentSequence,
+            boolean hasMore,
+            List<RecoveredDocumentOperation> operations
+    ) {
+    }
+
+    public record RecoveredDocumentOperation(
+            UUID clientOperationId,
+            UUID blockId,
+            String operationType,
+            long documentSequence,
+            UUID operatorUserId,
             CoreBlockResponse block,
             List<CoreBlockResponse> blocks
     ) {

@@ -101,6 +101,80 @@ class DocumentCollaborationOperationIntegrationTests {
     }
 
     @Test
+    void listsMissedOperationsInSequenceOrderWithStablePagination()
+            throws Exception {
+        Fixture fixture = fixture();
+        apply(fixture, operationBody(
+                UUID.randomUUID(), fixture.blockId(), "First", 0
+        )).andExpect(status().isOk());
+        apply(fixture, operationBody(
+                UUID.randomUUID(), fixture.blockId(), "Second", 1
+        )).andExpect(status().isOk());
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .param("afterSequence", "0")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestedAfterSequence").value(0))
+                .andExpect(jsonPath("$.latestDocumentSequence").value(2))
+                .andExpect(jsonPath("$.hasMore").value(true))
+                .andExpect(jsonPath("$.operations.length()").value(1))
+                .andExpect(jsonPath("$.operations[0].documentSequence").value(1))
+                .andExpect(jsonPath("$.operations[0].operatorUserId").exists())
+                .andExpect(jsonPath("$.operations[0].block.content.text")
+                        .value("First"));
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .param("afterSequence", "1")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latestDocumentSequence").value(2))
+                .andExpect(jsonPath("$.hasMore").value(false))
+                .andExpect(jsonPath("$.operations[0].documentSequence").value(2))
+                .andExpect(jsonPath("$.operations[0].block.content.text")
+                        .value("Second"));
+    }
+
+    @Test
+    void collaborationCatchUpValidatesCursorAndMembership() throws Exception {
+        Fixture fixture = fixture();
+        String outsiderToken = registerAndGetAccessToken();
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .param("afterSequence", "-1"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .param("afterSequence", "0")
+                        .param("limit", "201"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get(
+                        "/api/v1/documents/{documentId}/collaboration-operations",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken))
+                        .param("afterSequence", "0"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void reusingOperationIdForDifferentRequestIsRejected()
             throws Exception {
         Fixture fixture = fixture();

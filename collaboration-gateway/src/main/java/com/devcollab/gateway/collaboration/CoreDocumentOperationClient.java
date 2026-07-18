@@ -15,6 +15,8 @@ import java.util.UUID;
 @Component
 public class CoreDocumentOperationClient {
 
+    public static final int MAX_CATCH_UP_PAGE_SIZE = 200;
+
     private final WebClient webClient;
 
     public CoreDocumentOperationClient(
@@ -83,6 +85,48 @@ public class CoreDocumentOperationClient {
         }
     }
 
+    public CollaborationMessages.DocumentOperationCatchUp listAfter(
+            UUID documentId,
+            String accessToken,
+            long afterSequence,
+            int limit
+    ) {
+        CoreOperationPageResponse response = webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/v1/documents/{documentId}/collaboration-operations")
+                        .queryParam("afterSequence", afterSequence)
+                        .queryParam("limit", limit)
+                        .build(documentId))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .retrieve()
+                .bodyToMono(CoreOperationPageResponse.class)
+                .block(Duration.ofSeconds(3));
+        if (response == null) {
+            throw new IllegalStateException(
+                    "Core returned an empty collaboration catch-up result"
+            );
+        }
+        return new CollaborationMessages.DocumentOperationCatchUp(
+                response.requestedAfterSequence(),
+                response.latestDocumentSequence(),
+                response.hasMore(),
+                response.operations().stream()
+                        .map(operation ->
+                                new CollaborationMessages.RecoveredDocumentOperation(
+                                        operation.clientOperationId(),
+                                        operation.blockId(),
+                                        operation.operationType(),
+                                        operation.documentSequence(),
+                                        operation.operatorUserId(),
+                                        operation.block(),
+                                        operation.blocks() == null
+                                                ? List.of()
+                                                : operation.blocks()
+                                ))
+                        .toList()
+        );
+    }
+
     private record CoreOperationRequest(
             UUID clientOperationId,
             UUID blockId,
@@ -100,8 +144,17 @@ public class CoreDocumentOperationClient {
             String operationType,
             String status,
             long documentSequence,
+            UUID operatorUserId,
             CoreBlockResponse block,
             List<CoreBlockResponse> blocks
+    ) {
+    }
+
+    private record CoreOperationPageResponse(
+            long requestedAfterSequence,
+            long latestDocumentSequence,
+            boolean hasMore,
+            List<CoreOperationResponse> operations
     ) {
     }
 
