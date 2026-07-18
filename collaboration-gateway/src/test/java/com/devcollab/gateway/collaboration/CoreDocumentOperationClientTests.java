@@ -24,7 +24,7 @@ class CoreDocumentOperationClientTests {
         UUID blockId = UUID.randomUUID();
         UUID operationId = UUID.randomUUID();
         AtomicReference<ClientRequest> captured = new AtomicReference<>();
-        CoreDocumentOperationClient client = clientWith(
+        HttpCoreDocumentOperationClient client = clientWith(
                 captured,
                 HttpStatus.OK,
                 """
@@ -84,7 +84,7 @@ class CoreDocumentOperationClientTests {
         UUID documentId = UUID.randomUUID();
         UUID blockId = UUID.randomUUID();
         UUID operationId = UUID.randomUUID();
-        CoreDocumentOperationClient client = clientWith(
+        HttpCoreDocumentOperationClient client = clientWith(
                 new AtomicReference<>(),
                 HttpStatus.OK,
                 """
@@ -130,7 +130,7 @@ class CoreDocumentOperationClientTests {
 
     @Test
     void updateTextMapsCoreConflictToConflictResult() {
-        CoreDocumentOperationClient client = clientWith(
+        HttpCoreDocumentOperationClient client = clientWith(
                 new AtomicReference<>(),
                 HttpStatus.CONFLICT,
                 "{}"
@@ -159,7 +159,7 @@ class CoreDocumentOperationClientTests {
         UUID blockId = UUID.randomUUID();
         UUID operatorId = UUID.randomUUID();
         AtomicReference<ClientRequest> captured = new AtomicReference<>();
-        CoreDocumentOperationClient client = clientWith(
+        HttpCoreDocumentOperationClient client = clientWith(
                 captured,
                 HttpStatus.OK,
                 """
@@ -201,7 +201,7 @@ class CoreDocumentOperationClientTests {
                 .contains("afterSequence=4", "limit=1");
     }
 
-    private CoreDocumentOperationClient clientWith(
+    private HttpCoreDocumentOperationClient clientWith(
             AtomicReference<ClientRequest> captured,
             HttpStatus status,
             String body
@@ -217,7 +217,7 @@ class CoreDocumentOperationClientTests {
                             .body(body)
                             .build());
                 });
-        return new CoreDocumentOperationClient(
+        return new HttpCoreDocumentOperationClient(
                 builder,
                 new GatewayProperties(
                         "http://core.example",

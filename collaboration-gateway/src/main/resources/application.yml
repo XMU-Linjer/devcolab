@@ -11,10 +11,18 @@ spring:
 
 devcollab:
   gateway:
+    core-transport: ${DEVCOLLAB_GATEWAY_CORE_TRANSPORT:grpc}
     core-base-url: ${DEVCOLLAB_CORE_BASE_URL:http://localhost:8080}
     presence-ttl: ${DEVCOLLAB_GATEWAY_PRESENCE_TTL:PT1M}
     editing-ttl: ${DEVCOLLAB_GATEWAY_EDITING_TTL:PT1M}
     operation-dedup-ttl: ${DEVCOLLAB_GATEWAY_OPERATION_DEDUP_TTL:PT5M}
+    core-grpc:
+      host: ${DEVCOLLAB_CORE_GRPC_HOST:localhost}
+      port: ${DEVCOLLAB_CORE_GRPC_PORT:9090}
+      plaintext: ${DEVCOLLAB_CORE_GRPC_PLAINTEXT:true}
+      deadline: ${DEVCOLLAB_CORE_GRPC_DEADLINE:PT3S}
+      max-inbound-message-size: ${DEVCOLLAB_CORE_GRPC_MAX_INBOUND_MESSAGE_SIZE:1048576}
+      shutdown-timeout: ${DEVCOLLAB_CORE_GRPC_SHUTDOWN_TIMEOUT:PT5S}
   security:
     jwt:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
