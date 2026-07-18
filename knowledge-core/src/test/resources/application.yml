@@ -10,6 +10,12 @@ spring:
     enabled: true
 
 devcollab:
+  grpc:
+    server:
+      enabled: false
+      port: 0
+      max-inbound-message-size: 1048576
+      graceful-shutdown-timeout: PT1S
   cache:
     invalidation:
       enabled: false

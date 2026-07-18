@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package devcollab.core.v1;
+
+option java_multiple_files = true;
+option java_package = "com.devcollab.protocol.core.v1";
+option java_outer_classname = "KnowledgeCoreCollaborationProto";
+
+import "google/protobuf/timestamp.proto";
+
+service KnowledgeCoreCollaborationService {
+  rpc VerifyDocumentAccess(VerifyDocumentAccessRequest)
+      returns (VerifyDocumentAccessResponse);
+  rpc ApplyDocumentOperation(ApplyDocumentOperationRequest)
+      returns (DocumentOperationResponse);
+  rpc ListDocumentOperations(ListDocumentOperationsRequest)
+      returns (ListDocumentOperationsResponse);
+}
+
+message VerifyDocumentAccessRequest {
+  string document_id = 1;
+}
+
+message VerifyDocumentAccessResponse {
+  string document_id = 1;
+  string workspace_id = 2;
+}
+
+enum DocumentOperationType {
+  DOCUMENT_OPERATION_TYPE_UNSPECIFIED = 0;
+  UPDATE_TEXT = 1;
+  CREATE_BLOCK = 2;
+  MOVE_BLOCK = 3;
+  DELETE_BLOCK = 4;
+}
+
+enum DocumentBlockType {
+  DOCUMENT_BLOCK_TYPE_UNSPECIFIED = 0;
+  PARAGRAPH = 1;
+}
+
+enum DocumentOperationStatus {
+  DOCUMENT_OPERATION_STATUS_UNSPECIFIED = 0;
+  APPLIED = 1;
+  DUPLICATE = 2;
+}
+
+message ApplyDocumentOperationRequest {
+  string document_id = 1;
+  string client_operation_id = 2;
+  optional string block_id = 3;
+  DocumentOperationType operation_type = 4;
+  optional int64 expected_version = 5;
+  optional DocumentBlockType block_type = 6;
+  optional int32 target_index = 7;
+  optional string text = 8;
+}
+
+message ListDocumentOperationsRequest {
+  string document_id = 1;
+  int64 after_sequence = 2;
+  int32 limit = 3;
+}
+
+message ListDocumentOperationsResponse {
+  int64 requested_after_sequence = 1;
+  int64 latest_document_sequence = 2;
+  bool has_more = 3;
+  repeated DocumentOperationResponse operations = 4;
+}
+
+message DocumentOperationResponse {
+  string client_operation_id = 1;
+  optional string block_id = 2;
+  DocumentOperationType operation_type = 3;
+  DocumentOperationStatus status = 4;
+  int64 document_sequence = 5;
+  string operator_user_id = 6;
+  optional DocumentBlock block = 7;
+  repeated DocumentBlock blocks = 8;
+}
+
+message DocumentBlock {
+  string id = 1;
+  string document_id = 2;
+  DocumentBlockType type = 3;
+  string text = 4;
+  int32 sort_order = 5;
+  int64 version = 6;
+  string created_by = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
