@@ -93,7 +93,8 @@
         class="block-save-button"
         type="button"
         :disabled="!dirty || readonly || remotePending"
-        @mousedown.prevent="save"
+        @mousedown.prevent
+        @click="save"
       >
         {{ busy ? '保存中…' : '保存' }}
       </button>
@@ -196,7 +197,9 @@ const editor = useEditor({
   },
   onUpdate: ({ editor: current }) => {
     draftText.value = plainText(current);
-    draftDocument.value = current.getJSON() as TiptapNode;
+    draftDocument.value = normalizeContractDocument(
+      current.getJSON() as TiptapNode,
+    );
   },
   onFocus: () => {
     if (!props.busy && !props.readonly) {
@@ -242,7 +245,7 @@ watch(
   () => props.block,
   (block) => {
     const currentDocument = editor.value
-      ? editor.value.getJSON()
+      ? normalizeContractDocument(editor.value.getJSON() as TiptapNode)
       : draftDocument.value;
     if (block.version === baseVersion.value
       && JSON.stringify(structuredDocument(block)) === JSON.stringify(persistedDocument.value)) {
@@ -308,9 +311,30 @@ function structuredDocument(block: DocumentBlock): TiptapNode {
   const document = block.content.document;
   const expectedType = expectedRootNodeType(block.type);
   if (document?.content?.every((node) => node.type === expectedType)) {
-    return document;
+    return normalizeContractDocument(document);
   }
   return typedTextDocument(block.type, block.content.text);
+}
+
+/**
+ * Tiptap extensions may add editor-only default attributes to their JSON.
+ * Keep the HTTP/WebSocket payload aligned with the deliberately small backend
+ * Block contract instead of weakening server-side schema validation.
+ */
+function normalizeContractDocument(node: TiptapNode): TiptapNode {
+  const normalized: TiptapNode = { type: node.type };
+  if (node.text !== undefined) {
+    normalized.text = node.text;
+  }
+  if (node.type === 'heading' && node.attrs?.level !== undefined) {
+    normalized.attrs = { level: node.attrs.level };
+  } else if (node.type === 'taskItem' && node.attrs?.checked !== undefined) {
+    normalized.attrs = { checked: node.attrs.checked };
+  }
+  if (node.content !== undefined) {
+    normalized.content = node.content.map(normalizeContractDocument);
+  }
+  return normalized;
 }
 
 function typedTextDocument(type: DocumentBlockType, text: string): TiptapNode {
