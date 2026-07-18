@@ -1,5 +1,6 @@
 package com.devcollab.gateway.collaboration;
 
+import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import jakarta.annotation.PreDestroy;
@@ -48,6 +49,10 @@ public class CoreGrpcChannel implements AutoCloseable {
 
     public ManagedChannel channel() {
         return channel;
+    }
+
+    public ConnectivityState state() {
+        return channel.getState(false);
     }
 
     @Override

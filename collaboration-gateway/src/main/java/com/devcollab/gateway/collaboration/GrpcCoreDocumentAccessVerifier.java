@@ -18,26 +18,30 @@ public class GrpcCoreDocumentAccessVerifier
 
     private final CoreGrpcChannel channel;
     private final CoreGrpcClientProperties properties;
+    private final CoreGrpcClientMetrics metrics;
 
     public GrpcCoreDocumentAccessVerifier(
             CoreGrpcChannel channel,
-            CoreGrpcClientProperties properties
+            CoreGrpcClientProperties properties,
+            CoreGrpcClientMetrics metrics
     ) {
         this.channel = channel;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     @Override
     public void verifyCanAccess(UUID documentId, String accessToken) {
-        GrpcCoreClientSupport.authenticatedStub(
-                        channel,
-                        properties.deadline(),
-                        accessToken
-                )
-                .verifyDocumentAccess(
-                        VerifyDocumentAccessRequest.newBuilder()
-                                .setDocumentId(documentId.toString())
-                                .build()
-                );
+        metrics.record("VerifyDocumentAccess", () ->
+                GrpcCoreClientSupport.authenticatedStub(
+                                channel,
+                                properties.deadline(),
+                                accessToken
+                        )
+                        .verifyDocumentAccess(
+                                VerifyDocumentAccessRequest.newBuilder()
+                                        .setDocumentId(documentId.toString())
+                                        .build()
+                ));
     }
 }

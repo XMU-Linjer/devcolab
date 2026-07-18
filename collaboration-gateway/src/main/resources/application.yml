@@ -41,6 +41,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        devcollab.core.grpc.client.duration: true
   tracing:
     enabled: ${DEVCOLLAB_TRACING_ENABLED:false}
     sampling:

@@ -26,13 +26,16 @@ public class GrpcCoreDocumentOperationClient
 
     private final CoreGrpcChannel channel;
     private final CoreGrpcClientProperties properties;
+    private final CoreGrpcClientMetrics metrics;
 
     public GrpcCoreDocumentOperationClient(
             CoreGrpcChannel channel,
-            CoreGrpcClientProperties properties
+            CoreGrpcClientProperties properties,
+            CoreGrpcClientMetrics metrics
     ) {
         this.channel = channel;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     @Override
@@ -73,8 +76,11 @@ public class GrpcCoreDocumentOperationClient
                 request.setText(text);
             }
 
-            DocumentOperationResponse response = stub(accessToken)
-                    .applyDocumentOperation(request.build());
+            DocumentOperationResponse response = metrics.record(
+                    "ApplyDocumentOperation",
+                    () -> stub(accessToken)
+                            .applyDocumentOperation(request.build())
+            );
             return operationResult(response);
         } catch (StatusRuntimeException exception) {
             if (GrpcCoreClientSupport.isConflict(exception)) {
@@ -98,12 +104,15 @@ public class GrpcCoreDocumentOperationClient
             long afterSequence,
             int limit
     ) {
-        var response = stub(accessToken).listDocumentOperations(
-                ListDocumentOperationsRequest.newBuilder()
-                        .setDocumentId(documentId.toString())
-                        .setAfterSequence(afterSequence)
-                        .setLimit(limit)
-                        .build()
+        var response = metrics.record(
+                "ListDocumentOperations",
+                () -> stub(accessToken).listDocumentOperations(
+                        ListDocumentOperationsRequest.newBuilder()
+                                .setDocumentId(documentId.toString())
+                                .setAfterSequence(afterSequence)
+                                .setLimit(limit)
+                                .build()
+                )
         );
         return new CollaborationMessages.DocumentOperationCatchUp(
                 response.getRequestedAfterSequence(),

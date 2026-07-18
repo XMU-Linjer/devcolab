@@ -22,6 +22,7 @@ import io.grpc.ServerInterceptors;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,8 @@ class GrpcCoreClientsTests {
     private CoreGrpcChannel channel;
     private GrpcCoreDocumentAccessVerifier accessVerifier;
     private GrpcCoreDocumentOperationClient operationClient;
+    private SimpleMeterRegistry meterRegistry;
+    private CoreGrpcClientMetrics metrics;
 
     @BeforeAll
     void startServerAndClient() throws Exception {
@@ -82,13 +85,17 @@ class GrpcCoreClientsTests {
                 Duration.ofSeconds(1)
         );
         channel = new CoreGrpcChannel(properties);
+        meterRegistry = new SimpleMeterRegistry();
+        metrics = new CoreGrpcClientMetrics(meterRegistry, channel);
         accessVerifier = new GrpcCoreDocumentAccessVerifier(
                 channel,
-                properties
+                properties,
+                metrics
         );
         operationClient = new GrpcCoreDocumentOperationClient(
                 channel,
-                properties
+                properties,
+                metrics
         );
     }
 
@@ -185,7 +192,11 @@ class GrpcCoreClientsTests {
                 Duration.ofMillis(30)
         );
         GrpcCoreDocumentAccessVerifier shortDeadlineVerifier =
-                new GrpcCoreDocumentAccessVerifier(channel, shortDeadline);
+                new GrpcCoreDocumentAccessVerifier(
+                        channel,
+                        shortDeadline,
+                        metrics
+                );
         verifyDelay.set(Duration.ofMillis(150));
 
         assertThatThrownBy(() -> shortDeadlineVerifier.verifyCanAccess(
@@ -197,6 +208,33 @@ class GrpcCoreClientsTests {
                         .isEqualTo(Status.Code.DEADLINE_EXCEEDED)
         );
         verifyDelay.set(Duration.ZERO);
+    }
+
+    @Test
+    void recordsGrpcStatusDurationAndChannelStateMetrics() {
+        accessVerifier.verifyCanAccess(UUID.randomUUID(), "metrics-token");
+        nextApplyFailure.set(Status.PERMISSION_DENIED);
+        nextErrorCode.set("WORKSPACE_ACCESS_DENIED");
+        applyRandom();
+
+        assertThat(meterRegistry.counter(
+                CoreGrpcClientMetrics.REQUESTS_METRIC,
+                "method", "VerifyDocumentAccess",
+                "status", "OK"
+        ).count()).isGreaterThanOrEqualTo(1.0);
+        assertThat(meterRegistry.timer(
+                CoreGrpcClientMetrics.DURATION_METRIC,
+                "method", "ApplyDocumentOperation",
+                "status", "PERMISSION_DENIED"
+        ).count()).isGreaterThanOrEqualTo(1L);
+        double activeStates = meterRegistry.find(
+                        CoreGrpcClientMetrics.CHANNEL_STATE_METRIC
+                )
+                .gauges()
+                .stream()
+                .mapToDouble(gauge -> gauge.value())
+                .sum();
+        assertThat(activeStates).isEqualTo(1.0);
     }
 
     private CoreDocumentOperationClient.CoreDocumentOperationResult
