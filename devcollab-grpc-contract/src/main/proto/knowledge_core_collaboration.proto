@@ -37,6 +37,9 @@ enum DocumentOperationType {
 enum DocumentBlockType {
   DOCUMENT_BLOCK_TYPE_UNSPECIFIED = 0;
   PARAGRAPH = 1;
+  HEADING = 2;
+  CODE = 3;
+  TODO = 4;
 }
 
 enum DocumentOperationStatus {
@@ -54,6 +57,8 @@ message ApplyDocumentOperationRequest {
   optional DocumentBlockType block_type = 6;
   optional int32 target_index = 7;
   optional string text = 8;
+  optional int32 content_schema_version = 9;
+  optional string content_json = 10;
 }
 
 message ListDocumentOperationsRequest {
@@ -90,4 +95,6 @@ message DocumentBlock {
   string created_by = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  int32 content_schema_version = 10;
+  optional string content_json = 11;
 }

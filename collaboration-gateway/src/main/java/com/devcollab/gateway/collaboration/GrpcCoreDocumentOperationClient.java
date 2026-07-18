@@ -2,6 +2,9 @@ package com.devcollab.gateway.collaboration;
 
 import com.devcollab.gateway.collaboration.CollaborationMessages.CoreBlockContent;
 import com.devcollab.gateway.collaboration.CollaborationMessages.CoreBlockResponse;
+import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationContent;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.devcollab.protocol.core.v1.ApplyDocumentOperationRequest;
 import com.devcollab.protocol.core.v1.DocumentOperationResponse;
 import com.devcollab.protocol.core.v1.DocumentOperationType;
@@ -24,6 +27,8 @@ import java.util.UUID;
 public class GrpcCoreDocumentOperationClient
         implements CoreDocumentOperationClient {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private final CoreGrpcChannel channel;
     private final CoreGrpcClientProperties properties;
     private final CoreGrpcClientMetrics metrics;
@@ -45,7 +50,7 @@ public class GrpcCoreDocumentOperationClient
             UUID clientOperationId,
             String accessToken,
             String operationType,
-            String text,
+            DocumentOperationContent content,
             Long expectedVersion,
             String blockType,
             Integer targetIndex
@@ -72,8 +77,16 @@ public class GrpcCoreDocumentOperationClient
             if (targetIndex != null) {
                 request.setTargetIndex(targetIndex);
             }
-            if (text != null) {
-                request.setText(text);
+            if (content != null) {
+                if (content.text() != null) {
+                    request.setText(content.text());
+                }
+                if (content.schemaVersion() != null) {
+                    request.setContentSchemaVersion(content.schemaVersion());
+                }
+                if (content.document() != null) {
+                    request.setContentJson(writeDocument(content.document()));
+                }
             }
 
             DocumentOperationResponse response = metrics.record(
@@ -170,13 +183,41 @@ public class GrpcCoreDocumentOperationClient
                 UUID.fromString(block.getId()),
                 UUID.fromString(block.getDocumentId()),
                 block.getType().name(),
-                new CoreBlockContent(block.getText()),
+                new CoreBlockContent(
+                        block.getText(),
+                        block.getContentSchemaVersion(),
+                        block.hasContentJson()
+                                ? readDocument(block.getContentJson())
+                                : null
+                ),
                 block.getSortOrder(),
                 block.getVersion(),
                 UUID.fromString(block.getCreatedBy()),
                 instant(block.getCreatedAt()),
                 instant(block.getUpdatedAt())
         );
+    }
+
+    private String writeDocument(com.fasterxml.jackson.databind.JsonNode document) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(document);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException(
+                    "Block content document cannot be serialized",
+                    exception
+            );
+        }
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode readDocument(String value) {
+        try {
+            return OBJECT_MAPPER.readTree(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException(
+                    "Core returned invalid Block content JSON",
+                    exception
+            );
+        }
     }
 
     private Instant instant(com.google.protobuf.Timestamp timestamp) {

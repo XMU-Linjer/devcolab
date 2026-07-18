@@ -40,7 +40,7 @@ public class HttpCoreDocumentOperationClient
             UUID clientOperationId,
             String accessToken,
             String operationType,
-            String text,
+            CollaborationMessages.DocumentOperationContent content,
             Long expectedVersion,
             String blockType,
             Integer targetIndex
@@ -59,7 +59,7 @@ public class HttpCoreDocumentOperationClient
                             expectedVersion,
                             blockType,
                             targetIndex,
-                            text == null ? null : new CoreBlockContent(text)
+                            content
                     ))
                     .retrieve()
                     .bodyToMono(CoreOperationResponse.class)
@@ -141,7 +141,7 @@ public class HttpCoreDocumentOperationClient
             Long expectedVersion,
             String blockType,
             Integer targetIndex,
-            CoreBlockContent content
+            CollaborationMessages.DocumentOperationContent content
     ) {
     }
 

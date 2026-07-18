@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.application;
 
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.UUID;
 
@@ -11,6 +12,8 @@ public record ApplyDocumentCollaborationOperationCommand(
         Long expectedVersion,
         DocumentBlockType blockType,
         Integer targetIndex,
-        String text
+        String text,
+        Integer contentSchemaVersion,
+        JsonNode contentDocument
 ) {
 }

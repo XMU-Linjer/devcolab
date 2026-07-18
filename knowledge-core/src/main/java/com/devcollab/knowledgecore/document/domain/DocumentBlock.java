@@ -8,6 +8,8 @@ public record DocumentBlock(
         UUID documentId,
         DocumentBlockType type,
         String text,
+        int contentSchemaVersion,
+        String contentJson,
         int sortOrder,
         long version,
         UUID createdBy,
@@ -20,6 +22,29 @@ public record DocumentBlock(
                 documentId,
                 type,
                 newText,
+                contentSchemaVersion,
+                contentJson,
+                sortOrder,
+                version + 1,
+                createdBy,
+                createdAt,
+                now
+        );
+    }
+
+    public DocumentBlock updateContent(
+            String newText,
+            int newContentSchemaVersion,
+            String newContentJson,
+            Instant now
+    ) {
+        return new DocumentBlock(
+                id,
+                documentId,
+                type,
+                newText,
+                newContentSchemaVersion,
+                newContentJson,
                 sortOrder,
                 version + 1,
                 createdBy,
@@ -34,6 +59,8 @@ public record DocumentBlock(
                 documentId,
                 type,
                 text,
+                contentSchemaVersion,
+                contentJson,
                 newSortOrder,
                 version + 1,
                 createdBy,

@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.application.ApplyDocumentCollaborationOperationCommand;
 import com.devcollab.knowledgecore.document.application.DocumentCollaborationOperationService;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,11 +19,14 @@ import java.util.UUID;
 public class DocumentCollaborationOperationController {
 
     private final DocumentCollaborationOperationService operationService;
+    private final DocumentBlockContentCodec contentCodec;
 
     public DocumentCollaborationOperationController(
-            DocumentCollaborationOperationService operationService
+            DocumentCollaborationOperationService operationService,
+            DocumentBlockContentCodec contentCodec
     ) {
         this.operationService = operationService;
+        this.contentCodec = contentCodec;
     }
 
     @PostMapping("/api/v1/documents/{documentId}/collaboration-operations")
@@ -44,9 +48,16 @@ public class DocumentCollaborationOperationController {
                                 request.targetIndex(),
                                 request.content() == null
                                         ? null
-                                        : request.content().text()
+                                        : request.content().text(),
+                                request.content() == null
+                                        ? null
+                                        : request.content().schemaVersion(),
+                                request.content() == null
+                                        ? null
+                                        : request.content().document()
                         )
-                )
+                ),
+                contentCodec
         );
     }
 
@@ -63,7 +74,8 @@ public class DocumentCollaborationOperationController {
                         currentUser.userId(),
                         afterSequence,
                         limit
-                )
+                ),
+                contentCodec
         );
     }
 }

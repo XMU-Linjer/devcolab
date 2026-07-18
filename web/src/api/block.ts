@@ -2,13 +2,23 @@ import { http } from './http';
 
 export type DocumentBlockType = 'PARAGRAPH' | 'HEADING' | 'CODE' | 'TODO';
 
+export interface TiptapNode {
+  type: string;
+  text?: string;
+  content?: TiptapNode[];
+}
+
+export interface DocumentBlockContent {
+  text: string;
+  schemaVersion: number;
+  document: TiptapNode;
+}
+
 export interface DocumentBlock {
   id: string;
   documentId: string;
   type: DocumentBlockType;
-  content: {
-    text: string;
-  };
+  content: DocumentBlockContent;
   sortOrder: number;
   version: number;
   createdBy: string;
@@ -18,14 +28,14 @@ export interface DocumentBlock {
 
 export interface CreateBlockPayload {
   type: DocumentBlockType;
-  content: {
-    text: string;
+  content: Pick<DocumentBlockContent, 'schemaVersion' | 'document'> & {
+    text?: string;
   };
 }
 
 export interface UpdateBlockPayload {
-  content: {
-    text: string;
+  content: Pick<DocumentBlockContent, 'schemaVersion' | 'document'> & {
+    text?: string;
   };
   expectedVersion: number;
 }

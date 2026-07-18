@@ -1,4 +1,10 @@
 package com.devcollab.knowledgecore.document.api;
 
-public record DocumentBlockContentResponse(String text) {
+import com.fasterxml.jackson.databind.JsonNode;
+
+public record DocumentBlockContentResponse(
+        String text,
+        int schemaVersion,
+        JsonNode document
+) {
 }

@@ -261,7 +261,7 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
                     message.clientOperationId(),
                     context.accessToken(),
                     message.operationType(),
-                    message.content() == null ? null : message.content().text(),
+                    message.content(),
                     message.expectedVersion(),
                     message.blockType(),
                     message.targetIndex()
@@ -487,8 +487,12 @@ public class DocumentCollaborationWebSocketHandler implements WebSocketHandler {
     }
 
     private void requireContent(ClientMessage message) {
-        if (message.content() == null || message.content().text() == null) {
-            throw new IllegalArgumentException("content.text is required");
+        if (message.content() == null
+                || (message.content().text() == null
+                && message.content().document() == null)) {
+            throw new IllegalArgumentException(
+                    "Either content.text or content.document is required"
+            );
         }
     }
 }

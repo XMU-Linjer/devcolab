@@ -709,6 +709,11 @@ public class DocumentApplicationService {
                     blockSnapshot.put("id", block.id());
                     blockSnapshot.put("type", block.type());
                     blockSnapshot.put("text", block.text());
+                    blockSnapshot.put(
+                            "contentSchemaVersion",
+                            block.contentSchemaVersion()
+                    );
+                    blockSnapshot.put("contentJson", block.contentJson());
                     blockSnapshot.put("sortOrder", block.sortOrder());
                     blockSnapshot.put("version", block.version());
                     return blockSnapshot;

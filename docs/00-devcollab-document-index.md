@@ -12,6 +12,7 @@
 | 06 | `06-devcollab-authentication-design-v0.4.md` | 定义注册、登录、Token、Cookie、会话、限流、安全及验收 | V0.4 | 应提交 |
 | 07 | `07-devcollab-agent-rag-architecture-v0.1.md` | 定义 LangChain/LangGraph、RAG 入库、混合检索、Reviewer、Evidence、安全和评测 | V0.1 | 应提交 |
 | 08 | `08-devcollab-observability-design-v0.2.md` | 定义本地指标、日志、链路追踪、Grafana 展示、故障演练与验收口径 | V0.2 | 应提交 |
+| 10 | `10-devcollab-structured-block-contract-v0.1.md` | 定义 Tiptap JSON、纯文本投影、Schema 白名单、迁移兼容及 REST/WebSocket/gRPC 契约 | V0.1 | 应提交 |
 
 正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 
@@ -20,11 +21,11 @@
 | 顺序 | 文档 | 主题 | 版本 | 版本库状态 |
 |---:|---|---|---|---|
 | 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.11.md` | 全栈学习文档总索引、技术栈速查表、证据边界 | V0.11 | 已由 `.gitignore` 忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.12.md` | 全栈学习文档总索引、结构化 Block 与证据边界 | V0.12 | 已由 `.gitignore` 忽略 |
 | 92 | `92-local-frontend-technology-adr-v0.1.md` | 前端选型、知识基线和技术风险记录 | V0.1 | 已由 `.gitignore` 忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | 登录全链路、JWT、Cookie、Origin 白名单与真实排错 | V0.3 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
-| 95 | `95-local-document-block-learning-guide-v0.4.md` | Block 编辑、乐观锁、冲突检测、Tiptap 集成与真实排错 | V0.4 | 已由 `.gitignore` 忽略 |
+| 95 | `95-local-document-block-learning-guide-v0.5.md` | Tiptap JSON、Schema 白名单、兼容迁移、乐观锁与真实排错 | V0.5 | 已由 `.gitignore` 忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | 前后端联调、Refresh 自动续期、CSRF Header、Origin 与代理 | V0.2 | 已由 `.gitignore` 忽略 |
 | 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
 | 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
@@ -44,9 +45,9 @@
 | 90 | `90-local-architecture-integration-troubleshooting-v0.4.md` | Nginx 统一入口、可观测性、故障演练、跨服务联调、演示编排和真实故障排查 | V0.4 | 已由 `.gitignore` 忽略 |
 | 90 | `90-local-collaboration-gateway-learning-v0.4.md` | WebSocket 四类可靠操作、documentSequence 游标分页、断线增量补偿与真实排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
 | 90 | `90-local-core-grpc-learning-v0.3.md` | Gateway→Core gRPC 指标、HTTP/gRPC 同语义基准、真实排错与 HTTP Client 删除门槛 | V0.3 | 已由 `.gitignore` 精确忽略 |
-| 91 | `91-local-interview-knowledge-map-v0.11.md` | 当前技术栈、认证 Origin 排错、Tiptap 与 gRPC 证据边界总索引 | V0.11 | 已由 `.gitignore` 精确忽略 |
+| 91 | `91-local-interview-knowledge-map-v0.12.md` | 当前技术栈、结构化 Block 与跨服务契约证据边界总索引 | V0.12 | 已由 `.gitignore` 精确忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | Refresh Session、CSRF、Origin 白名单与真实掉线排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
-| 95 | `95-local-document-block-learning-guide-v0.4.md` | Tiptap Block 编辑、纯文本契约、保存冲突保护与真实布局排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
+| 95 | `95-local-document-block-learning-guide-v0.5.md` | Tiptap JSON、服务端 Schema、双表示、兼容迁移与真实构建排错 | V0.5 | 已由 `.gitignore` 精确忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | Router、Axios、Vite/Nginx 代理与会话恢复联调 | V0.2 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。

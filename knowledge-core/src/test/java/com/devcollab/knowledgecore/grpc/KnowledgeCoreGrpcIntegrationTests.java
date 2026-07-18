@@ -110,14 +110,20 @@ class KnowledgeCoreGrpcIntegrationTests {
                 .setOperationType(DocumentOperationType.UPDATE_TEXT)
                 .setBlockId(fixture.blockId())
                 .setExpectedVersion(0)
-                .setText("Saved through gRPC")
+                .setContentSchemaVersion(1)
+                .setContentJson("""
+                        {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Saved through gRPC JSON"}]}]}
+                        """)
                 .build();
 
         var applied = stub.applyDocumentOperation(request);
         assertThat(applied.getStatus())
                 .isEqualTo(DocumentOperationStatus.APPLIED);
         assertThat(applied.getDocumentSequence()).isEqualTo(1);
-        assertThat(applied.getBlock().getText()).isEqualTo("Saved through gRPC");
+        assertThat(applied.getBlock().getText())
+                .isEqualTo("Saved through gRPC JSON");
+        assertThat(applied.getBlock().getContentSchemaVersion()).isEqualTo(1);
+        assertThat(applied.getBlock().getContentJson()).contains("Saved through gRPC JSON");
         assertThat(applied.getBlock().getVersion()).isEqualTo(1);
 
         var duplicate = stub.applyDocumentOperation(request);

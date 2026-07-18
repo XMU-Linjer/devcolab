@@ -131,6 +131,8 @@ public class DocumentCollaborationOperationService {
                             currentUserId,
                             new UpdateDocumentBlockCommand(
                                     command.text(),
+                                    command.contentSchemaVersion(),
+                                    command.contentDocument(),
                                     command.expectedVersion()
                             )
                     )
@@ -141,7 +143,9 @@ public class DocumentCollaborationOperationService {
                             currentUserId,
                             new CreateDocumentBlockCommand(
                                     command.blockType(),
-                                    command.text()
+                                    command.text(),
+                                    command.contentSchemaVersion(),
+                                    command.contentDocument()
                             )
                     )
             );
@@ -233,13 +237,13 @@ public class DocumentCollaborationOperationService {
             case UPDATE_TEXT -> {
                 requireBlock(command);
                 requireVersion(command);
-                requireText(command);
+                requireContent(command);
             }
             case CREATE_BLOCK -> {
                 if (command.blockType() == null) {
                     throw new IllegalArgumentException("blockType is required");
                 }
-                requireText(command);
+                requireContent(command);
             }
             case DELETE_BLOCK -> {
                 requireBlock(command);
@@ -274,9 +278,11 @@ public class DocumentCollaborationOperationService {
         }
     }
 
-    private void requireText(ApplyDocumentCollaborationOperationCommand command) {
-        if (command.text() == null) {
-            throw new IllegalArgumentException("content.text is required");
+    private void requireContent(ApplyDocumentCollaborationOperationCommand command) {
+        if (command.text() == null && command.contentDocument() == null) {
+            throw new IllegalArgumentException(
+                    "Either content.text or content.document is required"
+            );
         }
     }
 
@@ -288,7 +294,9 @@ public class DocumentCollaborationOperationService {
                 + "\n" + command.expectedVersion()
                 + "\n" + command.blockType()
                 + "\n" + command.targetIndex()
-                + "\n" + command.text();
+                + "\n" + command.text()
+                + "\n" + command.contentSchemaVersion()
+                + "\n" + command.contentDocument();
         try {
             return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256")

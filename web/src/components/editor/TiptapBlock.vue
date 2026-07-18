@@ -83,7 +83,12 @@ import StarterKit from '@tiptap/starter-kit';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
 import { computed, ref, watch } from 'vue';
 
-import type { DocumentBlock, DocumentBlockType } from '@/api/block';
+import type {
+  DocumentBlock,
+  DocumentBlockContent,
+  DocumentBlockType,
+  TiptapNode,
+} from '@/api/block';
 import type { EditingState } from '@/composables/useDocumentCollaboration';
 
 const props = withDefaults(defineProps<{
@@ -98,7 +103,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  save: [block: DocumentBlock, text: string];
+  save: [block: DocumentBlock, content: DocumentBlockContent];
   delete: [block: DocumentBlock];
   'move-up': [block: DocumentBlock];
   'move-down': [block: DocumentBlock];
@@ -108,11 +113,13 @@ const emit = defineEmits<{
 
 const persistedText = ref(props.block.content.text);
 const draftText = ref(props.block.content.text);
+const persistedDocument = ref<TiptapNode>(structuredDocument(props.block));
+const draftDocument = ref<TiptapNode>(structuredDocument(props.block));
 const baseVersion = ref(props.block.version);
 const remotePending = ref(false);
 
 const editor = useEditor({
-  content: textDocument(props.block.content.text),
+  content: structuredDocument(props.block),
   editable: !props.busy && !props.readonly,
   extensions: [
     StarterKit.configure({
@@ -146,6 +153,7 @@ const editor = useEditor({
   },
   onUpdate: ({ editor: current }) => {
     draftText.value = plainText(current);
+    draftDocument.value = current.getJSON() as TiptapNode;
   },
   onFocus: () => {
     if (!props.busy && !props.readonly) {
@@ -160,7 +168,9 @@ const editor = useEditor({
   },
 });
 
-const dirty = computed(() => draftText.value !== persistedText.value);
+const dirty = computed(() => (
+  JSON.stringify(draftDocument.value) !== JSON.stringify(persistedDocument.value)
+));
 const blockTypeText = computed(() => blockTypeLabels[props.block.type]);
 const statusText = computed(() => {
   if (props.readonly) {
@@ -188,11 +198,15 @@ watch(
 watch(
   () => props.block,
   (block) => {
-    const currentText = editor.value ? plainText(editor.value) : draftText.value;
-    if (block.version === baseVersion.value && block.content.text === persistedText.value) {
+    const currentDocument = editor.value
+      ? editor.value.getJSON()
+      : draftDocument.value;
+    if (block.version === baseVersion.value
+      && JSON.stringify(structuredDocument(block)) === JSON.stringify(persistedDocument.value)) {
       return;
     }
-    if (dirty.value && block.content.text !== currentText) {
+    if (dirty.value
+      && JSON.stringify(structuredDocument(block)) !== JSON.stringify(currentDocument)) {
       remotePending.value = true;
       return;
     }
@@ -207,16 +221,26 @@ function save() {
   emit('save', {
     ...props.block,
     version: baseVersion.value,
-    content: { text: persistedText.value },
-  }, draftText.value);
+    content: {
+      text: persistedText.value,
+      schemaVersion: props.block.content.schemaVersion,
+      document: persistedDocument.value,
+    },
+  }, {
+    text: draftText.value,
+    schemaVersion: 1,
+    document: draftDocument.value,
+  });
 }
 
 function applyServerBlock(block: DocumentBlock) {
   persistedText.value = block.content.text;
   draftText.value = block.content.text;
+  persistedDocument.value = structuredDocument(block);
+  draftDocument.value = structuredDocument(block);
   baseVersion.value = block.version;
   remotePending.value = false;
-  editor.value?.commands.setContent(textDocument(block.content.text), {
+  editor.value?.commands.setContent(structuredDocument(block), {
     emitUpdate: false,
   });
 }
@@ -235,6 +259,10 @@ function textDocument(text: string) {
       content: line.length > 0 ? [{ type: 'text', text: line }] : [],
     })),
   };
+}
+
+function structuredDocument(block: DocumentBlock): TiptapNode {
+  return block.content.document ?? textDocument(block.content.text);
 }
 
 function plainTextHtml(html: string) {

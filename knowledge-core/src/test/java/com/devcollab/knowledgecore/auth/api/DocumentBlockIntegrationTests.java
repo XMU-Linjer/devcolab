@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.UUID;
 
@@ -30,6 +31,9 @@ class DocumentBlockIntegrationTests {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void shouldCreateAndListParagraphBlocksInOrder() throws Exception {
         String token = registerAndGetAccessToken();
@@ -48,11 +52,124 @@ class DocumentBlockIntegrationTests {
                 .andExpect(jsonPath("$[0].type").value("PARAGRAPH"))
                 .andExpect(jsonPath("$[0].content.text")
                         .value("First paragraph"))
+                .andExpect(jsonPath("$[0].content.schemaVersion").value(1))
+                .andExpect(jsonPath("$[0].content.document.type").value("doc"))
+                .andExpect(jsonPath("$[0].content.document.content[0].type")
+                        .value("paragraph"))
                 .andExpect(jsonPath("$[0].sortOrder").value(0))
                 .andExpect(jsonPath("$[0].version").value(0))
                 .andExpect(jsonPath("$[1].id").value(second.get("id").asText()))
                 .andExpect(jsonPath("$[1].sortOrder").value(1))
                 .andExpect(jsonPath("$[1].version").value(0));
+    }
+
+    @Test
+    void shouldPersistStructuredTiptapJsonAndDeriveSearchText() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+        JsonNode block = createBlock(token, documentId, "Legacy text");
+
+        String body = """
+                {
+                  "content": {
+                    "schemaVersion": 1,
+                    "document": {
+                      "type": "doc",
+                      "content": [
+                        {"type":"paragraph","content":[{"type":"text","text":"First line"}]},
+                        {"type":"paragraph"},
+                        {"type":"paragraph","content":[{"type":"text","text":"Second line"}]}
+                      ]
+                    }
+                  },
+                  "expectedVersion": 0
+                }
+                """;
+
+        mockMvc.perform(patch(
+                        "/api/v1/documents/{documentId}/blocks/{blockId}",
+                        documentId,
+                        block.get("id").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.text")
+                        .value("First line\n\nSecond line"))
+                .andExpect(jsonPath("$.content.schemaVersion").value(1))
+                .andExpect(jsonPath("$.content.document.content.length()")
+                        .value(3))
+                .andExpect(jsonPath("$.version").value(1));
+
+        String storedJson = jdbcTemplate.queryForObject(
+                "SELECT content_json FROM document_blocks WHERE id = ?",
+                String.class,
+                UUID.fromString(block.get("id").asText())
+        );
+        org.assertj.core.api.Assertions.assertThat(objectMapper.readTree(storedJson))
+                .isEqualTo(objectMapper.readTree(body).path("content").path("document"));
+    }
+
+    @Test
+    void shouldRejectUnsupportedStructuredContentNodeOrSchema() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type":"PARAGRAPH",
+                                  "content":{
+                                    "schemaVersion":2,
+                                    "document":{"type":"doc","content":[]}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        mockMvc.perform(post("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type":"PARAGRAPH",
+                                  "content":{
+                                    "schemaVersion":1,
+                                    "document":{
+                                      "type":"doc",
+                                      "content":[{"type":"image","attrs":{"src":"x"}}]
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    @Test
+    void shouldSynthesizeStructuredResponseForPreMigrationTextRow() throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId).get("id").asText();
+        JsonNode block = createBlock(token, documentId, "Old row text");
+        jdbcTemplate.update(
+                "UPDATE document_blocks SET content_json = NULL WHERE id = ?",
+                UUID.fromString(block.get("id").asText())
+        );
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content.text").value("Old row text"))
+                .andExpect(jsonPath("$[0].content.schemaVersion").value(1))
+                .andExpect(jsonPath("$[0].content.document.content[0].content[0].text")
+                        .value("Old row text"));
     }
 
     @Test

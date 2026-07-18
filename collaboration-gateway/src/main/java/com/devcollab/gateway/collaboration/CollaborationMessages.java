@@ -3,6 +3,7 @@ package com.devcollab.gateway.collaboration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import com.fasterxml.jackson.databind.JsonNode;
 
 public final class CollaborationMessages {
 
@@ -101,7 +102,14 @@ public final class CollaborationMessages {
     public record PongPayload(Instant at) {
     }
 
-    public record DocumentOperationContent(String text) {
+    public record DocumentOperationContent(
+            String text,
+            Integer schemaVersion,
+            JsonNode document
+    ) {
+        public DocumentOperationContent(String text) {
+            this(text, null, null);
+        }
     }
 
     public record DocumentOperationResult(
@@ -235,6 +243,13 @@ public final class CollaborationMessages {
     ) {
     }
 
-    public record CoreBlockContent(String text) {
+    public record CoreBlockContent(
+            String text,
+            int schemaVersion,
+            JsonNode document
+    ) {
+        public CoreBlockContent(String text) {
+            this(text, 1, null);
+        }
     }
 }

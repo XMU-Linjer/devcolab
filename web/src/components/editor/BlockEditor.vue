@@ -116,6 +116,7 @@ import {
   moveBlock,
   updateBlock,
   type DocumentBlock,
+  type DocumentBlockContent,
   type DocumentBlockType,
 } from '@/api/block';
 import TiptapBlock from '@/components/editor/TiptapBlock.vue';
@@ -133,7 +134,7 @@ const props = defineProps<{
   editingStates?: EditingState[];
   saveViaCollaboration?: (
     block: DocumentBlock,
-    text: string,
+    content: DocumentBlockContent,
   ) => Promise<DocumentBlock>;
 }>();
 
@@ -157,6 +158,21 @@ const initialText: Record<DocumentBlockType, string> = {
   CODE: '// 输入代码',
   TODO: '待办事项',
 };
+
+function initialContent(type: DocumentBlockType): DocumentBlockContent {
+  const text = initialText[type];
+  return {
+    text,
+    schemaVersion: 1,
+    document: {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'text', text }],
+      }],
+    },
+  };
+}
 
 onMounted(() => {
   void loadBlocks();
@@ -228,7 +244,7 @@ async function handleCreate(type: DocumentBlockType) {
   try {
     const block = await createBlock(props.documentId, {
       type,
-      content: { text: initialText[type] },
+      content: initialContent(type),
     });
     blocks.value = [...blocks.value, block];
     await nextTick();
@@ -243,7 +259,7 @@ async function handleCreate(type: DocumentBlockType) {
   }
 }
 
-async function handleSave(block: DocumentBlock, text: string) {
+async function handleSave(block: DocumentBlock, content: DocumentBlockContent) {
   if (props.readonly) {
     return;
   }
@@ -251,9 +267,9 @@ async function handleSave(block: DocumentBlock, text: string) {
   conflictMessage.value = '';
   try {
     const updated = props.saveViaCollaboration
-      ? await props.saveViaCollaboration(block, text)
+      ? await props.saveViaCollaboration(block, content)
       : await updateBlock(props.documentId, block.id, {
-          content: { text },
+          content,
           expectedVersion: block.version,
         });
     replaceBlock(updated);

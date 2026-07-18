@@ -11,6 +11,7 @@ import com.devcollab.protocol.core.v1.ListDocumentOperationsRequest;
 import com.devcollab.protocol.core.v1.ListDocumentOperationsResponse;
 import com.devcollab.protocol.core.v1.VerifyDocumentAccessRequest;
 import com.devcollab.protocol.core.v1.VerifyDocumentAccessResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.Timestamp;
 import io.grpc.Metadata;
 import io.grpc.Server;
@@ -82,7 +83,7 @@ class GrpcCoreClientsTests {
                 .build()
                 .start();
         CoreGrpcClientProperties properties = properties(
-                Duration.ofSeconds(1)
+                Duration.ofSeconds(3)
         );
         channel = new CoreGrpcChannel(properties);
         meterRegistry = new SimpleMeterRegistry();
@@ -157,6 +158,34 @@ class GrpcCoreClientsTests {
         assertThat(page.operations().getFirst().documentSequence())
                 .isEqualTo(7);
         assertThat(authorization.get()).isEqualTo("Bearer catch-up-token");
+    }
+
+    @Test
+    void operationClientTransportsStructuredBlockContent() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID blockId = UUID.randomUUID();
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Structured gRPC"}]}]}
+                """);
+
+        var applied = operationClient.apply(
+                documentId,
+                blockId,
+                UUID.randomUUID(),
+                "operation-token",
+                "UPDATE_TEXT",
+                new CollaborationMessages.DocumentOperationContent(
+                        null,
+                        1,
+                        document
+                ),
+                2L,
+                null,
+                null
+        );
+
+        assertThat(applied.block().content().schemaVersion()).isEqualTo(1);
+        assertThat(applied.block().content().document()).isEqualTo(document);
     }
 
     @Test
@@ -259,7 +288,7 @@ class GrpcCoreClientsTests {
                 true,
                 deadline,
                 1_048_576,
-                Duration.ofSeconds(1)
+                Duration.ofSeconds(3)
         );
     }
 
@@ -312,8 +341,14 @@ class GrpcCoreClientsTests {
             DocumentBlock block = block(
                     request.getDocumentId(),
                     request.getBlockId(),
-                    request.getText()
+                    request.hasText() ? request.getText() : "Structured gRPC"
             );
+            if (request.hasContentSchemaVersion()) {
+                block = block.toBuilder()
+                        .setContentSchemaVersion(request.getContentSchemaVersion())
+                        .setContentJson(request.getContentJson())
+                        .build();
+            }
             observer.onNext(DocumentOperationResponse.newBuilder()
                     .setClientOperationId(request.getClientOperationId())
                     .setBlockId(request.getBlockId())

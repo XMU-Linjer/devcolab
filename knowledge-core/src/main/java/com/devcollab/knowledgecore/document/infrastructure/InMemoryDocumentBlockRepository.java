@@ -46,9 +46,11 @@ public class InMemoryDocumentBlockRepository
     }
 
     @Override
-    public Optional<DocumentBlock> updateTextIfVersionMatches(
+    public Optional<DocumentBlock> updateContentIfVersionMatches(
             UUID blockId,
             String text,
+            int contentSchemaVersion,
+            String contentJson,
             java.time.Instant updatedAt,
             long expectedVersion
     ) {
@@ -57,7 +59,12 @@ public class InMemoryDocumentBlockRepository
             return Optional.empty();
         }
 
-        DocumentBlock updated = current.updateText(text, updatedAt);
+        DocumentBlock updated = current.updateContent(
+                text,
+                contentSchemaVersion,
+                contentJson,
+                updatedAt
+        );
         blocks.put(blockId, updated);
         return Optional.of(updated);
     }

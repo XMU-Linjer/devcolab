@@ -1,6 +1,7 @@
 package com.devcollab.gateway.collaboration;
 
 import com.devcollab.gateway.collaboration.CollaborationMessages.CoreBlockResponse;
+import com.devcollab.gateway.collaboration.CollaborationMessages.DocumentOperationContent;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,11 +16,35 @@ public interface CoreDocumentOperationClient {
             UUID clientOperationId,
             String accessToken,
             String operationType,
-            String text,
+            DocumentOperationContent content,
             Long expectedVersion,
             String blockType,
             Integer targetIndex
     );
+
+    default CoreDocumentOperationResult apply(
+            UUID documentId,
+            UUID blockId,
+            UUID clientOperationId,
+            String accessToken,
+            String operationType,
+            String text,
+            Long expectedVersion,
+            String blockType,
+            Integer targetIndex
+    ) {
+        return apply(
+                documentId,
+                blockId,
+                clientOperationId,
+                accessToken,
+                operationType,
+                text == null ? null : new DocumentOperationContent(text),
+                expectedVersion,
+                blockType,
+                targetIndex
+        );
+    }
 
     CollaborationMessages.DocumentOperationCatchUp listAfter(
             UUID documentId,

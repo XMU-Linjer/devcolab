@@ -24,15 +24,18 @@ public class DocumentBlockApplicationService {
     private final DocumentBlockRepository blockRepository;
     private final DocumentApplicationService documentService;
     private final OutboxEventPublisher outboxEventPublisher;
+    private final DocumentBlockContentCodec contentCodec;
 
     public DocumentBlockApplicationService(
             DocumentBlockRepository blockRepository,
             DocumentApplicationService documentService,
-            OutboxEventPublisher outboxEventPublisher
+            OutboxEventPublisher outboxEventPublisher,
+            DocumentBlockContentCodec contentCodec
     ) {
         this.blockRepository = blockRepository;
         this.documentService = documentService;
         this.outboxEventPublisher = outboxEventPublisher;
+        this.contentCodec = contentCodec;
     }
 
     @Transactional
@@ -48,11 +51,19 @@ public class DocumentBlockApplicationService {
                 .findAllByDocumentId(documentId)
                 .size();
         Instant now = Instant.now();
+        var content = contentCodec.normalize(
+                command.type(),
+                command.text(),
+                command.contentSchemaVersion(),
+                command.contentDocument()
+        );
         DocumentBlock block = new DocumentBlock(
                 UUID.randomUUID(),
                 documentId,
                 command.type(),
-                command.text().trim(),
+                content.text(),
+                content.schemaVersion(),
+                content.documentJson(),
                 sortOrder,
                 0,
                 currentUserId,
@@ -102,10 +113,18 @@ public class DocumentBlockApplicationService {
         Document document = documentService.get(documentId, currentUserId);
         documentService.ensureEditable(document);
 
-        requireBlock(documentId, blockId);
-        DocumentBlock updated = blockRepository.updateTextIfVersionMatches(
+        DocumentBlock current = requireBlock(documentId, blockId);
+        var content = contentCodec.normalize(
+                current.type(),
+                command.text(),
+                command.contentSchemaVersion(),
+                command.contentDocument()
+        );
+        DocumentBlock updated = blockRepository.updateContentIfVersionMatches(
                         blockId,
-                        command.text().trim(),
+                        content.text(),
+                        content.schemaVersion(),
+                        content.documentJson(),
                         Instant.now(),
                         command.expectedVersion()
                 )

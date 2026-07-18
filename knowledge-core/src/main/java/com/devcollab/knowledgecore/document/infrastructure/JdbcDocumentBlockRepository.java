@@ -22,6 +22,8 @@ public class JdbcDocumentBlockRepository implements DocumentBlockRepository {
                     rs.getObject("document_id", UUID.class),
                     DocumentBlockType.valueOf(rs.getString("type")),
                     rs.getString("text"),
+                    rs.getInt("content_schema_version"),
+                    rs.getString("content_json"),
                     rs.getInt("sort_order"),
                     rs.getLong("version"),
                     rs.getObject("created_by", UUID.class),
@@ -39,23 +41,27 @@ public class JdbcDocumentBlockRepository implements DocumentBlockRepository {
     public DocumentBlock save(DocumentBlock block) {
         int updated = jdbcTemplate.update("""
                         UPDATE document_blocks
-                           SET type = ?, text = ?, sort_order = ?,
+                           SET type = ?, text = ?, content_schema_version = ?,
+                               content_json = ?, sort_order = ?,
                                version = ?, updated_at = ?
                          WHERE id = ?
                         """,
-                block.type().name(), block.text(), block.sortOrder(),
+                block.type().name(), block.text(), block.contentSchemaVersion(),
+                block.contentJson(), block.sortOrder(),
                 block.version(), Timestamp.from(block.updatedAt()),
                 block.id());
 
         if (updated == 0) {
             jdbcTemplate.update("""
                             INSERT INTO document_blocks
-                                (id, document_id, type, text, sort_order,
+                                (id, document_id, type, text,
+                                 content_schema_version, content_json, sort_order,
                                  version, created_by, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     block.id(), block.documentId(), block.type().name(),
-                    block.text(), block.sortOrder(), block.version(),
+                    block.text(), block.contentSchemaVersion(),
+                    block.contentJson(), block.sortOrder(), block.version(),
                     block.createdBy(),
                     Timestamp.from(block.createdAt()),
                     Timestamp.from(block.updatedAt()));
@@ -92,18 +98,24 @@ public class JdbcDocumentBlockRepository implements DocumentBlockRepository {
     }
 
     @Override
-    public Optional<DocumentBlock> updateTextIfVersionMatches(
+    public Optional<DocumentBlock> updateContentIfVersionMatches(
             UUID blockId,
             String text,
+            int contentSchemaVersion,
+            String contentJson,
             java.time.Instant updatedAt,
             long expectedVersion
     ) {
         int updated = jdbcTemplate.update("""
                         UPDATE document_blocks
-                           SET text = ?, version = version + 1, updated_at = ?
+                           SET text = ?, content_schema_version = ?,
+                               content_json = ?, version = version + 1,
+                               updated_at = ?
                          WHERE id = ? AND version = ?
                         """,
                 text,
+                contentSchemaVersion,
+                contentJson,
                 Timestamp.from(updatedAt),
                 blockId,
                 expectedVersion);

@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,12 +18,19 @@ public record DocumentBlockResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static DocumentBlockResponse from(DocumentBlock block) {
+    public static DocumentBlockResponse from(
+            DocumentBlock block,
+            DocumentBlockContentCodec contentCodec
+    ) {
         return new DocumentBlockResponse(
                 block.id(),
                 block.documentId(),
                 block.type(),
-                new DocumentBlockContentResponse(block.text()),
+                new DocumentBlockContentResponse(
+                        block.text(),
+                        contentCodec.schemaVersion(block),
+                        contentCodec.document(block)
+                ),
                 block.sortOrder(),
                 block.version(),
                 block.createdBy(),

@@ -1,4 +1,11 @@
 package com.devcollab.knowledgecore.document.application;
 
-public record UpdateDocumentBlockCommand(String text, long expectedVersion) {
+import com.fasterxml.jackson.databind.JsonNode;
+
+public record UpdateDocumentBlockCommand(
+        String text,
+        Integer contentSchemaVersion,
+        JsonNode contentDocument,
+        long expectedVersion
+) {
 }

@@ -4,6 +4,7 @@ import com.devcollab.knowledgecore.document.application.CreateDocumentBlockComma
 import com.devcollab.knowledgecore.document.application.DocumentBlockApplicationService;
 import com.devcollab.knowledgecore.document.application.MoveDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.application.UpdateDocumentBlockCommand;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -24,11 +25,14 @@ import java.util.UUID;
 public class DocumentBlockController {
 
     private final DocumentBlockApplicationService blockService;
+    private final DocumentBlockContentCodec contentCodec;
 
     public DocumentBlockController(
-            DocumentBlockApplicationService blockService
+            DocumentBlockApplicationService blockService,
+            DocumentBlockContentCodec contentCodec
     ) {
         this.blockService = blockService;
+        this.contentCodec = contentCodec;
     }
 
     @PostMapping("/api/v1/documents/{documentId}/blocks")
@@ -43,9 +47,11 @@ public class DocumentBlockController {
                 currentUser.userId(),
                 new CreateDocumentBlockCommand(
                         request.type(),
-                        request.content().text()
+                        request.content().text(),
+                        request.content().schemaVersion(),
+                        request.content().document()
                 )
-        ));
+        ), contentCodec);
     }
 
     @GetMapping("/api/v1/documents/{documentId}/blocks")
@@ -55,7 +61,7 @@ public class DocumentBlockController {
     ) {
         return blockService.list(documentId, currentUser.userId())
                 .stream()
-                .map(DocumentBlockResponse::from)
+                .map(block -> DocumentBlockResponse.from(block, contentCodec))
                 .toList();
     }
 
@@ -72,9 +78,11 @@ public class DocumentBlockController {
                 currentUser.userId(),
                 new UpdateDocumentBlockCommand(
                         request.content().text(),
+                        request.content().schemaVersion(),
+                        request.content().document(),
                         request.expectedVersion()
                 )
-        ));
+        ), contentCodec);
     }
 
     @DeleteMapping("/api/v1/documents/{documentId}/blocks/{blockId}")
@@ -103,7 +111,7 @@ public class DocumentBlockController {
                         new MoveDocumentBlockCommand(request.targetIndex())
                 )
                 .stream()
-                .map(DocumentBlockResponse::from)
+                .map(block -> DocumentBlockResponse.from(block, contentCodec))
                 .toList();
     }
 }

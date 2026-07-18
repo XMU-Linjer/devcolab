@@ -15,6 +15,9 @@ import com.devcollab.protocol.core.v1.ListDocumentOperationsResponse;
 import com.devcollab.protocol.core.v1.VerifyDocumentAccessRequest;
 import com.devcollab.protocol.core.v1.VerifyDocumentAccessResponse;
 import com.google.protobuf.Timestamp;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grpc.stub.StreamObserver;
 import org.springframework.stereotype.Component;
 
@@ -30,15 +33,18 @@ public class KnowledgeCoreCollaborationGrpcService extends
     private final DocumentApplicationService documentService;
     private final DocumentCollaborationOperationService operationService;
     private final GrpcExceptionMapper exceptionMapper;
+    private final ObjectMapper objectMapper;
 
     public KnowledgeCoreCollaborationGrpcService(
             DocumentApplicationService documentService,
             DocumentCollaborationOperationService operationService,
-            GrpcExceptionMapper exceptionMapper
+            GrpcExceptionMapper exceptionMapper,
+            ObjectMapper objectMapper
     ) {
         this.documentService = documentService;
         this.operationService = operationService;
         this.exceptionMapper = exceptionMapper;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -81,7 +87,13 @@ public class KnowledgeCoreCollaborationGrpcService extends
                     request.hasTargetIndex()
                             ? request.getTargetIndex()
                             : null,
-                    request.hasText() ? request.getText() : null
+                    request.hasText() ? request.getText() : null,
+                    request.hasContentSchemaVersion()
+                            ? request.getContentSchemaVersion()
+                            : null,
+                    request.hasContentJson()
+                            ? parseDocument(request.getContentJson())
+                            : null
             );
             return operationResponse(operationService.apply(
                     uuid(request.getDocumentId(), "document_id"),
@@ -142,18 +154,33 @@ public class KnowledgeCoreCollaborationGrpcService extends
     private com.devcollab.protocol.core.v1.DocumentBlock block(
             DocumentBlock block
     ) {
-        return com.devcollab.protocol.core.v1.DocumentBlock.newBuilder()
+        var response = com.devcollab.protocol.core.v1.DocumentBlock.newBuilder()
                 .setId(block.id().toString())
                 .setDocumentId(block.documentId().toString())
                 .setType(com.devcollab.protocol.core.v1.DocumentBlockType
                         .valueOf(block.type().name()))
                 .setText(block.text())
+                .setContentSchemaVersion(block.contentSchemaVersion())
                 .setSortOrder(block.sortOrder())
                 .setVersion(block.version())
                 .setCreatedBy(block.createdBy().toString())
                 .setCreatedAt(timestamp(block.createdAt()))
-                .setUpdatedAt(timestamp(block.updatedAt()))
-                .build();
+                .setUpdatedAt(timestamp(block.updatedAt()));
+        if (block.contentJson() != null) {
+            response.setContentJson(block.contentJson());
+        }
+        return response.build();
+    }
+
+    private JsonNode parseDocument(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException(
+                    "content_json must contain valid JSON",
+                    exception
+            );
+        }
     }
 
     private Timestamp timestamp(Instant instant) {

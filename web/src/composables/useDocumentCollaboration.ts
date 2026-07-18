@@ -1,7 +1,7 @@
 import { onUnmounted, ref, watch, type Ref } from 'vue';
 
 import { getAccessToken } from '@/api/http';
-import type { DocumentBlock } from '@/api/block';
+import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 
 export interface PresenceMember {
   sessionId: string;
@@ -160,9 +160,9 @@ export function useDocumentCollaboration(
     });
   }
 
-  function updateText(
+  function updateContent(
     blockId: string,
-    text: string,
+    content: DocumentBlockContent,
     expectedVersion: number,
   ): Promise<DocumentBlock> {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -180,7 +180,7 @@ export function useDocumentCollaboration(
         operationType: 'UPDATE_TEXT',
         blockId,
         expectedVersion,
-        content: { text },
+        content,
       };
       const timer = scheduleOperationTimeout(clientOperationId);
 
@@ -336,7 +336,7 @@ export function useDocumentCollaboration(
     errorMessage,
     startEditing,
     stopEditing,
-    updateText,
+    updateContent,
     reconnect: connect,
     disconnect,
   };

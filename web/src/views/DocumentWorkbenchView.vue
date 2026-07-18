@@ -237,7 +237,7 @@ import {
   type DocumentTreeNode,
   type DocumentVersion,
 } from '@/api/document';
-import type { DocumentBlock } from '@/api/block';
+import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentStatusBar from '@/components/document/DocumentStatusBar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
@@ -286,7 +286,7 @@ const {
   errorMessage: collaborationError,
   startEditing,
   stopEditing,
-  updateText: updateBlockTextViaCollaboration,
+  updateContent: updateBlockContentViaCollaboration,
 } = useDocumentCollaboration(workspaceId, documentId);
 
 onMounted(() => {
@@ -374,9 +374,13 @@ function noopTreeAction(_node: FlatDocumentTreeNode) {
 
 async function saveBlockViaCollaboration(
   block: DocumentBlock,
-  text: string,
+  content: DocumentBlockContent,
 ) {
-  return updateBlockTextViaCollaboration(block.id, text, block.version);
+  return updateBlockContentViaCollaboration(
+    block.id,
+    content,
+    block.version,
+  );
 }
 
 async function handleSubmit() {

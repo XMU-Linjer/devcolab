@@ -15,9 +15,11 @@ public interface DocumentBlockRepository {
 
     List<DocumentBlock> findAllByDocumentId(UUID documentId);
 
-    Optional<DocumentBlock> updateTextIfVersionMatches(
+    Optional<DocumentBlock> updateContentIfVersionMatches(
             UUID blockId,
             String text,
+            int contentSchemaVersion,
+            String contentJson,
             Instant updatedAt,
             long expectedVersion
     );

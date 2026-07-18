@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.document.api;
 
 import com.devcollab.knowledgecore.document.application.DocumentCollaborationOperationResult;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
 
 import java.util.UUID;
 import java.util.List;
@@ -16,7 +17,8 @@ public record DocumentCollaborationOperationResponse(
         List<DocumentBlockResponse> blocks
 ) {
     public static DocumentCollaborationOperationResponse from(
-            DocumentCollaborationOperationResult result
+            DocumentCollaborationOperationResult result,
+            DocumentBlockContentCodec contentCodec
     ) {
         return new DocumentCollaborationOperationResponse(
                 result.clientOperationId(),
@@ -27,9 +29,9 @@ public record DocumentCollaborationOperationResponse(
                 result.operatorUserId(),
                 result.block() == null
                         ? null
-                        : DocumentBlockResponse.from(result.block()),
+                        : DocumentBlockResponse.from(result.block(), contentCodec),
                 result.blocks().stream()
-                        .map(DocumentBlockResponse::from)
+                        .map(block -> DocumentBlockResponse.from(block, contentCodec))
                         .toList()
         );
     }

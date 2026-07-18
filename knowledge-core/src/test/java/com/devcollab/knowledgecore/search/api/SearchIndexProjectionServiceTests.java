@@ -93,6 +93,8 @@ class SearchIndexProjectionServiceTests {
                 documentId,
                 DocumentBlockType.PARAGRAPH,
                 "POST /api/orders requires idempotency key",
+                1,
+                null,
                 0,
                 1,
                 UUID.randomUUID(),
@@ -265,9 +267,11 @@ class SearchIndexProjectionServiceTests {
         }
 
         @Override
-        public Optional<DocumentBlock> updateTextIfVersionMatches(
+        public Optional<DocumentBlock> updateContentIfVersionMatches(
                 UUID blockId,
                 String text,
+                int contentSchemaVersion,
+                String contentJson,
                 Instant updatedAt,
                 long expectedVersion
         ) {
