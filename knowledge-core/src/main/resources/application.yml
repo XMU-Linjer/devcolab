@@ -90,7 +90,7 @@ devcollab:
       refresh-cookie-name: ${DEVCOLLAB_REFRESH_COOKIE_NAME:dc_refresh}
       csrf-cookie-name: ${DEVCOLLAB_CSRF_COOKIE_NAME:dc_csrf}
       csrf-header-name: ${DEVCOLLAB_CSRF_HEADER_NAME:X-CSRF-Token}
-      allowed-origin: ${DEVCOLLAB_WEB_ORIGIN:http://localhost:5173}
+      allowed-origins: ${DEVCOLLAB_WEB_ORIGINS:${DEVCOLLAB_WEB_ORIGIN:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}}
       secure: ${DEVCOLLAB_COOKIE_SECURE:false}
 
 management:

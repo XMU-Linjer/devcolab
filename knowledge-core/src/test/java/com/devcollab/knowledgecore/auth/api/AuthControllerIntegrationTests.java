@@ -185,6 +185,58 @@ class AuthControllerIntegrationTests {
     }
 
     @Test
+    void shouldRefreshFromSecondAllowedLocalOrigin() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        assertNotNull(refreshCookie);
+        assertNotNull(csrfCookie);
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://127.0.0.1:5173")
+                                .header(
+                                        "X-CSRF-Token",
+                                        csrfCookie.getValue()
+                                )
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+    }
+
+    @Test
+    void shouldRejectRefreshFromUntrustedOrigin() throws Exception {
+        MvcResult registerResult = register(uniqueUsername());
+        Cookie refreshCookie = registerResult
+                .getResponse()
+                .getCookie("dc_refresh");
+        Cookie csrfCookie = registerResult
+                .getResponse()
+                .getCookie("dc_csrf");
+
+        assertNotNull(refreshCookie);
+        assertNotNull(csrfCookie);
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .cookie(refreshCookie, csrfCookie)
+                                .header("Origin", "http://attacker.example")
+                                .header(
+                                        "X-CSRF-Token",
+                                        csrfCookie.getValue()
+                                )
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_CSRF_INVALID"));
+    }
+
+    @Test
     void shouldRejectRefreshWithInvalidCsrfHeader() throws Exception {
         MvcResult registerResult = register(uniqueUsername());
         Cookie refreshCookie = registerResult

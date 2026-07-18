@@ -6,6 +6,7 @@ import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService.Refre
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,7 +64,7 @@ class RefreshTokenServiceTests {
                 "dc_refresh",
                 "dc_csrf",
                 "X-CSRF-Token",
-                "http://localhost:5173",
+                List.of("http://localhost:5173"),
                 false
         );
 

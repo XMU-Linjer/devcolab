@@ -123,7 +123,7 @@ public class RefreshCookieManager {
         String csrfHeader = request.getHeader(properties.csrfHeaderName());
         String origin = request.getHeader(HttpHeaders.ORIGIN);
 
-        if (!properties.allowedOrigin().equals(origin)
+        if (!properties.allowedOrigins().contains(origin)
                 || csrfCookie == null
                 || csrfHeader == null
                 || !secureEquals(csrfCookie, csrfHeader)) {

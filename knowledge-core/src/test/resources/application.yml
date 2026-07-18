@@ -50,5 +50,7 @@ devcollab:
       refresh-cookie-name: dc_refresh
       csrf-cookie-name: dc_csrf
       csrf-header-name: X-CSRF-Token
-      allowed-origin: http://localhost:5173
+      allowed-origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
       secure: false
