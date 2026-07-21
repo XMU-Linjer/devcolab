@@ -4,6 +4,9 @@
       v-model="sidebarCollapsed"
       active="documents"
       :workspace-id="workspaceId"
+      :document-tree="documentTree"
+      :active-document-id="documentId"
+      @select-document="openDocument"
     />
 
     <section class="workspace workbench-page">
@@ -24,29 +27,6 @@
       </header>
 
       <section class="workbench-layout">
-        <aside class="workbench-tree-panel">
-          <div class="document-sidebar-header">
-            <div>
-              <h2>文档树</h2>
-              <p class="section-hint">点击节点切换当前文档。</p>
-            </div>
-          </div>
-
-          <el-skeleton v-if="treeLoading" :rows="6" animated />
-          <el-empty v-else-if="documentTree.length === 0" description="暂无文档" />
-          <DocumentTree
-            v-else
-            :nodes="documentTree"
-            :active-document-id="documentId"
-            @select="openDocument"
-            @create-child="noopTreeAction"
-            @rename="noopTreeAction"
-            @move="noopTreeAction"
-            @move-root="noopTreeAction"
-            @delete="noopTreeAction"
-          />
-        </aside>
-
         <section class="workbench-editor-panel">
           <el-alert
             v-if="errorMessage"
@@ -238,9 +218,6 @@ import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentStatusBar from '@/components/document/DocumentStatusBar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
-import DocumentTree, {
-  type FlatDocumentTreeNode,
-} from '@/components/document/DocumentTree.vue';
 import ReviewIssuePanel from '@/components/document/ReviewIssuePanel.vue';
 import CodeBindingPanel from '@/components/document/CodeBindingPanel.vue';
 import VersionHistoryPanel from '@/components/document/VersionHistoryPanel.vue';
@@ -367,10 +344,6 @@ function openDocument(nextDocumentId: string) {
       documentId: nextDocumentId,
     },
   });
-}
-
-function noopTreeAction(_node: FlatDocumentTreeNode) {
-  ElMessage.info('文档树结构操作请回到空间详情页处理。');
 }
 
 async function saveBlockViaCollaboration(

@@ -30,7 +30,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-columns: 252px minmax(0, 1fr);
   min-height: 100vh;
   transition: grid-template-columns 180ms ease;
 }
@@ -78,6 +78,89 @@ button {
   display: grid;
   gap: 6px;
   margin-top: 22px;
+}
+
+.sidebar-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sidebar-document-shortcut {
+  margin-top: 6px;
+  justify-content: center;
+}
+
+.sidebar-document-section {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid #e1e6ed;
+}
+
+.sidebar-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 8px 6px;
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-section-label button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+}
+
+.sidebar-section-label button:hover {
+  background: #eef2f6;
+  color: #2454d6;
+}
+
+.sidebar-section-label svg,
+.sidebar-new-document svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-document-section .document-tree-row {
+  font-size: 13px;
+}
+
+.sidebar-tree-empty {
+  margin: 12px 8px;
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.sidebar-new-document {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  gap: 7px;
+  margin-top: 10px;
+  border: 0;
+  border-top: 1px solid #e1e6ed;
+  background: transparent;
+  color: #53627a;
+  cursor: pointer;
+  padding: 10px 9px 0;
+  text-align: left;
+}
+
+.sidebar-new-document:hover {
+  color: #2454d6;
 }
 
 .nav-item {
@@ -1282,7 +1365,7 @@ h1 {
 
 .workbench-layout {
   display: grid;
-  grid-template-columns: 220px minmax(520px, 1fr) 286px;
+  grid-template-columns: minmax(560px, 1fr) 300px;
   height: calc(100vh - 92px);
   min-height: 620px;
   margin-top: 16px;
@@ -1580,7 +1663,7 @@ h1 {
 
 @media (max-width: 1440px) {
   .workbench-layout {
-    grid-template-columns: 200px minmax(480px, 1fr) 250px;
+    grid-template-columns: minmax(500px, 1fr) 270px;
   }
 }
 

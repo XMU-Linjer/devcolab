@@ -2,8 +2,17 @@
   <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
     <AppSidebar
       v-model="sidebarCollapsed"
-      active="documents"
+      active="home"
       :workspace-id="currentWorkspaceId()"
+      :document-tree="documentTree"
+      manageable
+      @select-document="openDocumentWorkbench"
+      @create-document="openCreateRootDialog"
+      @create-child="openCreateChildDialog"
+      @rename="handleRenameDocument"
+      @move="openMoveDialog"
+      @move-root="handleMoveDocumentToRoot"
+      @delete="handleDeleteDocument"
     />
 
     <section class="workspace">
@@ -29,74 +38,21 @@
         @open-document="openDocumentWorkbench"
       />
 
-      <section class="document-workspace">
-        <aside class="document-sidebar">
-          <div class="document-sidebar-header">
-            <div>
-              <h2>工程文档</h2>
-              <p v-if="importingDocuments" class="document-sync-state">正在同步仓库文档…</p>
-            </div>
-            <div class="document-tree-actions">
-            <el-tag v-if="workspace" size="small" effect="light">
-              {{ workspace.currentUserRole === 'ADMIN' ? '管理员' : '普通成员' }}
-            </el-tag>
-            </div>
-          </div>
+      <el-alert
+        v-if="errorMessage"
+        class="workspace-page-alert"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+      />
 
-          <el-skeleton v-if="loading" :rows="5" animated />
-
-          <el-alert
-            v-else-if="errorMessage"
-            :title="errorMessage"
-            type="error"
-            show-icon
-            :closable="false"
-          >
-            <template #default>
-              <el-button text type="primary" @click="loadWorkspacePage">
-                重新加载
-              </el-button>
-            </template>
-          </el-alert>
-
-          <el-empty
-            v-else-if="documentTree.length === 0"
-            description="还没有文档"
-            :image-size="64"
-          >
-            <p v-if="documentImportHint" class="section-hint">
-              {{ documentImportHint }}
-            </p>
-            <el-button type="primary" :icon="Plus" @click="openCreateRootDialog">
-              创建第一篇文档
-            </el-button>
-          </el-empty>
-
-          <DocumentTree
-            v-else
-            :nodes="documentTree"
-            @select="openDocumentWorkbench"
-            @create-child="openCreateChildDialog"
-            @rename="handleRenameDocument"
-            @move="openMoveDialog"
-            @move-root="handleMoveDocumentToRoot"
-            @delete="handleDeleteDocument"
-          />
-        </aside>
-
-        <section class="document-main">
-          <div class="document-placeholder">
-            <div class="document-placeholder-content">
-              <el-icon class="document-placeholder-icon"><Document /></el-icon>
-              <h3>选择文档进入工作台</h3>
-              <p>
-                点击左侧文档树中的节点，进入独立的文档工作台页面。
-                工作台提供 Block 编辑、版本历史、评审和 Issue 能力。
-              </p>
-            </div>
-          </div>
-        </section>
-      </section>
+      <p v-if="importingDocuments" class="workspace-sync-state">
+        正在自动同步仓库文档…
+      </p>
+      <p v-else-if="documentTree.length === 0 && documentImportHint" class="workspace-sync-state">
+        {{ documentImportHint }}
+      </p>
 
       <section v-if="workspace" class="content-panel">
         <WorkspaceMembersPanel
@@ -158,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { Back, Document, Plus } from '@element-plus/icons-vue';
+import { Back, Plus } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -179,9 +135,7 @@ import {
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
-import DocumentTree, {
-  type FlatDocumentTreeNode,
-} from '@/components/document/DocumentTree.vue';
+import type { FlatDocumentTreeNode } from '@/components/document/DocumentTree.vue';
 import WorkspaceMembersPanel from '@/components/workspace/WorkspaceMembersPanel.vue';
 import WorkspaceSearchPanel from '@/components/workspace/WorkspaceSearchPanel.vue';
 import GitRepositoryPanel from '@/components/workspace/GitRepositoryPanel.vue';

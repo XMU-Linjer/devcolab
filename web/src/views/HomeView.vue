@@ -1,6 +1,6 @@
 <template>
   <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
-    <AppSidebar v-model="sidebarCollapsed" active="workspaces" />
+    <AppSidebar v-model="sidebarCollapsed" active="home" />
 
     <section class="workspace">
       <header class="topbar">

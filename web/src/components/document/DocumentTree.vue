@@ -29,7 +29,7 @@
         <span>{{ node.title }}</span>
       </button>
 
-      <el-dropdown trigger="click" @command="handleCommand(node, $event)">
+      <el-dropdown v-if="manageable" trigger="click" @command="handleCommand(node, $event)">
         <el-button
           class="document-tree-action"
           :icon="MoreFilled"
@@ -77,6 +77,7 @@ export interface FlatDocumentTreeNode {
 const props = defineProps<{
   nodes: DocumentTreeNode[];
   activeDocumentId?: string;
+  manageable?: boolean;
 }>();
 
 const emit = defineEmits<{
