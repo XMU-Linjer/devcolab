@@ -7,6 +7,11 @@ const coreBaseUrl = process.env.DEVCOLLAB_CORE_BASE_URL ?? 'http://localhost:808
 const dataRoot = resolve(process.env.DEVCOLLAB_GIT_DATA_ROOT ?? '.data/git-repositories');
 const suffix = Date.now().toString();
 const waitTimeoutMs = Number(process.env.DEVCOLLAB_E2E_WAIT_TIMEOUT_MS ?? '120000');
+const remoteUrl = process.env.DEVCOLLAB_E2E_GIT_REMOTE_URL
+  ?? 'https://github.com/octocat/Hello-World.git';
+const defaultBranch = process.env.DEVCOLLAB_E2E_GIT_DEFAULT_BRANCH ?? 'master';
+const expectCodeGraph = process.env.DEVCOLLAB_E2E_EXPECT_CODE_GRAPH === 'true';
+const expectFileDependency = process.env.DEVCOLLAB_E2E_EXPECT_FILE_DEPENDENCY === 'true';
 
 async function main() {
   const user = await api(null, '/api/v1/auth/register', {
@@ -26,10 +31,10 @@ async function main() {
     {
       method: 'POST',
       body: {
-        name: 'Octocat Hello World',
+        name: 'Git E2E Repository',
         provider: 'GITHUB',
-        remoteUrl: 'https://github.com/octocat/Hello-World.git',
-        defaultBranch: 'master',
+        remoteUrl,
+        defaultBranch,
       },
     },
   );
@@ -44,6 +49,10 @@ async function main() {
     user.accessToken,
     `/api/v1/workspaces/${workspace.id}/git/repositories/${repository.id}/changes`,
   );
+  const codeGraph = await api(
+    user.accessToken,
+    `/api/v1/workspaces/${workspace.id}/git/repositories/${repository.id}/code-graph`,
+  );
   if (files.length === 0) throw new Error('Expected synchronized repository files');
   if (changes.length === 0) throw new Error('Expected synchronized Git log');
   const identifiedCommit = changes.find(change => change.authorName && change.committerName);
@@ -52,6 +61,12 @@ async function main() {
     .find(file => !file.binaryFile && file.patchExcerpt
       && file.additions + file.deletions > 0);
   if (!textDiff) throw new Error('Expected real text statistics and line patch');
+  if (expectCodeGraph && codeGraph.symbols.length === 0) {
+    throw new Error('Expected Java code symbols from synchronized repository');
+  }
+  if (expectFileDependency && codeGraph.fileDependencies.length === 0) {
+    throw new Error('Expected internal Java file dependencies');
+  }
 
   const repositoryDirectory = resolve(
     dataRoot, workspace.id, repository.id, 'repository',
@@ -59,7 +74,7 @@ async function main() {
   if (!existsSync(repositoryDirectory)) {
     throw new Error(`Clone directory does not exist: ${repositoryDirectory}`);
   }
-  console.log(`[git-repository-e2e] READY head=${ready.lastSyncedCommit} files=${files.length} commits=${changes.length} diff=+${textDiff.additions}/-${textDiff.deletions} author=${identifiedCommit.authorName}`);
+  console.log(`[git-repository-e2e] READY head=${ready.lastSyncedCommit} files=${files.length} commits=${changes.length} symbols=${codeGraph.symbols.length} fileDependencies=${codeGraph.fileDependencies.length} diff=+${textDiff.additions}/-${textDiff.deletions} author=${identifiedCommit.authorName}`);
 
   await api(
     user.accessToken,

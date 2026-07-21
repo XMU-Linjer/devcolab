@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.UUID;
@@ -90,6 +91,20 @@ public class GitKnowledgeController {
     ) {
         return service.listFiles(workspaceId, repositoryId, currentUser.userId())
                 .stream().map(GitRepositoryFileResponse::from).toList();
+    }
+
+    @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/code-graph"
+    )
+    public CodeGraphResponse getCodeGraph(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @RequestParam(required = false) String filePath
+    ) {
+        return CodeGraphResponse.from(service.getCodeGraph(
+                workspaceId, repositoryId, currentUser.userId(), filePath
+        ));
     }
 
     @PostMapping(

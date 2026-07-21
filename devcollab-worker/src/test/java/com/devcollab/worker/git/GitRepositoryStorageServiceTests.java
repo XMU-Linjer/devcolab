@@ -137,7 +137,7 @@ class GitRepositoryStorageServiceTests {
                     "Merge Bot", "merge-bot@example.com",
                     Instant.parse("2026-07-21T08:31:00Z"), ZoneOffset.UTC
             );
-            git.commit().setMessage("change files")
+            git.commit().setMessage("x".repeat(550))
                     .setAuthor(author).setCommitter(committer).call();
 
             GitCommitProjection projection = service.scanCommits(
@@ -151,6 +151,7 @@ class GitRepositoryStorageServiceTests {
             assertThat(projection.committerName()).isEqualTo("Merge Bot");
             assertThat(projection.committerEmail()).isEqualTo("merge-bot@example.com");
             assertThat(projection.parentCommitSha()).isEqualTo(first.name());
+            assertThat(projection.title()).hasSize(500);
             assertThat(files.get("app.txt").additions()).isEqualTo(2);
             assertThat(files.get("app.txt").deletions()).isEqualTo(1);
             assertThat(files.get("app.txt").patchExcerpt())
@@ -171,7 +172,8 @@ class GitRepositoryStorageServiceTests {
                         true, "test", tempDir, List.of("github.com"),
                         10, 100, 10, 10_000_000
                 ),
-                store
+                store,
+                new JavaCodeGraphAnalyzer()
         );
     }
 }

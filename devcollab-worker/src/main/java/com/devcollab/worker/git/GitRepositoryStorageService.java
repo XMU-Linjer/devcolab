@@ -37,13 +37,16 @@ public class GitRepositoryStorageService {
 
     private final GitRepositoryStorageProperties properties;
     private final GitRepositoryProjectionStore store;
+    private final JavaCodeGraphAnalyzer codeGraphAnalyzer;
 
     public GitRepositoryStorageService(
             GitRepositoryStorageProperties properties,
-            GitRepositoryProjectionStore store
+            GitRepositoryProjectionStore store,
+            JavaCodeGraphAnalyzer codeGraphAnalyzer
     ) {
         this.properties = properties;
         this.store = store;
+        this.codeGraphAnalyzer = codeGraphAnalyzer;
     }
 
     public void synchronize(
@@ -66,9 +69,13 @@ public class GitRepositoryStorageService {
                 Repository repository = git.getRepository();
                 List<GitRepositoryFileProjection> files = scanFiles(repository);
                 List<GitCommitProjection> commits = scanCommits(git, repository);
+                CodeGraphProjection codeGraph = codeGraphAnalyzer.analyze(
+                        repositoryDirectory, files
+                );
                 String head = repository.resolve("HEAD").name();
                 store.replaceFiles(repositoryId, files);
                 store.saveCommits(repositoryId, commits);
+                store.replaceCodeGraph(repositoryId, codeGraph);
                 store.markReady(repositoryId, head);
             }
         } catch (Exception exception) {
@@ -192,7 +199,7 @@ public class GitRepositoryStorageService {
                 var author = commit.getAuthorIdent();
                 var committer = commit.getCommitterIdent();
                 commits.add(new GitCommitProjection(
-                        commit.name(), commit.getShortMessage(),
+                        commit.name(), truncate(commit.getShortMessage(), 500),
                         author == null ? null : author.getName(),
                         author == null ? null : author.getEmailAddress(),
                         author == null ? null : author.getWhenAsInstant(),
@@ -366,6 +373,13 @@ public class GitRepositoryStorageService {
         }
         return current.getMessage() == null
                 ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private String truncate(String value, int maxCodePoints) {
+        if (value.codePointCount(0, value.length()) <= maxCodePoints) {
+            return value;
+        }
+        return value.substring(0, value.offsetByCodePoints(0, maxCodePoints));
     }
 
     private static class RepositorySizeException extends RuntimeException {

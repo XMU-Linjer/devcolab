@@ -5,11 +5,13 @@
 | 项目 | 内容 |
 |---|---|
 | 文档类型 | Git 工程知识专项设计 |
-| 文档状态 | 生效 |
+| 文档状态 | 已被 V0.4 替代 |
 | 版本 | V0.3 |
 | 日期 | 2026-07-21 |
 | 替代版本 | `12-devcollab-git-knowledge-design-v0.2.md` |
 | 适用范围 | Knowledge Core、Worker、Kafka、PostgreSQL、Web、本地 Git 数据目录 |
+
+> 本版本已由 `12-devcollab-git-knowledge-design-v0.4.md` 替代。
 
 ## 1. 结论与边界
 
@@ -84,4 +86,3 @@ V19 为 `git_changes` 增加作者邮箱、作者时间、提交者身份和父 
 2. Patch 分页或对象存储，支持大 Diff 按需读取。
 3. Merge Commit 多父视角选择和 PR aggregate diff。
 4. 将变更文件与文档路径绑定结合，生成确定性的受影响文档清单。
-

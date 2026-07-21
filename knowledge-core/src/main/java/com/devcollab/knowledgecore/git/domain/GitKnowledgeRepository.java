@@ -21,6 +21,18 @@ public interface GitKnowledgeRepository {
 
     List<GitRepositoryFile> findFilesByRepositoryId(UUID repositoryId);
 
+    List<CodeSymbol> findSymbolsByRepositoryId(UUID repositoryId, String filePath);
+
+    List<CodeSymbolDependency> findSymbolDependenciesByRepositoryId(
+            UUID repositoryId,
+            String filePath
+    );
+
+    List<CodeFileDependency> findFileDependenciesByRepositoryId(
+            UUID repositoryId,
+            String filePath
+    );
+
     GitChange saveChange(GitChange change);
 
     Optional<GitChange> findChangeById(UUID changeId);

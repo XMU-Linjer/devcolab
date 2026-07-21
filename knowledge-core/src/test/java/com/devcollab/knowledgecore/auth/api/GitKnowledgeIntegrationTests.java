@@ -128,6 +128,70 @@ class GitKnowledgeIntegrationTests {
     }
 
     @Test
+    void shouldExposeCodeGraphToMembersAndRejectOutsiders() throws Exception {
+        AuthSession admin = register();
+        AuthSession member = register();
+        AuthSession outsider = register();
+        String workspaceId = createWorkspace(admin.token());
+        inviteMember(admin.token(), workspaceId, member.username());
+        String repositoryId = registerRepository(admin.token(), workspaceId);
+        UUID repositoryUuid = UUID.fromString(repositoryId);
+        String apiPath = "src/main/java/demo/api/OrderPort.java";
+        String servicePath = "src/main/java/demo/service/OrderService.java";
+
+        jdbcTemplate.update("""
+                INSERT INTO code_symbols
+                    (id, repository_id, file_path, symbol_key, language,
+                     symbol_kind, qualified_name, simple_name, signature,
+                     start_line, end_line)
+                VALUES (?, ?, ?, 'java:demo.api.OrderPort', 'JAVA',
+                        'INTERFACE', 'demo.api.OrderPort', 'OrderPort',
+                        'INTERFACE demo.api.OrderPort', 1, 3)
+                """, UUID.randomUUID(), repositoryUuid, apiPath);
+        jdbcTemplate.update("""
+                INSERT INTO code_symbols
+                    (id, repository_id, file_path, symbol_key, language,
+                     symbol_kind, qualified_name, simple_name, signature,
+                     start_line, end_line)
+                VALUES (?, ?, ?, 'java:demo.service.OrderService', 'JAVA',
+                        'CLASS', 'demo.service.OrderService', 'OrderService',
+                        'CLASS demo.service.OrderService', 1, 8)
+                """, UUID.randomUUID(), repositoryUuid, servicePath);
+        jdbcTemplate.update("""
+                INSERT INTO code_symbol_dependencies
+                    (id, repository_id, source_symbol_key, target_symbol_key,
+                     relation_type, evidence_file_path)
+                VALUES (?, ?, 'java:demo.service.OrderService',
+                        'java:demo.api.OrderPort', 'IMPLEMENTS', ?)
+                """, UUID.randomUUID(), repositoryUuid, servicePath);
+        jdbcTemplate.update("""
+                INSERT INTO code_file_dependencies
+                    (id, repository_id, source_path, target_path, relation_type)
+                VALUES (?, ?, ?, ?, 'IMPORTS')
+                """, UUID.randomUUID(), repositoryUuid, servicePath, apiPath);
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/code-graph",
+                        workspaceId, repositoryId)
+                        .queryParam("filePath", servicePath)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.symbols[0].symbolKey")
+                        .value("java:demo.service.OrderService"))
+                .andExpect(jsonPath("$.symbolDependencies[0].relationType")
+                        .value("IMPLEMENTS"))
+                .andExpect(jsonPath("$.fileDependencies[0].targetPath")
+                        .value(apiPath));
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/code-graph",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsider.token())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
+    }
+
+    @Test
     void shouldRejectBindingBlockFromAnotherDocument() throws Exception {
         AuthSession admin = register();
         String workspaceId = createWorkspace(admin.token());

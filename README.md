@@ -16,7 +16,7 @@ DevCollab 是面向软件项目团队的工程知识协作平台。它把需求�
 - 搜索与对象：PostgreSQL 搜索基线、Elasticsearch 可重建投影、MinIO 发布快照。
 - 缓存与协调：Redis 登录/操作限流、去重、Presence；Caffeine + Redis 多级缓存和 Kafka 跨节点失效。
 - 通知：评审提交与发布通知、未读状态和前端通知中心。
-- Git 工程知识：工作区仓库登记、标准化 Commit/PR Diff 接入、文档/Block 代码路径绑定、变更影响查询。
+- Git 工程知识：仓库同步、真实 Commit Diff、Java 符号/文件依赖图、文档/Block 代码路径绑定及变更影响查询。
 - 可观测性：OpenTelemetry、Prometheus、Loki、Tempo、Grafana 本地编排和验收工具。
 
 ## 架构
@@ -133,7 +133,7 @@ npm.cmd run build
 管理员登记公开 GitHub 仓库
 → Core 同事务写仓库元数据与 Outbox
 → Kafka Git Topic 驱动 Worker 使用 JGit 克隆到 .data
-→ Worker 投影文件树、Author/Committer 身份、父 Commit 和真实行级 Diff
+→ Worker 投影文件树、Author/Committer、真实 Diff、Java 符号与显式内部依赖
 → 成员将文档或 Block 关联到精确路径、目录/** 或 **/*.扩展名
 → 变更查询返回受影响文档与命中路径
 ```

@@ -103,6 +103,57 @@ public class GitRepositoryProjectionStore {
         }
     }
 
+    @Transactional
+    public void replaceCodeGraph(
+            UUID repositoryId,
+            CodeGraphProjection graph
+    ) {
+        jdbcTemplate.update(
+                "DELETE FROM code_symbol_dependencies WHERE repository_id = ?",
+                repositoryId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM code_file_dependencies WHERE repository_id = ?",
+                repositoryId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM code_symbols WHERE repository_id = ?",
+                repositoryId
+        );
+        for (CodeSymbolProjection symbol : graph.symbols()) {
+            jdbcTemplate.update("""
+                    INSERT INTO code_symbols
+                        (id, repository_id, file_path, symbol_key, language,
+                         symbol_kind, qualified_name, simple_name, signature,
+                         parent_symbol_key, start_line, end_line)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), repositoryId, symbol.filePath(),
+                    symbol.symbolKey(), symbol.language(), symbol.symbolKind(),
+                    symbol.qualifiedName(), symbol.simpleName(), symbol.signature(),
+                    symbol.parentSymbolKey(), symbol.startLine(), symbol.endLine());
+        }
+        for (CodeSymbolDependencyProjection dependency
+                : graph.symbolDependencies()) {
+            jdbcTemplate.update("""
+                    INSERT INTO code_symbol_dependencies
+                        (id, repository_id, source_symbol_key, target_symbol_key,
+                         relation_type, evidence_file_path)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), repositoryId,
+                    dependency.sourceSymbolKey(), dependency.targetSymbolKey(),
+                    dependency.relationType(), dependency.evidenceFilePath());
+        }
+        for (CodeFileDependencyProjection dependency : graph.fileDependencies()) {
+            jdbcTemplate.update("""
+                    INSERT INTO code_file_dependencies
+                        (id, repository_id, source_path, target_path, relation_type)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), repositoryId,
+                    dependency.sourcePath(), dependency.targetPath(),
+                    dependency.relationType());
+        }
+    }
+
     private Timestamp timestamp(Instant value) {
         return value == null ? null : Timestamp.from(value);
     }

@@ -150,6 +150,29 @@ public class GitKnowledgeApplicationService {
         return gitRepository.findFilesByRepositoryId(repositoryId);
     }
 
+    public CodeGraphDetails getCodeGraph(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String filePath
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        requireRepository(repositoryId, workspaceId);
+        String normalizedPath = filePath == null || filePath.isBlank()
+                ? null : normalizePath(filePath);
+        return new CodeGraphDetails(
+                gitRepository.findSymbolsByRepositoryId(
+                        repositoryId, normalizedPath
+                ),
+                gitRepository.findSymbolDependenciesByRepositoryId(
+                        repositoryId, normalizedPath
+                ),
+                gitRepository.findFileDependenciesByRepositoryId(
+                        repositoryId, normalizedPath
+                )
+        );
+    }
+
     @Transactional
     public GitChangeDetails ingestChange(
             UUID workspaceId,

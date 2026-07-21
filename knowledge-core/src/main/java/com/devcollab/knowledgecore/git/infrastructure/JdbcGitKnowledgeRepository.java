@@ -1,6 +1,9 @@
 package com.devcollab.knowledgecore.git.infrastructure;
 
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
+import com.devcollab.knowledgecore.git.domain.CodeFileDependency;
+import com.devcollab.knowledgecore.git.domain.CodeSymbol;
+import com.devcollab.knowledgecore.git.domain.CodeSymbolDependency;
 import com.devcollab.knowledgecore.git.domain.GitChange;
 import com.devcollab.knowledgecore.git.domain.GitChangeType;
 import com.devcollab.knowledgecore.git.domain.GitFileChangeType;
@@ -48,6 +51,41 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getString("blob_sha"),
                     rs.getLong("size_bytes"),
                     rs.getString("language")
+            );
+
+    private static final RowMapper<CodeSymbol> SYMBOL_MAPPER =
+            (rs, rowNum) -> new CodeSymbol(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("repository_id", UUID.class),
+                    rs.getString("file_path"),
+                    rs.getString("symbol_key"),
+                    rs.getString("language"),
+                    rs.getString("symbol_kind"),
+                    rs.getString("qualified_name"),
+                    rs.getString("simple_name"),
+                    rs.getString("signature"),
+                    rs.getString("parent_symbol_key"),
+                    (Integer) rs.getObject("start_line"),
+                    (Integer) rs.getObject("end_line")
+            );
+
+    private static final RowMapper<CodeSymbolDependency> SYMBOL_DEPENDENCY_MAPPER =
+            (rs, rowNum) -> new CodeSymbolDependency(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("repository_id", UUID.class),
+                    rs.getString("source_symbol_key"),
+                    rs.getString("target_symbol_key"),
+                    rs.getString("relation_type"),
+                    rs.getString("evidence_file_path")
+            );
+
+    private static final RowMapper<CodeFileDependency> FILE_DEPENDENCY_MAPPER =
+            (rs, rowNum) -> new CodeFileDependency(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("repository_id", UUID.class),
+                    rs.getString("source_path"),
+                    rs.getString("target_path"),
+                    rs.getString("relation_type")
             );
 
     private static final RowMapper<GitChange> CHANGE_MAPPER =
@@ -177,6 +215,64 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                  WHERE repository_id = ?
                  ORDER BY path
                 """, FILE_MAPPER, repositoryId);
+    }
+
+    @Override
+    public List<CodeSymbol> findSymbolsByRepositoryId(
+            UUID repositoryId,
+            String filePath
+    ) {
+        if (filePath == null) {
+            return jdbcTemplate.query("""
+                    SELECT * FROM code_symbols
+                     WHERE repository_id = ?
+                     ORDER BY file_path, start_line, symbol_key
+                    """, SYMBOL_MAPPER, repositoryId);
+        }
+        return jdbcTemplate.query("""
+                SELECT * FROM code_symbols
+                 WHERE repository_id = ? AND file_path = ?
+                 ORDER BY start_line, symbol_key
+                """, SYMBOL_MAPPER, repositoryId, filePath);
+    }
+
+    @Override
+    public List<CodeSymbolDependency> findSymbolDependenciesByRepositoryId(
+            UUID repositoryId,
+            String filePath
+    ) {
+        if (filePath == null) {
+            return jdbcTemplate.query("""
+                    SELECT * FROM code_symbol_dependencies
+                     WHERE repository_id = ?
+                     ORDER BY source_symbol_key, target_symbol_key
+                    """, SYMBOL_DEPENDENCY_MAPPER, repositoryId);
+        }
+        return jdbcTemplate.query("""
+                SELECT * FROM code_symbol_dependencies
+                 WHERE repository_id = ? AND evidence_file_path = ?
+                 ORDER BY source_symbol_key, target_symbol_key
+                """, SYMBOL_DEPENDENCY_MAPPER, repositoryId, filePath);
+    }
+
+    @Override
+    public List<CodeFileDependency> findFileDependenciesByRepositoryId(
+            UUID repositoryId,
+            String filePath
+    ) {
+        if (filePath == null) {
+            return jdbcTemplate.query("""
+                    SELECT * FROM code_file_dependencies
+                     WHERE repository_id = ?
+                     ORDER BY source_path, target_path
+                    """, FILE_DEPENDENCY_MAPPER, repositoryId);
+        }
+        return jdbcTemplate.query("""
+                SELECT * FROM code_file_dependencies
+                 WHERE repository_id = ?
+                   AND (source_path = ? OR target_path = ?)
+                 ORDER BY source_path, target_path
+                """, FILE_DEPENDENCY_MAPPER, repositoryId, filePath, filePath);
     }
 
     @Override
