@@ -211,7 +211,9 @@ function Start-MavenService {
 
     $stdout = Join-Path $RuntimeDir "$Name.stdout.log"
     $stderr = Join-Path $RuntimeDir "$Name.stderr.log"
-    $command = "`"$MavenWrapper`" -pl $Module spring-boot:run"
+    # -am builds the shared gRPC contract in the same Reactor. The parent POM
+    # skips spring-boot:run while executable child modules explicitly enable it.
+    $command = "`"$MavenWrapper`" -pl $Module -am spring-boot:run"
 
     Write-Step "starting $Name"
     $process = Start-Process `
@@ -251,6 +253,7 @@ function Ensure-KafkaTopics {
         "devcollab.cache.events",
         "devcollab.review.events",
         "devcollab.notification.events",
+        "devcollab.git.events",
         "devcollab.dead-letter"
     )
     foreach ($topic in $topics) {

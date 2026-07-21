@@ -210,6 +210,14 @@
                 </section>
               </section>
             </el-tab-pane>
+
+            <el-tab-pane label="代码" name="code">
+              <CodeBindingPanel
+                v-if="document"
+                :workspace-id="workspaceId"
+                :document-id="document.id"
+              />
+            </el-tab-pane>
           </el-tabs>
         </aside>
       </section>
@@ -245,6 +253,7 @@ import DocumentTree, {
   type FlatDocumentTreeNode,
 } from '@/components/document/DocumentTree.vue';
 import ReviewIssuePanel from '@/components/document/ReviewIssuePanel.vue';
+import CodeBindingPanel from '@/components/document/CodeBindingPanel.vue';
 import VersionHistoryPanel from '@/components/document/VersionHistoryPanel.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
 import { readableError } from '@/utils/error';
@@ -263,7 +272,7 @@ const documentLoading = ref(false);
 const sideLoading = ref(false);
 const errorMessage = ref('');
 const busyAction = ref<'submit' | 'approve' | 'reject' | 'deprecate' | null>(null);
-const rightTab = ref<'timeline' | 'issues' | 'versions' | 'collaboration'>('timeline');
+const rightTab = ref<'timeline' | 'issues' | 'versions' | 'collaboration' | 'code'>('timeline');
 const focusBlockId = ref<string | null>(null);
 
 const workspaceId = computed(() => route.params.workspaceId as string);

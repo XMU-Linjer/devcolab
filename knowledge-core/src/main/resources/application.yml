@@ -72,6 +72,7 @@ devcollab:
       cache-topic: ${DEVCOLLAB_KAFKA_CACHE_TOPIC:devcollab.cache.events}
       review-topic: ${DEVCOLLAB_KAFKA_REVIEW_TOPIC:devcollab.review.events}
       notification-topic: ${DEVCOLLAB_KAFKA_NOTIFICATION_TOPIC:devcollab.notification.events}
+      git-topic: ${DEVCOLLAB_KAFKA_GIT_TOPIC:devcollab.git.events}
   worker:
     outbox:
       enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:false}

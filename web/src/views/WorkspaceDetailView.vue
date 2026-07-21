@@ -110,6 +110,13 @@
           :current-user-role="workspace.currentUserRole"
         />
       </section>
+
+      <section v-if="workspace" class="content-panel">
+        <GitRepositoryPanel
+          :workspace-id="workspace.id"
+          :current-user-role="workspace.currentUserRole"
+        />
+      </section>
     </section>
 
     <DocumentCreateDialog
@@ -178,6 +185,7 @@ import DocumentTree, {
 } from '@/components/document/DocumentTree.vue';
 import WorkspaceMembersPanel from '@/components/workspace/WorkspaceMembersPanel.vue';
 import WorkspaceSearchPanel from '@/components/workspace/WorkspaceSearchPanel.vue';
+import GitRepositoryPanel from '@/components/workspace/GitRepositoryPanel.vue';
 import { readableError } from '@/utils/error';
 
 const route = useRoute();

@@ -1,0 +1,145 @@
+package com.devcollab.knowledgecore.git.api;
+
+import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
+import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
+import com.devcollab.knowledgecore.git.application.IngestGitChangeCommand;
+import com.devcollab.knowledgecore.git.application.RegisterGitRepositoryCommand;
+import com.devcollab.knowledgecore.security.CurrentUser;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+public class GitKnowledgeController {
+
+    private final GitKnowledgeApplicationService service;
+
+    public GitKnowledgeController(GitKnowledgeApplicationService service) {
+        this.service = service;
+    }
+
+    @PostMapping("/api/v1/workspaces/{workspaceId}/git/repositories")
+    @ResponseStatus(HttpStatus.CREATED)
+    public GitRepositoryResponse registerRepository(
+            @PathVariable UUID workspaceId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody RegisterGitRepositoryRequest request
+    ) {
+        return GitRepositoryResponse.from(service.registerRepository(
+                workspaceId, currentUser.userId(),
+                new RegisterGitRepositoryCommand(
+                        request.name(), request.provider(), request.remoteUrl(),
+                        request.defaultBranch()
+                )
+        ));
+    }
+
+    @GetMapping("/api/v1/workspaces/{workspaceId}/git/repositories")
+    public List<GitRepositoryResponse> listRepositories(
+            @PathVariable UUID workspaceId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.listRepositories(workspaceId, currentUser.userId())
+                .stream().map(GitRepositoryResponse::from).toList();
+    }
+
+    @PostMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/changes"
+    )
+    public ResponseEntity<GitChangeResponse> ingestChange(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody IngestGitChangeRequest request
+    ) {
+        var details = service.ingestChange(
+                workspaceId, repositoryId, currentUser.userId(),
+                toCommand(request)
+        );
+        GitChangeResponse response = GitChangeResponse.from(details);
+        return details.duplicate()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/changes"
+    )
+    public List<GitChangeResponse> listChanges(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.listChanges(workspaceId, repositoryId, currentUser.userId())
+                .stream().map(GitChangeResponse::from).toList();
+    }
+
+    @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/git/changes/{changeId}/affected-documents"
+    )
+    public List<AffectedCodeDocumentResponse> affectedDocuments(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID changeId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.findAffectedDocuments(
+                        workspaceId, changeId, currentUser.userId()
+                ).stream().map(AffectedCodeDocumentResponse::from).toList();
+    }
+
+    @PostMapping("/api/v1/documents/{documentId}/code-bindings")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CodeDocumentBindingResponse createBinding(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody CreateCodeBindingRequest request
+    ) {
+        return CodeDocumentBindingResponse.from(service.createBinding(
+                documentId, currentUser.userId(),
+                new CreateCodeBindingCommand(
+                        request.repositoryId(), request.blockId(), request.pathPattern()
+                )
+        ));
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/code-bindings")
+    public List<CodeDocumentBindingResponse> listBindings(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.listBindings(documentId, currentUser.userId())
+                .stream().map(CodeDocumentBindingResponse::from).toList();
+    }
+
+    @DeleteMapping("/api/v1/code-bindings/{bindingId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteBinding(
+            @PathVariable UUID bindingId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        service.deleteBinding(bindingId, currentUser.userId());
+    }
+
+    private IngestGitChangeCommand toCommand(IngestGitChangeRequest request) {
+        return new IngestGitChangeCommand(
+                request.changeType(), request.externalId(), request.title(),
+                request.commitSha(), request.baseRef(), request.headRef(),
+                request.authorName(), request.webUrl(), request.occurredAt(),
+                request.files().stream().map(file -> new IngestGitChangeCommand.FileDiff(
+                        file.path(), file.oldPath(), file.changeType(),
+                        file.additions(), file.deletions(), file.patchExcerpt()
+                )).toList()
+        );
+    }
+}

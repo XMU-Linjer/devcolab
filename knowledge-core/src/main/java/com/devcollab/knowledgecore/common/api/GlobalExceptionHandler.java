@@ -15,6 +15,10 @@ import com.devcollab.knowledgecore.document.application.exception.DocumentVersio
 import com.devcollab.knowledgecore.document.application.exception.CollaborationOperationIdReusedException;
 import com.devcollab.knowledgecore.document.application.exception.ReviewIssueNotFoundException;
 import com.devcollab.knowledgecore.notification.application.exception.NotificationNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.GitChangeNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlreadyExistsException;
+import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceLastAdminException;
@@ -285,6 +289,58 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "NOTIFICATION_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(GitRepositoryNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGitRepositoryNotFound(
+            GitRepositoryNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "GIT_REPOSITORY_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(GitChangeNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGitChangeNotFound(
+            GitChangeNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "GIT_CHANGE_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(GitRepositoryAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleGitRepositoryAlreadyExists(
+            GitRepositoryAlreadyExistsException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.CONFLICT,
+                "GIT_REPOSITORY_EXISTS",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidCodeBindingException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCodeBinding(
+            InvalidCodeBindingException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.BAD_REQUEST,
+                "GIT_BINDING_INVALID",
                 exception.getMessage(),
                 request
         );

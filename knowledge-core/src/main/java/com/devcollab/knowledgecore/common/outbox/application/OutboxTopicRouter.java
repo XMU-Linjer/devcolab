@@ -21,6 +21,7 @@ public class OutboxTopicRouter {
     private final String cacheTopic;
     private final String reviewTopic;
     private final String notificationTopic;
+    private final String gitTopic;
 
     public OutboxTopicRouter(
             @Value("${devcollab.outbox.kafka.document-topic:devcollab.document.events}")
@@ -30,12 +31,15 @@ public class OutboxTopicRouter {
             @Value("${devcollab.outbox.kafka.review-topic:devcollab.review.events}")
             String reviewTopic,
             @Value("${devcollab.outbox.kafka.notification-topic:devcollab.notification.events}")
-            String notificationTopic
+            String notificationTopic,
+            @Value("${devcollab.outbox.kafka.git-topic:devcollab.git.events}")
+            String gitTopic
     ) {
         this.documentTopic = documentTopic;
         this.cacheTopic = cacheTopic;
         this.reviewTopic = reviewTopic;
         this.notificationTopic = notificationTopic;
+        this.gitTopic = gitTopic;
     }
 
     public List<String> route(OutboxKafkaMessage event) {
@@ -54,6 +58,7 @@ public class OutboxTopicRouter {
             }
             case OutboxEventTypes.NOTIFICATION_REQUESTED ->
                     topics.add(notificationTopic);
+            case OutboxEventTypes.GIT_CHANGE_SYNCED -> topics.add(gitTopic);
             case "DOCUMENT_REVIEW_SUBMITTED",
                  "DOCUMENT_REVIEW_APPROVED",
                  "DOCUMENT_REVIEW_REJECTED" -> topics.add(reviewTopic);

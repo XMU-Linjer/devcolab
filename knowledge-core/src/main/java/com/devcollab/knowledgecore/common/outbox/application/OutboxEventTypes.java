@@ -32,4 +32,6 @@ public final class OutboxEventTypes {
 
     public static final String NOTIFICATION_REQUESTED =
             "NOTIFICATION_REQUESTED";
+
+    public static final String GIT_CHANGE_SYNCED = "GIT_CHANGE_SYNCED";
 }

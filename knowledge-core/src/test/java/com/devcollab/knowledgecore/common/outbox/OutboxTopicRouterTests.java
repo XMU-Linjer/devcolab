@@ -16,7 +16,8 @@ class OutboxTopicRouterTests {
             "devcollab.document.events",
             "devcollab.cache.events",
             "devcollab.review.events",
-            "devcollab.notification.events"
+            "devcollab.notification.events",
+            "devcollab.git.events"
     );
 
     @Test
@@ -59,6 +60,12 @@ class OutboxTopicRouterTests {
     void routesGenericNotificationRequestsToNotificationTopic() {
         assertThat(route(OutboxEventTypes.NOTIFICATION_REQUESTED))
                 .containsExactly("devcollab.notification.events");
+    }
+
+    @Test
+    void routesGitChangesToGitTopic() {
+        assertThat(route(OutboxEventTypes.GIT_CHANGE_SYNCED))
+                .containsExactly("devcollab.git.events");
     }
 
     private java.util.List<String> route(String eventType) {
