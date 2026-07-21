@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -143,6 +144,67 @@ class GitKnowledgeIntegrationTests {
                                 """.formatted(repositoryId, foreignBlock)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("GIT_BINDING_INVALID"));
+    }
+
+    @Test
+    void shouldQueueGithubSyncExposeFilesAndQueueDeletion() throws Exception {
+        AuthSession admin = register();
+        String workspaceId = createWorkspace(admin.token());
+        MvcResult created = mockMvc.perform(post(
+                        "/api/v1/workspaces/{id}/git/repositories", workspaceId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"Hello World",
+                                  "provider":"GITHUB",
+                                  "remoteUrl":"https://github.com/octocat/Hello-World.git",
+                                  "defaultBranch":"master"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.syncStatus").value("SYNC_PENDING"))
+                .andReturn();
+        String repositoryId = responseJson(created).get("id").asText();
+
+        jdbcTemplate.update("""
+                INSERT INTO git_repository_files
+                    (id, repository_id, path, blob_sha, size_bytes, language)
+                VALUES (?, ?, 'README', '0123456789abcdef', 42, 'Markdown')
+                """, UUID.randomUUID(), UUID.fromString(repositoryId));
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/files",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].path").value("README"));
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/sync",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token())))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.syncStatus").value("SYNC_PENDING"));
+
+        mockMvc.perform(delete(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token())))
+                .andExpect(status().isNoContent());
+
+        Integer syncEvents = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM outbox_events
+                 WHERE aggregate_id = ?
+                   AND event_type = 'GIT_REPOSITORY_SYNC_REQUESTED'
+                """, Integer.class, UUID.fromString(repositoryId));
+        Integer deleteEvents = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM outbox_events
+                 WHERE aggregate_id = ?
+                   AND event_type = 'GIT_REPOSITORY_DELETE_REQUESTED'
+                """, Integer.class, UUID.fromString(repositoryId));
+        assertThat(syncEvents).isEqualTo(2);
+        assertThat(deleteEvents).isEqualTo(1);
     }
 
     private JsonNode ingestChange(String token, String workspaceId, String repositoryId)

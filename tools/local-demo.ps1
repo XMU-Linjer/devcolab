@@ -72,9 +72,20 @@ function Test-ContainerRunning {
 function Resolve-RedisHostPort {
     $configuredPort = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379")
     if (Test-ContainerRunning -ContainerName "devcollab-redis") {
-        $bindings = @(& docker port devcollab-redis "6379/tcp" 2>$null)
+        $previousErrorPreference = $ErrorActionPreference
+        try {
+            # An old container may exist without a published port. docker then
+            # writes a diagnostic to stderr; treat that as a normal miss so the
+            # compose recreation/fallback logic below can continue.
+            $ErrorActionPreference = "SilentlyContinue"
+            $bindings = @(& docker port devcollab-redis "6379/tcp" 2>$null)
+            $dockerPortExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorPreference
+        }
         $binding = $bindings | Select-Object -First 1
-        if ($LASTEXITCODE -eq 0 -and $binding -match ":(?<port>\d+)$") {
+        if ($dockerPortExitCode -eq 0 -and $binding -match ":(?<port>\d+)$") {
             $runningPort = [int] $Matches.port
             [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "$runningPort", "Process")
             if ($runningPort -ne $configuredPort) {
@@ -299,6 +310,11 @@ function Set-SharedServiceEnvironment {
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_URL", "http://localhost:9200", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_ENABLED", "true", "Process")
+    [Environment]::SetEnvironmentVariable(
+        "DEVCOLLAB_GIT_DATA_ROOT",
+        (Join-Path $RepoRoot ".data\git-repositories"),
+        "Process"
+    )
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_WEB_ORIGIN", "http://localhost:$nginxPort", "Process")
 }
 

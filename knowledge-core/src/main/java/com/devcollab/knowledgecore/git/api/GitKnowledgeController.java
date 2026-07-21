@@ -55,6 +55,44 @@ public class GitKnowledgeController {
     }
 
     @PostMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/sync"
+    )
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public GitRepositoryResponse syncRepository(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return GitRepositoryResponse.from(service.requestSync(
+                workspaceId, repositoryId, currentUser.userId()
+        ));
+    }
+
+    @DeleteMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}"
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteRepository(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        service.deleteRepository(workspaceId, repositoryId, currentUser.userId());
+    }
+
+    @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/files"
+    )
+    public List<GitRepositoryFileResponse> listRepositoryFiles(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.listFiles(workspaceId, repositoryId, currentUser.userId())
+                .stream().map(GitRepositoryFileResponse::from).toList();
+    }
+
+    @PostMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/changes"
     )
     public ResponseEntity<GitChangeResponse> ingestChange(

@@ -29,6 +29,7 @@ devcollab:
       cache-topic: ${DEVCOLLAB_KAFKA_CACHE_TOPIC:devcollab.cache.events}
       review-topic: ${DEVCOLLAB_KAFKA_REVIEW_TOPIC:devcollab.review.events}
       notification-topic: ${DEVCOLLAB_KAFKA_NOTIFICATION_TOPIC:devcollab.notification.events}
+      git-topic: ${DEVCOLLAB_KAFKA_GIT_TOPIC:devcollab.git.events}
       dlq-topic: ${DEVCOLLAB_KAFKA_DEAD_LETTER_TOPIC:devcollab.dead-letter}
       retry:
         interval: ${DEVCOLLAB_WORKER_KAFKA_RETRY_INTERVAL:PT1S}
@@ -41,6 +42,15 @@ devcollab:
     snapshot:
       enabled: ${DEVCOLLAB_WORKER_SNAPSHOT_ENABLED:true}
       group-id: ${DEVCOLLAB_WORKER_SNAPSHOT_GROUP_ID:devcollab-snapshot-object-storage}
+    git:
+      enabled: ${DEVCOLLAB_WORKER_GIT_ENABLED:true}
+      group-id: ${DEVCOLLAB_WORKER_GIT_GROUP_ID:devcollab-git-repository}
+      data-root: ${DEVCOLLAB_GIT_DATA_ROOT:${user.dir}/../.data/git-repositories}
+      allowed-hosts: ${DEVCOLLAB_GIT_ALLOWED_HOSTS:github.com}
+      timeout-seconds: ${DEVCOLLAB_GIT_TIMEOUT_SECONDS:60}
+      max-files: ${DEVCOLLAB_GIT_MAX_FILES:20000}
+      max-commits: ${DEVCOLLAB_GIT_MAX_COMMITS:100}
+      max-repository-bytes: ${DEVCOLLAB_GIT_MAX_REPOSITORY_BYTES:524288000}
   consumer-inbox:
     enabled: ${DEVCOLLAB_CONSUMER_INBOX_ENABLED:true}
   search:

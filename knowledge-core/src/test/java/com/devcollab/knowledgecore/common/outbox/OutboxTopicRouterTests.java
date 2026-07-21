@@ -66,6 +66,10 @@ class OutboxTopicRouterTests {
     void routesGitChangesToGitTopic() {
         assertThat(route(OutboxEventTypes.GIT_CHANGE_SYNCED))
                 .containsExactly("devcollab.git.events");
+        assertThat(route(OutboxEventTypes.GIT_REPOSITORY_SYNC_REQUESTED))
+                .containsExactly("devcollab.git.events");
+        assertThat(route(OutboxEventTypes.GIT_REPOSITORY_DELETE_REQUESTED))
+                .containsExactly("devcollab.git.events");
     }
 
     private java.util.List<String> route(String eventType) {

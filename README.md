@@ -117,21 +117,22 @@ npm.cmd run build
 
 ## Git 工程知识边界
 
-当前 Git 模块保存供应商无关的仓库元数据和标准化变更，不保存 Git Token，也不会在 Core 请求线程执行 `git clone`：
+当前 Git 模块已经支持公开 GitHub 仓库的异步克隆、同步、文件树、Git Log 和安全删除，不保存 Git Token，也不会在 Core 请求线程执行 `git clone`：
 
 ```text
-管理员登记仓库
-→ Webhook / Worker / 调试入口提交标准化 Commit 或 Pull Request Diff
-→ Core 以 repository + type + externalId 幂等落库
+管理员登记公开 GitHub 仓库
+→ Core 同事务写仓库元数据与 Outbox
+→ Kafka Git Topic 驱动 Worker 使用 JGit 克隆到 .data
+→ Worker 投影文件树、Commit 和 Diff
 → 成员将文档或 Block 关联到精确路径、目录/** 或 **/*.扩展名
 → 变更查询返回受影响文档与命中路径
 ```
 
-下一阶段由 Worker 增加 GitHub/GitLab Adapter、Webhook 签名校验和漂移 Issue 自动生成；供应商凭证必须通过环境或秘密管理系统提供。
+真实链路可用 `node tools/e2e-git-repository-check.mjs` 验收。下一阶段增加私有仓库凭证托管、Webhook 增量同步和漂移 Issue 自动生成；供应商凭证必须通过环境或秘密管理系统提供。
 
 ## 尚未完成
 
-- GitHub/GitLab Webhook 与增量同步 Adapter；
+- 私有 GitHub/GitLab 凭证、Webhook 与增量同步 Adapter；
 - 自动生成和处理代码—文档漂移 Issue；
 - MCP Context Server；
 - Agent Review 的 RAG、LLM、Evidence Verifier 和评测闭环；

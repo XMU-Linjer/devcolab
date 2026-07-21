@@ -12,6 +12,10 @@ public record GitRepository(
         String defaultBranch,
         UUID createdBy,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        GitRepositoryStatus syncStatus,
+        String lastSyncedCommit,
+        Instant lastSyncedAt,
+        String lastSyncError
 ) {
 }

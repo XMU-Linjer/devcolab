@@ -34,4 +34,8 @@ public final class OutboxEventTypes {
             "NOTIFICATION_REQUESTED";
 
     public static final String GIT_CHANGE_SYNCED = "GIT_CHANGE_SYNCED";
+    public static final String GIT_REPOSITORY_SYNC_REQUESTED =
+            "GIT_REPOSITORY_SYNC_REQUESTED";
+    public static final String GIT_REPOSITORY_DELETE_REQUESTED =
+            "GIT_REPOSITORY_DELETE_REQUESTED";
 }

@@ -12,6 +12,18 @@ export interface GitRepository {
   remoteUrl: string;
   defaultBranch: string;
   createdAt: string;
+  syncStatus: 'REGISTERED' | 'SYNC_PENDING' | 'SYNCING' | 'READY' | 'FAILED';
+  lastSyncedCommit: string | null;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+}
+
+export interface GitRepositoryFile {
+  id: string;
+  path: string;
+  blobSha: string;
+  sizeBytes: number;
+  language: string | null;
 }
 
 export interface GitFileDiff {
@@ -76,6 +88,24 @@ export async function registerGitRepository(
 export async function listGitChanges(workspaceId: string, repositoryId: string) {
   const { data } = await http.get<GitChange[]>(
     `/workspaces/${workspaceId}/git/repositories/${repositoryId}/changes`,
+  );
+  return data;
+}
+
+export async function syncGitRepository(workspaceId: string, repositoryId: string) {
+  const { data } = await http.post<GitRepository>(
+    `/workspaces/${workspaceId}/git/repositories/${repositoryId}/sync`,
+  );
+  return data;
+}
+
+export async function deleteGitRepository(workspaceId: string, repositoryId: string) {
+  await http.delete(`/workspaces/${workspaceId}/git/repositories/${repositoryId}`);
+}
+
+export async function listGitRepositoryFiles(workspaceId: string, repositoryId: string) {
+  const { data } = await http.get<GitRepositoryFile[]>(
+    `/workspaces/${workspaceId}/git/repositories/${repositoryId}/files`,
   );
   return data;
 }

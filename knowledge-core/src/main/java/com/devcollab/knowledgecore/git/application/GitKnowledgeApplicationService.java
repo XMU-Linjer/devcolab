@@ -17,6 +17,8 @@ import com.devcollab.knowledgecore.git.domain.GitChange;
 import com.devcollab.knowledgecore.git.domain.GitFileDiff;
 import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
+import com.devcollab.knowledgecore.git.domain.GitRepositoryFile;
+import com.devcollab.knowledgecore.git.domain.GitRepositoryStatus;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
@@ -72,11 +74,18 @@ public class GitKnowledgeApplicationService {
                     throw new GitRepositoryAlreadyExistsException();
                 });
         Instant now = Instant.now();
-        return gitRepository.saveRepository(new GitRepository(
+        GitRepositoryStatus status = command.provider().name().equals("GITHUB")
+                ? GitRepositoryStatus.SYNC_PENDING
+                : GitRepositoryStatus.REGISTERED;
+        GitRepository saved = gitRepository.saveRepository(new GitRepository(
                 UUID.randomUUID(), workspaceId, command.name().trim(),
                 command.provider(), remoteUrl, command.defaultBranch().trim(),
-                currentUserId, now, now
+                currentUserId, now, now, status, null, null, null
         ));
+        if (status == GitRepositoryStatus.SYNC_PENDING) {
+            publishSyncRequest(saved);
+        }
+        return saved;
     }
 
     public List<GitRepository> listRepositories(
@@ -85,6 +94,60 @@ public class GitKnowledgeApplicationService {
     ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
         return gitRepository.findRepositoriesByWorkspaceId(workspaceId);
+    }
+
+    @Transactional
+    public GitRepository requestSync(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId
+    ) {
+        requireAdmin(workspaceId, currentUserId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
+        if (repository.provider().name().equals("GITHUB")) {
+            Instant now = Instant.now();
+            gitRepository.markRepositorySyncPending(repositoryId, now);
+            publishSyncRequest(repository);
+            return new GitRepository(
+                    repository.id(), repository.workspaceId(), repository.name(),
+                    repository.provider(), repository.remoteUrl(),
+                    repository.defaultBranch(), repository.createdBy(),
+                    repository.createdAt(), now,
+                    GitRepositoryStatus.SYNC_PENDING,
+                    repository.lastSyncedCommit(), repository.lastSyncedAt(), null
+            );
+        }
+        throw new InvalidCodeBindingException("当前自动同步仅支持 GitHub 仓库");
+    }
+
+    @Transactional
+    public void deleteRepository(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId
+    ) {
+        requireAdmin(workspaceId, currentUserId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
+        outboxPublisher.publish(
+                "GIT_REPOSITORY",
+                repository.id(),
+                OutboxEventTypes.GIT_REPOSITORY_DELETE_REQUESTED,
+                Map.of(
+                        "workspaceId", workspaceId.toString(),
+                        "repositoryId", repositoryId.toString()
+                )
+        );
+        gitRepository.deleteRepository(repositoryId);
+    }
+
+    public List<GitRepositoryFile> listFiles(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        requireRepository(repositoryId, workspaceId);
+        return gitRepository.findFilesByRepositoryId(repositoryId);
     }
 
     @Transactional
@@ -308,5 +371,19 @@ public class GitKnowledgeApplicationService {
 
     private String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private void publishSyncRequest(GitRepository repository) {
+        outboxPublisher.publish(
+                "GIT_REPOSITORY",
+                repository.id(),
+                OutboxEventTypes.GIT_REPOSITORY_SYNC_REQUESTED,
+                Map.of(
+                        "workspaceId", repository.workspaceId().toString(),
+                        "repositoryId", repository.id().toString(),
+                        "remoteUrl", repository.remoteUrl(),
+                        "defaultBranch", repository.defaultBranch()
+                )
+        );
     }
 }

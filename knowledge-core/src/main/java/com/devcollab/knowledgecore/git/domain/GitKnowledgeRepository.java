@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.git.domain;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +14,12 @@ public interface GitKnowledgeRepository {
     Optional<GitRepository> findRepositoryByRemoteUrl(UUID workspaceId, String remoteUrl);
 
     List<GitRepository> findRepositoriesByWorkspaceId(UUID workspaceId);
+
+    void markRepositorySyncPending(UUID repositoryId, Instant updatedAt);
+
+    void deleteRepository(UUID repositoryId);
+
+    List<GitRepositoryFile> findFilesByRepositoryId(UUID repositoryId);
 
     GitChange saveChange(GitChange change);
 

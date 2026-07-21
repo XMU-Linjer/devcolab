@@ -8,6 +8,8 @@ import com.devcollab.knowledgecore.git.domain.GitFileDiff;
 import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitProvider;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
+import com.devcollab.knowledgecore.git.domain.GitRepositoryFile;
+import com.devcollab.knowledgecore.git.domain.GitRepositoryStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -30,7 +32,22 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getString("default_branch"),
                     rs.getObject("created_by", UUID.class),
                     rs.getTimestamp("created_at").toInstant(),
-                    rs.getTimestamp("updated_at").toInstant()
+                    rs.getTimestamp("updated_at").toInstant(),
+                    GitRepositoryStatus.valueOf(rs.getString("sync_status")),
+                    rs.getString("last_synced_commit"),
+                    rs.getTimestamp("last_synced_at") == null
+                            ? null : rs.getTimestamp("last_synced_at").toInstant(),
+                    rs.getString("last_sync_error")
+            );
+
+    private static final RowMapper<GitRepositoryFile> FILE_MAPPER =
+            (rs, rowNum) -> new GitRepositoryFile(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("repository_id", UUID.class),
+                    rs.getString("path"),
+                    rs.getString("blob_sha"),
+                    rs.getLong("size_bytes"),
+                    rs.getString("language")
             );
 
     private static final RowMapper<GitChange> CHANGE_MAPPER =
@@ -84,14 +101,20 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
         jdbcTemplate.update("""
                         INSERT INTO git_repositories
                             (id, workspace_id, name, provider, remote_url,
-                             default_branch, created_by, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             default_branch, created_by, created_at, updated_at,
+                             sync_status, last_synced_commit, last_synced_at,
+                             last_sync_error)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 repository.id(), repository.workspaceId(), repository.name(),
                 repository.provider().name(), repository.remoteUrl(),
                 repository.defaultBranch(), repository.createdBy(),
                 Timestamp.from(repository.createdAt()),
-                Timestamp.from(repository.updatedAt()));
+                Timestamp.from(repository.updatedAt()),
+                repository.syncStatus().name(), repository.lastSyncedCommit(),
+                repository.lastSyncedAt() == null ? null
+                        : Timestamp.from(repository.lastSyncedAt()),
+                repository.lastSyncError());
         return repository;
     }
 
@@ -122,6 +145,31 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                         SELECT * FROM git_repositories
                          WHERE workspace_id = ? ORDER BY created_at DESC
                         """, REPOSITORY_MAPPER, workspaceId);
+    }
+
+    @Override
+    public void markRepositorySyncPending(UUID repositoryId, java.time.Instant updatedAt) {
+        jdbcTemplate.update("""
+                UPDATE git_repositories
+                   SET sync_status = 'SYNC_PENDING',
+                       last_sync_error = NULL,
+                       updated_at = ?
+                 WHERE id = ?
+                """, Timestamp.from(updatedAt), repositoryId);
+    }
+
+    @Override
+    public void deleteRepository(UUID repositoryId) {
+        jdbcTemplate.update("DELETE FROM git_repositories WHERE id = ?", repositoryId);
+    }
+
+    @Override
+    public List<GitRepositoryFile> findFilesByRepositoryId(UUID repositoryId) {
+        return jdbcTemplate.query("""
+                SELECT * FROM git_repository_files
+                 WHERE repository_id = ?
+                 ORDER BY path
+                """, FILE_MAPPER, repositoryId);
     }
 
     @Override

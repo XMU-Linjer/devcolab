@@ -76,9 +76,9 @@ devcollab:
   worker:
     outbox:
       enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:false}
-      batch-size: ${DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE:50}
+      batch-size: ${DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE:500}
       max-retry-count: ${DEVCOLLAB_OUTBOX_WORKER_MAX_RETRY_COUNT:3}
-      fixed-delay-ms: ${DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS:5000}
+      fixed-delay-ms: ${DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS:1000}
       initial-delay-ms: ${DEVCOLLAB_OUTBOX_WORKER_INITIAL_DELAY_MS:5000}
   security:
     jwt:

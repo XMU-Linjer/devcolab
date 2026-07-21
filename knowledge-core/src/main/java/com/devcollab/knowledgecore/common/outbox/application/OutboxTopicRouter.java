@@ -58,7 +58,10 @@ public class OutboxTopicRouter {
             }
             case OutboxEventTypes.NOTIFICATION_REQUESTED ->
                     topics.add(notificationTopic);
-            case OutboxEventTypes.GIT_CHANGE_SYNCED -> topics.add(gitTopic);
+            case OutboxEventTypes.GIT_CHANGE_SYNCED,
+                 OutboxEventTypes.GIT_REPOSITORY_SYNC_REQUESTED,
+                 OutboxEventTypes.GIT_REPOSITORY_DELETE_REQUESTED ->
+                    topics.add(gitTopic);
             case "DOCUMENT_REVIEW_SUBMITTED",
                  "DOCUMENT_REVIEW_APPROVED",
                  "DOCUMENT_REVIEW_REJECTED" -> topics.add(reviewTopic);
