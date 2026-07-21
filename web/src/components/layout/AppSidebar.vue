@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar" :class="{ 'is-collapsed': modelValue }">
+  <aside ref="sidebarRef" class="sidebar" :class="{ 'is-collapsed': modelValue }">
     <div class="brand">
       <span class="brand-mark">D</span>
       <span v-if="!modelValue" class="sidebar-label">DevCollab</span>
@@ -72,6 +72,21 @@
       </template>
     </div>
 
+    <div
+      v-if="!modelValue"
+      class="sidebar-resizer"
+      role="separator"
+      aria-label="调整导航栏宽度"
+      aria-orientation="vertical"
+      :aria-valuemin="MIN_SIDEBAR_WIDTH"
+      :aria-valuemax="MAX_SIDEBAR_WIDTH"
+      :aria-valuenow="sidebarWidth"
+      tabindex="0"
+      @pointerdown="startResize"
+      @keydown="resizeWithKeyboard"
+      @dblclick="setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)"
+    />
+
     <button
       class="sidebar-toggle"
       type="button"
@@ -87,6 +102,7 @@
 
 <script setup lang="ts">
 import { DArrowLeft, DArrowRight, Document, House, Plus } from '@element-plus/icons-vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import type { DocumentTreeNode } from '@/api/document';
@@ -120,6 +136,24 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const DEFAULT_SIDEBAR_WIDTH = 252;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
+const SIDEBAR_WIDTH_KEY = 'devcollab.sidebar.width';
+
+const sidebarRef = ref<HTMLElement | null>(null);
+const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH);
+let resizeStartX = 0;
+let resizeStartWidth = DEFAULT_SIDEBAR_WIDTH;
+
+onMounted(() => {
+  const savedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  setSidebarWidth(Number.isFinite(savedWidth) && savedWidth > 0
+    ? savedWidth
+    : DEFAULT_SIDEBAR_WIDTH);
+});
+
+onBeforeUnmount(stopResize);
 
 function toggle() {
   const value = !props.modelValue;
@@ -129,5 +163,46 @@ function toggle() {
 
 function openHome() {
   void router.push(props.workspaceId ? `/workspaces/${props.workspaceId}` : '/workspaces');
+}
+
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  resizeStartX = event.clientX;
+  resizeStartWidth = sidebarWidth.value;
+  document.body.classList.add('is-resizing-sidebar');
+  window.addEventListener('pointermove', handleResize);
+  window.addEventListener('pointerup', stopResize);
+  window.addEventListener('pointercancel', stopResize);
+}
+
+function handleResize(event: PointerEvent) {
+  setSidebarWidth(resizeStartWidth + event.clientX - resizeStartX);
+}
+
+function stopResize() {
+  document.body.classList.remove('is-resizing-sidebar');
+  window.removeEventListener('pointermove', handleResize);
+  window.removeEventListener('pointerup', stopResize);
+  window.removeEventListener('pointercancel', stopResize);
+}
+
+function resizeWithKeyboard(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  event.preventDefault();
+  setSidebarWidth(sidebarWidth.value + (event.key === 'ArrowRight' ? 16 : -16));
+}
+
+function setSidebarWidth(width: number) {
+  const nextWidth = Math.round(Math.min(
+    MAX_SIDEBAR_WIDTH,
+    Math.max(MIN_SIDEBAR_WIDTH, width),
+  ));
+  sidebarWidth.value = nextWidth;
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+  sidebarRef.value?.parentElement?.style.setProperty(
+    '--sidebar-width',
+    `${nextWidth}px`,
+  );
 }
 </script>
