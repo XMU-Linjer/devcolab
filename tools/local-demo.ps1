@@ -12,6 +12,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Net.Http
+Add-Type -AssemblyName System.Net.Http
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $RuntimeDir = Join-Path $RepoRoot "logs\local-demo"
@@ -132,6 +134,46 @@ function Test-TcpPort {
     }
 }
 
+function Test-HttpEndpoint {
+    param(
+        [int] $Port,
+        [int] $TimeoutMilliseconds = 3000
+    )
+
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.UseProxy = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromMilliseconds($TimeoutMilliseconds)
+    try {
+        $response = $client.GetAsync("http://127.0.0.1:$Port/").GetAwaiter().GetResult()
+        return [int] $response.StatusCode -ge 200 -and [int] $response.StatusCode -lt 400
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $client.Dispose()
+        $handler.Dispose()
+    }
+}
+
+function Wait-HttpEndpoint {
+    param(
+        [string] $Name,
+        [int] $Port
+    )
+
+    $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-HttpEndpoint -Port $Port) {
+            Write-Step "$Name HTTP endpoint is healthy on port $Port"
+            return
+        }
+        Start-Sleep -Milliseconds 1000
+    }
+    throw "$Name did not return a successful HTTP response on port $Port within $StartupTimeoutSeconds seconds"
+}
+
 function Wait-TcpPort {
     param(
         [string] $Name,
@@ -208,6 +250,26 @@ function Read-State {
         return @()
     }
     return @(ConvertFrom-Json $raw)
+}
+
+function Test-ManagedStateHealthy {
+    $processes = Read-State
+    if ($processes.Count -ne 3) {
+        return $false
+    }
+    foreach ($entry in $processes) {
+        if (-not (Get-Process -Id ([int] $entry.processId) -ErrorAction SilentlyContinue)) {
+            return $false
+        }
+        if (-not (Test-TcpPort -HostName "localhost" -Port ([int] $entry.port))) {
+            return $false
+        }
+    }
+    $nginxPort = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088")
+    if (-not (Test-HttpEndpoint -Port $nginxPort)) {
+        return $false
+    }
+    return $true
 }
 
 function Start-MavenService {
@@ -325,11 +387,20 @@ function Start-LocalDemo {
     if (-not (Test-Path -LiteralPath $MavenWrapper)) {
         throw "Maven Wrapper not found: $MavenWrapper"
     }
+    Import-DotEnv
     if (Test-Path -LiteralPath $StateFile) {
-        throw "A managed local demo state already exists. Run tools\local-demo.ps1 stop first."
+        if (Test-ManagedStateHealthy) {
+            $entry = "http://localhost:$(Get-EnvOrDefault 'NGINX_HOST_PORT' '8088')"
+            Write-Step "managed services are already running: $entry"
+            if ($VerifyAfterStart) {
+                Invoke-LocalDemoVerification
+            }
+            return
+        }
+        Write-Step "removing stale managed process state from an interrupted startup"
+        Stop-ManagedProcesses
     }
 
-    Import-DotEnv
     Resolve-RedisHostPort
     Set-SharedServiceEnvironment
 
@@ -413,6 +484,7 @@ function Start-LocalDemo {
             Pop-Location
         }
         Wait-TcpPort -Name "Nginx" -Port ([int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088"))
+        Wait-HttpEndpoint -Name "Nginx" -Port ([int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088"))
     }
     catch {
         Write-Step "startup failed; managed process logs are in logs\local-demo"

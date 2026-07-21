@@ -45,7 +45,7 @@
 | 编号 | 文档 | 主题 | 版本 | 版本库状态 |
 |---:|---|---|---|---|
 | 90 | `90-local-outbox-kafka-minio-learning-v0.7.md` | Transactional Outbox、Kafka Worker、MinIO 文档快照及真实排错复盘 | V0.7 | 已由 `.gitignore` 忽略 |
-| 90 | `90-local-architecture-integration-troubleshooting-v0.4.md` | Nginx 统一入口、可观测性、故障演练、跨服务联调、演示编排和真实故障排查 | V0.4 | 已由 `.gitignore` 忽略 |
+| 90 | `90-local-architecture-integration-troubleshooting-v0.5.md` | Windows 一键启动、Nginx 统一入口、状态恢复、演示编排与真实故障排查 | V0.5 | 已由 `.gitignore` 精确忽略 |
 | 90 | `90-local-collaboration-gateway-learning-v0.4.md` | WebSocket 四类可靠操作、documentSequence 游标分页、断线增量补偿与真实排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
 | 90 | `90-local-core-grpc-learning-v0.3.md` | Gateway→Core gRPC 指标、HTTP/gRPC 同语义基准、真实排错与 HTTP Client 删除门槛 | V0.3 | 已由 `.gitignore` 精确忽略 |
 | 91 | `91-local-interview-knowledge-map-v0.15.md` | 当前技术栈、Git 工程知识、启动排错与证据边界总索引 | V0.15 | 已由 `.gitignore` 精确忽略 |

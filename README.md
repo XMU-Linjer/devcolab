@@ -59,6 +59,16 @@ Knowledge Core
 
 ## 本地启动
 
+Windows 下可直接双击根目录的 `start-dev.bat`。脚本会构建前端、启动中间件与 Core/Worker/Gateway、启动 Nginx，并在成功后打开 `http://localhost:8088`。重复双击不会重复启动健康服务；上次异常退出留下的陈旧进程状态会自动清理。
+
+停止脚本管理的服务并保留基础设施容器：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 stop -KeepInfrastructure
+```
+
+以下命令保留用于手动开发和单模块调试。
+
 ### 1. 环境
 
 - Java 21
