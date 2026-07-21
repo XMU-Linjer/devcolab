@@ -14,7 +14,7 @@
 | 08 | `08-devcollab-observability-design-v0.2.md` | 定义本地指标、日志、链路追踪、Grafana 展示、故障演练与验收口径 | V0.2 | 应提交 |
 | 10 | `10-devcollab-structured-block-contract-v0.2.md` | 定义 Tiptap 专用 Node 映射、纯文本投影、Schema 白名单、迁移兼容及跨协议契约 | V0.2 | 应提交 |
 | 11 | `11-devcollab-editor-verification-v0.1.md` | 定义四类 Block 浏览器闭环、版本快照与多 Editor 性能基线 | V0.1 | 应提交 |
-| 12 | `12-devcollab-git-knowledge-design-v0.2.md` | 定义公开 GitHub 克隆、文件/Git Log 投影、本地数据目录及代码路径关联边界 | V0.2 | 应提交 |
+| 12 | `12-devcollab-git-knowledge-design-v0.3.md` | 定义公开仓库同步、Commit 身份、真实 Diff/Patch 投影及代码路径关联边界 | V0.3 | 应提交 |
 
 正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 
@@ -32,7 +32,7 @@
 | 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
 | 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
 | 99 | `99-local-redis-caffeine-architecture-learning-v0.2.md` | Redis 限流与去重、Caffeine 多级缓存、Kafka 跨节点失效及真实验收记录 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 99 | `99-local-git-knowledge-learning-v0.2.md` | Git 克隆、异步投影、数据目录、Outbox 饥饿与 Windows 删除排错 | V0.2 | 已由 `.gitignore` 精确忽略 |
+| 99 | `99-local-git-knowledge-learning-v0.3.md` | Git 身份、真实 Diff/Patch、异步投影及本地排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
 
 每份本地学习文档覆盖一个独立技术主题，按面试 4 维度（技术栈是什么 → 解决了什么问题/带来什么提升 → 业务闭环流程 → 架构设计原因）组织。91 为总索引，收录全部技术栈速查表。
 
@@ -52,6 +52,6 @@
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | Refresh Session、CSRF、Origin 白名单与真实掉线排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、版本快照与性能基线 | V0.7 | 已由 `.gitignore` 精确忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | Router、Axios、Vite/Nginx 代理与会话恢复联调 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 99 | `99-local-git-knowledge-learning-v0.2.md` | 公开仓库同步、文件/Git Log 投影、Outbox Git Topic 与真实排错 | V0.2 | 已由 `.gitignore` 精确忽略 |
+| 99 | `99-local-git-knowledge-learning-v0.3.md` | 公开仓库同步、Author/Committer、真实 Diff/Patch 与排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。

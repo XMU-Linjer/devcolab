@@ -49,33 +49,62 @@ public class GitRepositoryProjectionStore {
     @Transactional
     public void saveCommits(UUID repositoryId, List<GitCommitProjection> commits) {
         for (GitCommitProjection commit : commits) {
-            Integer count = jdbcTemplate.queryForObject("""
-                    SELECT COUNT(*) FROM git_changes
+            List<UUID> existingIds = jdbcTemplate.query("""
+                    SELECT id FROM git_changes
                      WHERE repository_id = ? AND change_type = 'COMMIT'
                        AND external_id = ?
-                    """, Integer.class, repositoryId, commit.commitSha());
-            if (count != null && count > 0) {
-                continue;
+                    """, (rs, rowNum) -> rs.getObject("id", UUID.class),
+                    repositoryId, commit.commitSha());
+            UUID changeId;
+            if (existingIds.isEmpty()) {
+                changeId = UUID.randomUUID();
+                jdbcTemplate.update("""
+                        INSERT INTO git_changes
+                            (id, repository_id, change_type, external_id, title,
+                             commit_sha, author_name, author_email, authored_at,
+                             committer_name, committer_email, parent_commit_sha,
+                             occurred_at, created_at)
+                        VALUES (?, ?, 'COMMIT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, changeId, repositoryId, commit.commitSha(),
+                        commit.title(), commit.commitSha(), commit.authorName(),
+                        commit.authorEmail(), timestamp(commit.authoredAt()),
+                        commit.committerName(), commit.committerEmail(),
+                        commit.parentCommitSha(), Timestamp.from(commit.committedAt()),
+                        Timestamp.from(Instant.now()));
+            } else {
+                changeId = existingIds.getFirst();
+                jdbcTemplate.update("""
+                        UPDATE git_changes
+                           SET title = ?, commit_sha = ?, author_name = ?,
+                               author_email = ?, authored_at = ?,
+                               committer_name = ?, committer_email = ?,
+                               parent_commit_sha = ?, occurred_at = ?
+                         WHERE id = ?
+                        """, commit.title(), commit.commitSha(), commit.authorName(),
+                        commit.authorEmail(), timestamp(commit.authoredAt()),
+                        commit.committerName(), commit.committerEmail(),
+                        commit.parentCommitSha(), Timestamp.from(commit.committedAt()),
+                        changeId);
+                jdbcTemplate.update(
+                        "DELETE FROM git_file_diffs WHERE git_change_id = ?",
+                        changeId
+                );
             }
-            UUID changeId = UUID.randomUUID();
-            jdbcTemplate.update("""
-                    INSERT INTO git_changes
-                        (id, repository_id, change_type, external_id, title,
-                         commit_sha, author_name, occurred_at, created_at)
-                    VALUES (?, ?, 'COMMIT', ?, ?, ?, ?, ?, ?)
-                    """, changeId, repositoryId, commit.commitSha(),
-                    commit.title(), commit.commitSha(), commit.authorName(),
-                    Timestamp.from(commit.occurredAt()), Timestamp.from(Instant.now()));
             for (GitDiffProjection file : commit.files()) {
                 jdbcTemplate.update("""
                         INSERT INTO git_file_diffs
                             (id, git_change_id, path, old_path, change_type,
-                             additions, deletions)
-                        VALUES (?, ?, ?, ?, ?, 0, 0)
+                             additions, deletions, binary_file, patch_excerpt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, UUID.randomUUID(), changeId, file.path(),
-                        file.oldPath(), file.changeType());
+                        file.oldPath(), file.changeType(), file.additions(),
+                        file.deletions(), file.binaryFile(), file.patchExcerpt());
             }
         }
+    }
+
+    private Timestamp timestamp(Instant value) {
+        return value == null ? null : Timestamp.from(value);
     }
 
     public void markReady(UUID repositoryId, String headCommit) {

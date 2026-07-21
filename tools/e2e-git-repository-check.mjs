@@ -46,6 +46,12 @@ async function main() {
   );
   if (files.length === 0) throw new Error('Expected synchronized repository files');
   if (changes.length === 0) throw new Error('Expected synchronized Git log');
+  const identifiedCommit = changes.find(change => change.authorName && change.committerName);
+  if (!identifiedCommit) throw new Error('Expected author and committer identities');
+  const textDiff = changes.flatMap(change => change.files)
+    .find(file => !file.binaryFile && file.patchExcerpt
+      && file.additions + file.deletions > 0);
+  if (!textDiff) throw new Error('Expected real text statistics and line patch');
 
   const repositoryDirectory = resolve(
     dataRoot, workspace.id, repository.id, 'repository',
@@ -53,7 +59,7 @@ async function main() {
   if (!existsSync(repositoryDirectory)) {
     throw new Error(`Clone directory does not exist: ${repositoryDirectory}`);
   }
-  console.log(`[git-repository-e2e] READY head=${ready.lastSyncedCommit} files=${files.length} commits=${changes.length}`);
+  console.log(`[git-repository-e2e] READY head=${ready.lastSyncedCommit} files=${files.length} commits=${changes.length} diff=+${textDiff.additions}/-${textDiff.deletions} author=${identifiedCommit.authorName}`);
 
   await api(
     user.accessToken,

@@ -33,6 +33,7 @@ export interface GitFileDiff {
   changeType: GitFileChangeType;
   additions: number;
   deletions: number;
+  binaryFile: boolean;
   patchExcerpt: string | null;
 }
 
@@ -46,6 +47,11 @@ export interface GitChange {
   baseRef: string | null;
   headRef: string | null;
   authorName: string | null;
+  authorEmail: string | null;
+  authoredAt: string | null;
+  committerName: string | null;
+  committerEmail: string | null;
+  parentCommitSha: string | null;
   webUrl: string | null;
   occurredAt: string;
   duplicate: boolean;
@@ -121,6 +127,11 @@ export async function ingestGitChange(
     baseRef?: string | null;
     headRef?: string | null;
     authorName?: string | null;
+    authorEmail?: string | null;
+    authoredAt?: string | null;
+    committerName?: string | null;
+    committerEmail?: string | null;
+    parentCommitSha?: string | null;
     webUrl?: string | null;
     occurredAt: string;
     files: Array<{
@@ -129,6 +140,7 @@ export async function ingestGitChange(
       changeType: GitFileChangeType;
       additions: number;
       deletions: number;
+      binaryFile?: boolean;
       patchExcerpt?: string | null;
     }>;
   },

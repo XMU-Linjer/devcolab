@@ -61,6 +61,12 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getString("base_ref"),
                     rs.getString("head_ref"),
                     rs.getString("author_name"),
+                    rs.getString("author_email"),
+                    rs.getTimestamp("authored_at") == null
+                            ? null : rs.getTimestamp("authored_at").toInstant(),
+                    rs.getString("committer_name"),
+                    rs.getString("committer_email"),
+                    rs.getString("parent_commit_sha"),
                     rs.getString("web_url"),
                     rs.getTimestamp("occurred_at").toInstant(),
                     rs.getTimestamp("created_at").toInstant()
@@ -75,6 +81,7 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     GitFileChangeType.valueOf(rs.getString("change_type")),
                     rs.getInt("additions"),
                     rs.getInt("deletions"),
+                    rs.getBoolean("binary_file"),
                     rs.getString("patch_excerpt")
             );
 
@@ -177,14 +184,20 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
         jdbcTemplate.update("""
                         INSERT INTO git_changes
                             (id, repository_id, change_type, external_id, title,
-                             commit_sha, base_ref, head_ref, author_name, web_url,
+                             commit_sha, base_ref, head_ref, author_name,
+                             author_email, authored_at, committer_name,
+                             committer_email, parent_commit_sha, web_url,
                              occurred_at, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 change.id(), change.repositoryId(), change.changeType().name(),
                 change.externalId(), change.title(), change.commitSha(),
                 change.baseRef(), change.headRef(), change.authorName(),
-                change.webUrl(), Timestamp.from(change.occurredAt()),
+                change.authorEmail(), change.authoredAt() == null ? null
+                        : Timestamp.from(change.authoredAt()),
+                change.committerName(), change.committerEmail(),
+                change.parentCommitSha(), change.webUrl(),
+                Timestamp.from(change.occurredAt()),
                 Timestamp.from(change.createdAt()));
         return change;
     }
@@ -227,12 +240,12 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
             jdbcTemplate.update("""
                             INSERT INTO git_file_diffs
                                 (id, git_change_id, path, old_path, change_type,
-                                 additions, deletions, patch_excerpt)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                 additions, deletions, binary_file, patch_excerpt)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     diff.id(), diff.gitChangeId(), diff.path(), diff.oldPath(),
                     diff.changeType().name(), diff.additions(), diff.deletions(),
-                    diff.patchExcerpt());
+                    diff.binaryFile(), diff.patchExcerpt());
         }
     }
 

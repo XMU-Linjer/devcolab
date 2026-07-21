@@ -133,12 +133,12 @@ npm.cmd run build
 管理员登记公开 GitHub 仓库
 → Core 同事务写仓库元数据与 Outbox
 → Kafka Git Topic 驱动 Worker 使用 JGit 克隆到 .data
-→ Worker 投影文件树、Commit 和 Diff
+→ Worker 投影文件树、Author/Committer 身份、父 Commit 和真实行级 Diff
 → 成员将文档或 Block 关联到精确路径、目录/** 或 **/*.扩展名
 → 变更查询返回受影响文档与命中路径
 ```
 
-真实链路可用 `node tools/e2e-git-repository-check.mjs` 验收。下一阶段增加私有仓库凭证托管、Webhook 增量同步和漂移 Issue 自动生成；供应商凭证必须通过环境或秘密管理系统提供。
+文本 Diff 提供真实新增/删除行数与受控长度 Patch；二进制变更单独标记，避免伪造 `+0/-0`。真实链路可用 `node tools/e2e-git-repository-check.mjs` 验收。下一阶段增加私有仓库凭证托管、Webhook 增量同步和漂移 Issue 自动生成；供应商凭证必须通过环境或秘密管理系统提供。
 
 ## 尚未完成
 

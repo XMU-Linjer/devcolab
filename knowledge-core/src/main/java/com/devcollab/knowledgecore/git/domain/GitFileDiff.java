@@ -10,6 +10,7 @@ public record GitFileDiff(
         GitFileChangeType changeType,
         int additions,
         int deletions,
+        boolean binaryFile,
         String patchExcerpt
 ) {
 }

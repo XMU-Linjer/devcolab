@@ -85,12 +85,27 @@
                 <strong>{{ change.title }}</strong>
                 <code>{{ change.commitSha.slice(0, 8) }}</code>
               </div>
-              <p>{{ change.authorName || '未知作者' }} · {{ formatTime(change.occurredAt) }}</p>
+              <div class="identity-row">
+                <span>
+                  作者：{{ identity(change.authorName, change.authorEmail) }}
+                  · {{ formatTime(change.authoredAt || change.occurredAt) }}
+                </span>
+                <span v-if="hasDifferentCommitter(change)">
+                  提交者：{{ identity(change.committerName, change.committerEmail) }}
+                  · {{ formatTime(change.occurredAt) }}
+                </span>
+              </div>
               <ul>
-                <li v-for="file in change.files" :key="file.id">
+                <li v-for="file in change.files" :key="file.id" class="diff-row">
                   <span>{{ file.changeType }}</span>
-                  <code>{{ file.path }}</code>
-                  <em>+{{ file.additions }} / -{{ file.deletions }}</em>
+                  <button class="diff-path" type="button" @click="openDiff(change, file)">
+                    <code>{{ file.path }}</code>
+                    <small v-if="file.oldPath">原路径：{{ file.oldPath }}</small>
+                  </button>
+                  <em v-if="file.binaryFile">二进制变更</em>
+                  <em v-else class="line-stats">
+                    <b>+{{ file.additions }}</b> / <i>-{{ file.deletions }}</i>
+                  </em>
                 </li>
               </ul>
             </article>
@@ -144,6 +159,19 @@
         <el-button type="primary" :loading="submitting" @click="handleIngest">登记</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="diffDialog" title="文件变更" width="860px" destroy-on-close>
+      <template v-if="selectedDiff">
+        <div class="diff-dialog-summary">
+          <code>{{ selectedDiff.file.path }}</code>
+          <span v-if="selectedDiff.file.binaryFile">二进制文件无法显示行级 Diff</span>
+          <span v-else>+{{ selectedDiff.file.additions }} / -{{ selectedDiff.file.deletions }}</span>
+          <small>基准：{{ selectedDiff.change.parentCommitSha?.slice(0, 8) || '空目录（首次提交）' }}</small>
+        </div>
+        <pre v-if="selectedDiff.file.patchExcerpt" class="patch-view">{{ selectedDiff.file.patchExcerpt }}</pre>
+        <el-empty v-else :description="selectedDiff.file.binaryFile ? '二进制内容不生成 Patch' : '该文件没有可展示的文本 Patch'" />
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -162,6 +190,7 @@ import {
   type GitChange,
   type GitChangeType,
   type GitFileChangeType,
+  type GitFileDiff,
   type GitProvider,
   type GitRepository,
   type GitRepositoryFile,
@@ -180,6 +209,8 @@ const submitting = ref(false);
 const syncing = ref(false);
 const repositoryDialog = ref(false);
 const changeDialog = ref(false);
+const diffDialog = ref(false);
+const selectedDiff = ref<{ change: GitChange; file: GitFileDiff } | null>(null);
 const contentTab = ref<'files' | 'changes'>('files');
 const activeRepository = computed(() => repositories.value.find(item => item.id === activeRepositoryId.value));
 const repositoryForm = reactive({ name: '', provider: 'GITHUB' as GitProvider, remoteUrl: '', defaultBranch: 'main' });
@@ -288,6 +319,7 @@ async function handleIngest() {
         changeType: changeForm.fileChangeType,
         additions: 0,
         deletions: 0,
+        binaryFile: false,
       }],
     });
     changeDialog.value = false;
@@ -302,6 +334,21 @@ async function handleIngest() {
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function identity(name: string | null, email: string | null) {
+  const safeName = name || '未知';
+  return email ? `${safeName} <${email}>` : safeName;
+}
+
+function hasDifferentCommitter(change: GitChange) {
+  if (!change.committerName && !change.committerEmail) return false;
+  return change.committerName !== change.authorName || change.committerEmail !== change.authorEmail;
+}
+
+function openDiff(change: GitChange, file: GitFileDiff) {
+  selectedDiff.value = { change, file };
+  diffDialog.value = true;
 }
 
 async function handleSync() {
@@ -379,13 +426,23 @@ function buildFileTree(source: GitRepositoryFile[]): FileTreeNode[] {
 .repository-summary { padding: 14px; border: 1px solid var(--border-color); border-radius: 12px; }
 .repository-summary > div, .change-list { display: grid; gap: 10px; }
 .repository-summary strong { word-break: break-all; }
-.repository-summary span, .change-card p { color: var(--text-secondary); font-size: 13px; }
+.repository-summary span, .identity-row { color: var(--text-secondary); font-size: 13px; }
+.identity-row { display: flex; gap: 8px 20px; flex-wrap: wrap; }
 .change-card { padding: 14px; border: 1px solid var(--border-color); border-radius: 12px; }
 .change-title { justify-content: flex-start; }
 .change-card ul { margin: 10px 0 0; padding: 0; list-style: none; }
 .change-card li { display: flex; gap: 10px; padding: 6px 0; font-size: 13px; }
 .change-card li code { flex: 1; overflow-wrap: anywhere; }
 .change-card em { color: var(--text-secondary); font-style: normal; }
+.diff-path { flex: 1; display: grid; gap: 3px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.diff-path:hover code { color: var(--el-color-primary); text-decoration: underline; }
+.diff-path small { color: var(--text-secondary); }
+.line-stats b { color: var(--el-color-success); }
+.line-stats i { color: var(--el-color-danger); font-style: normal; }
+.diff-dialog-summary { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.diff-dialog-summary code { flex: 1; min-width: 260px; overflow-wrap: anywhere; }
+.diff-dialog-summary small { color: var(--text-secondary); }
+.patch-view { max-height: 560px; overflow: auto; margin: 0; padding: 16px; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 12px; line-height: 1.55; white-space: pre; }
 .change-form { margin-top: 16px; }
 .full-width { width: 100%; }
 .repository-tree { max-height: 440px; overflow: auto; }

@@ -4,10 +4,11 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | 生效 |
+| 文档状态 | 已被 V0.3 替代 |
 | 版本 | V0.2 |
 | 日期 | 2026-07-21 |
 | 替代版本 | `12-devcollab-git-knowledge-design-v0.1.md` |
+| 后继版本 | `12-devcollab-git-knowledge-design-v0.3.md` |
 | 适用范围 | Knowledge Core、Worker、Kafka、PostgreSQL、Web、本地数据目录 |
 
 ## 1. 目标与边界
@@ -75,4 +76,3 @@ flowchart LR
 2. 在前端增加文件内容预览、Diff 详情和文档绑定入口。
 3. 由确定性规则建立代码路径与文档的关联，再由 Agent 做项目理解和漂移分析。
 4. 增加仓库级配额、任务取消、浅克隆与大仓库压力测试。
-

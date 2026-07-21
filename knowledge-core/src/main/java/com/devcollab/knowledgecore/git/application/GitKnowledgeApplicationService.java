@@ -179,13 +179,17 @@ public class GitKnowledgeApplicationService {
                 command.externalId().trim(), command.title().trim(),
                 command.commitSha().toLowerCase(Locale.ROOT), trimToNull(command.baseRef()),
                 trimToNull(command.headRef()), trimToNull(command.authorName()),
+                trimToNull(command.authorEmail()), command.authoredAt(),
+                trimToNull(command.committerName()), trimToNull(command.committerEmail()),
+                trimToNull(command.parentCommitSha()),
                 trimToNull(command.webUrl()), command.occurredAt(), now
         ));
         List<GitFileDiff> diffs = command.files().stream()
                 .map(file -> new GitFileDiff(
                         UUID.randomUUID(), change.id(), normalizePath(file.path()),
                         normalizeNullablePath(file.oldPath()), file.changeType(),
-                        file.additions(), file.deletions(), trimToNull(file.patchExcerpt())
+                        file.additions(), file.deletions(), file.binaryFile(),
+                        trimToNull(file.patchExcerpt())
                 ))
                 .toList();
         gitRepository.saveDiffs(diffs);

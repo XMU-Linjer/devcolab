@@ -3,7 +3,10 @@ package com.devcollab.worker.git;
 public record GitDiffProjection(
         String path,
         String oldPath,
-        String changeType
+        String changeType,
+        int additions,
+        int deletions,
+        boolean binaryFile,
+        String patchExcerpt
 ) {
 }
-

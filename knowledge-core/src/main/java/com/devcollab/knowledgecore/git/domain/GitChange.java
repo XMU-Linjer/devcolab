@@ -13,6 +13,11 @@ public record GitChange(
         String baseRef,
         String headRef,
         String authorName,
+        String authorEmail,
+        Instant authoredAt,
+        String committerName,
+        String committerEmail,
+        String parentCommitSha,
         String webUrl,
         Instant occurredAt,
         Instant createdAt

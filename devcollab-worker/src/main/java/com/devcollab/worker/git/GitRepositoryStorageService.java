@@ -7,6 +7,7 @@ import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.patch.FileHeader;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.AbstractTreeIterator;
@@ -17,9 +18,11 @@ import org.eclipse.jgit.util.io.DisabledOutputStream;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,6 +32,8 @@ import java.util.UUID;
 
 @Service
 public class GitRepositoryStorageService {
+
+    private static final int PATCH_EXCERPT_LIMIT = 8_000;
 
     private final GitRepositoryStorageProperties properties;
     private final GitRepositoryProjectionStore store;
@@ -163,7 +168,7 @@ public class GitRepositoryStorageService {
         return List.copyOf(files);
     }
 
-    private List<GitCommitProjection> scanCommits(Git git, Repository repository)
+    List<GitCommitProjection> scanCommits(Git git, Repository repository)
             throws Exception {
         List<GitCommitProjection> commits = new ArrayList<>();
         Iterable<RevCommit> log = git.log()
@@ -180,13 +185,25 @@ public class GitRepositoryStorageService {
                                 commit.getParent(0).getId()
                         ));
                 AbstractTreeIterator current = treeIterator(repository, commit);
-                List<GitDiffProjection> diffs = formatter.scan(previous, current)
-                        .stream().map(this::toProjection).toList();
+                List<GitDiffProjection> diffs = new ArrayList<>();
+                for (DiffEntry entry : formatter.scan(previous, current)) {
+                    diffs.add(toProjection(repository, formatter, entry));
+                }
+                var author = commit.getAuthorIdent();
+                var committer = commit.getCommitterIdent();
                 commits.add(new GitCommitProjection(
                         commit.name(), commit.getShortMessage(),
-                        commit.getAuthorIdent() == null ? null
-                                : commit.getAuthorIdent().getName(),
-                        Instant.ofEpochSecond(commit.getCommitTime()), diffs
+                        author == null ? null : author.getName(),
+                        author == null ? null : author.getEmailAddress(),
+                        author == null ? null : author.getWhenAsInstant(),
+                        committer == null ? null : committer.getName(),
+                        committer == null ? null : committer.getEmailAddress(),
+                        committer == null
+                                ? Instant.ofEpochSecond(commit.getCommitTime())
+                                : committer.getWhenAsInstant(),
+                        commit.getParentCount() == 0
+                                ? null : commit.getParent(0).name(),
+                        diffs
                 ));
             }
         }
@@ -204,21 +221,56 @@ public class GitRepositoryStorageService {
         return parser;
     }
 
-    private GitDiffProjection toProjection(DiffEntry entry) {
+    private GitDiffProjection toProjection(
+            Repository repository,
+            DiffFormatter formatter,
+            DiffEntry entry
+    ) throws IOException {
+        FileHeader header = formatter.toFileHeader(entry);
+        boolean binary = header.getPatchType() == FileHeader.PatchType.BINARY;
+        int additions = 0;
+        int deletions = 0;
+        if (!binary) {
+            for (var edit : header.toEditList()) {
+                additions += edit.getLengthB();
+                deletions += edit.getLengthA();
+            }
+        }
+        String patch = binary ? null : patchExcerpt(repository, entry);
         return switch (entry.getChangeType()) {
             case ADD -> new GitDiffProjection(
-                    entry.getNewPath(), null, "ADDED"
+                    entry.getNewPath(), null, "ADDED",
+                    additions, deletions, binary, patch
             );
             case DELETE -> new GitDiffProjection(
-                    entry.getOldPath(), null, "DELETED"
+                    entry.getOldPath(), null, "DELETED",
+                    additions, deletions, binary, patch
             );
             case RENAME, COPY -> new GitDiffProjection(
-                    entry.getNewPath(), entry.getOldPath(), "RENAMED"
+                    entry.getNewPath(), entry.getOldPath(), "RENAMED",
+                    additions, deletions, binary, patch
             );
             case MODIFY -> new GitDiffProjection(
-                    entry.getNewPath(), null, "MODIFIED"
+                    entry.getNewPath(), null, "MODIFIED",
+                    additions, deletions, binary, patch
             );
         };
+    }
+
+    private String patchExcerpt(Repository repository, DiffEntry entry)
+            throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (DiffFormatter patchFormatter = new DiffFormatter(output)) {
+            patchFormatter.setRepository(repository);
+            patchFormatter.format(entry);
+            patchFormatter.flush();
+        }
+        String patch = output.toString(StandardCharsets.UTF_8);
+        if (patch.isBlank()) {
+            return null;
+        }
+        return patch.length() <= PATCH_EXCERPT_LIMIT
+                ? patch : patch.substring(0, PATCH_EXCERPT_LIMIT);
     }
 
     private void validateRemote(String remoteUrl) {

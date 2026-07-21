@@ -219,7 +219,11 @@ class GitKnowledgeIntegrationTests {
                         .content(changeBody()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.duplicate").value(false))
+                .andExpect(jsonPath("$.authorEmail").value("author@example.com"))
+                .andExpect(jsonPath("$.committerName").value("DevCollab Bot"))
+                .andExpect(jsonPath("$.parentCommitSha").value("abcdef1234567"))
                 .andExpect(jsonPath("$.files[0].changeType").value("MODIFIED"))
+                .andExpect(jsonPath("$.files[0].binaryFile").value(false))
                 .andReturn();
         return responseJson(result);
     }
@@ -233,6 +237,11 @@ class GitKnowledgeIntegrationTests {
                   "commitSha":"0123456789abcdef0123456789abcdef01234567",
                   "headRef":"main",
                   "authorName":"DevCollab Test",
+                  "authorEmail":"author@example.com",
+                  "authoredAt":"2026-07-18T23:59:00Z",
+                  "committerName":"DevCollab Bot",
+                  "committerEmail":"bot@example.com",
+                  "parentCommitSha":"abcdef1234567",
                   "webUrl":"https://example.com/devcollab/commit/001",
                   "occurredAt":"%s",
                   "files":[{
@@ -240,6 +249,7 @@ class GitKnowledgeIntegrationTests {
                     "changeType":"MODIFIED",
                     "additions":8,
                     "deletions":2,
+                    "binaryFile":false,
                     "patchExcerpt":"@@ application service @@"
                   }]
                 }

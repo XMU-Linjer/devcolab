@@ -18,6 +18,11 @@ public record GitChangeResponse(
         String baseRef,
         String headRef,
         String authorName,
+        String authorEmail,
+        Instant authoredAt,
+        String committerName,
+        String committerEmail,
+        String parentCommitSha,
         String webUrl,
         Instant occurredAt,
         boolean duplicate,
@@ -29,6 +34,9 @@ public record GitChangeResponse(
                 change.id(), change.repositoryId(), change.changeType(),
                 change.externalId(), change.title(), change.commitSha(),
                 change.baseRef(), change.headRef(), change.authorName(),
+                change.authorEmail(), change.authoredAt(),
+                change.committerName(), change.committerEmail(),
+                change.parentCommitSha(),
                 change.webUrl(), change.occurredAt(), details.duplicate(),
                 details.files().stream().map(FileDiffResponse::from).toList()
         );
@@ -41,6 +49,7 @@ public record GitChangeResponse(
             GitFileChangeType changeType,
             int additions,
             int deletions,
+            boolean binaryFile,
             String patchExcerpt
     ) {
         static FileDiffResponse from(
@@ -48,7 +57,8 @@ public record GitChangeResponse(
         ) {
             return new FileDiffResponse(
                     diff.id(), diff.path(), diff.oldPath(), diff.changeType(),
-                    diff.additions(), diff.deletions(), diff.patchExcerpt()
+                    diff.additions(), diff.deletions(), diff.binaryFile(),
+                    diff.patchExcerpt()
             );
         }
     }

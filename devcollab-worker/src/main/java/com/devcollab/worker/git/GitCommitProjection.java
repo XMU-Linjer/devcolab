@@ -7,8 +7,12 @@ public record GitCommitProjection(
         String commitSha,
         String title,
         String authorName,
-        Instant occurredAt,
+        String authorEmail,
+        Instant authoredAt,
+        String committerName,
+        String committerEmail,
+        Instant committedAt,
+        String parentCommitSha,
         List<GitDiffProjection> files
 ) {
 }
-

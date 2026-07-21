@@ -173,10 +173,13 @@ public class GitKnowledgeController {
         return new IngestGitChangeCommand(
                 request.changeType(), request.externalId(), request.title(),
                 request.commitSha(), request.baseRef(), request.headRef(),
-                request.authorName(), request.webUrl(), request.occurredAt(),
+                request.authorName(), request.authorEmail(), request.authoredAt(),
+                request.committerName(), request.committerEmail(),
+                request.parentCommitSha(), request.webUrl(), request.occurredAt(),
                 request.files().stream().map(file -> new IngestGitChangeCommand.FileDiff(
                         file.path(), file.oldPath(), file.changeType(),
-                        file.additions(), file.deletions(), file.patchExcerpt()
+                        file.additions(), file.deletions(), file.binaryFile(),
+                        file.patchExcerpt()
                 )).toList()
         );
     }
