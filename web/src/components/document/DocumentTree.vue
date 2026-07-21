@@ -5,14 +5,27 @@
       :key="node.id"
       class="document-tree-row"
       :class="{ 'is-active': node.id === activeDocumentId }"
-      :style="{ paddingLeft: `${12 + node.level * 18}px` }"
+      :style="{ paddingLeft: `${6 + node.level * 14}px` }"
     >
+      <button
+        v-if="node.hasChildren"
+        class="document-tree-expand"
+        type="button"
+        :aria-label="node.expanded ? '收起子文档' : '展开子文档'"
+        @click.stop="toggleExpanded(node.id)"
+      >
+        <ArrowRight :class="{ 'is-expanded': node.expanded }" />
+      </button>
+      <span v-else class="document-tree-expand-placeholder" />
+
       <button
         class="document-tree-item"
         type="button"
+        :title="node.title"
         @click="emit('select', node.id)"
       >
-        <Document class="document-tree-icon" />
+        <Folder v-if="node.hasChildren" class="document-tree-icon" />
+        <Document v-else class="document-tree-icon" />
         <span>{{ node.title }}</span>
       </button>
 
@@ -47,8 +60,8 @@
 </template>
 
 <script setup lang="ts">
-import { Document, MoreFilled } from '@element-plus/icons-vue';
-import { computed } from 'vue';
+import { ArrowRight, Document, Folder, MoreFilled } from '@element-plus/icons-vue';
+import { computed, ref, watch } from 'vue';
 
 import type { DocumentTreeNode } from '@/api/document';
 
@@ -57,6 +70,8 @@ export interface FlatDocumentTreeNode {
   title: string;
   level: number;
   parentDocumentId: string | null;
+  hasChildren?: boolean;
+  expanded?: boolean;
 }
 
 const props = defineProps<{
@@ -73,22 +88,59 @@ const emit = defineEmits<{
   delete: [node: FlatDocumentTreeNode];
 }>();
 
+const expandedIds = ref(new Set<string>());
+
 const flattenedNodes = computed(() => flatten(props.nodes));
+
+watch(
+  () => [props.nodes, props.activeDocumentId] as const,
+  ([nodes, activeDocumentId]) => {
+    if (!activeDocumentId) return;
+    const ancestors = findAncestors(nodes, activeDocumentId);
+    if (ancestors.length === 0) return;
+    expandedIds.value = new Set([...expandedIds.value, ...ancestors]);
+  },
+  { immediate: true, deep: true },
+);
 
 function flatten(
   nodes: DocumentTreeNode[],
   level = 0,
   parentDocumentId: string | null = null,
 ): FlatDocumentTreeNode[] {
-  return nodes.flatMap((node) => [
-    {
+  return nodes.flatMap((node) => {
+    const expanded = expandedIds.value.has(node.id);
+    return [{
       id: node.id,
       title: node.title,
       level,
       parentDocumentId,
+      hasChildren: node.children.length > 0,
+      expanded,
     },
-    ...flatten(node.children, level + 1, node.id),
-  ]);
+    ...(expanded ? flatten(node.children, level + 1, node.id) : []),
+  ];
+  });
+}
+
+function toggleExpanded(documentId: string) {
+  const next = new Set(expandedIds.value);
+  if (next.has(documentId)) next.delete(documentId);
+  else next.add(documentId);
+  expandedIds.value = next;
+}
+
+function findAncestors(
+  nodes: DocumentTreeNode[],
+  targetId: string,
+  ancestors: string[] = [],
+): string[] {
+  for (const node of nodes) {
+    if (node.id === targetId) return ancestors;
+    const result = findAncestors(node.children, targetId, [...ancestors, node.id]);
+    if (result.length > 0) return result;
+  }
+  return [];
 }
 
 function handleCommand(

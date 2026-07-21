@@ -32,22 +32,15 @@
       <section class="document-workspace">
         <aside class="document-sidebar">
           <div class="document-sidebar-header">
-          <div>
-            <h2>文档树</h2>
-            <p class="section-hint">点击文档进入工作台，或右键管理文档结构。</p>
-          </div>
-          <div class="document-tree-actions">
-            <el-button
-              size="small"
-              :loading="importingDocuments"
-              @click="importReadyRepositoryDocuments(currentWorkspaceId(), false)"
-            >
-              导入仓库文档
-            </el-button>
+            <div>
+              <h2>工程文档</h2>
+              <p v-if="importingDocuments" class="document-sync-state">正在同步仓库文档…</p>
+            </div>
+            <div class="document-tree-actions">
             <el-tag v-if="workspace" size="small" effect="light">
               {{ workspace.currentUserRole === 'ADMIN' ? '管理员' : '普通成员' }}
             </el-tag>
-          </div>
+            </div>
           </div>
 
           <el-skeleton v-if="loading" :rows="5" animated />
@@ -69,6 +62,7 @@
           <el-empty
             v-else-if="documentTree.length === 0"
             description="还没有文档"
+            :image-size="64"
           >
             <p v-if="documentImportHint" class="section-hint">
               {{ documentImportHint }}
@@ -245,9 +239,7 @@ async function loadWorkspacePage() {
     ]);
     workspace.value = workspaceData;
     documentTree.value = treeData;
-    if (treeData.length === 0) {
-      await importReadyRepositoryDocuments(workspaceId, true);
-    }
+    await importReadyRepositoryDocuments(workspaceId);
   } catch (error) {
     errorMessage.value = readableError(error, '工作区加载失败');
   } finally {
@@ -257,7 +249,6 @@ async function loadWorkspacePage() {
 
 async function importReadyRepositoryDocuments(
   workspaceId: string | null,
-  silent: boolean,
 ) {
   if (!workspaceId || importingDocuments.value) {
     return;
@@ -269,7 +260,6 @@ async function importReadyRepositoryDocuments(
       .filter((repository) => repository.syncStatus === 'READY');
     if (repositories.length === 0) {
       documentImportHint.value = '同步 Git 仓库后，Markdown 文档会自动进入文档树。';
-      if (!silent) ElMessage.info(documentImportHint.value);
       return;
     }
     const results = await Promise.all(
@@ -287,16 +277,11 @@ async function importReadyRepositoryDocuments(
     );
     if (imported > 0) {
       await reloadDocumentTree(workspaceId);
-      ElMessage.success(`已从仓库导入 ${imported} 篇 Markdown 文档`);
     } else if (unavailable > 0) {
-      documentImportHint.value = '仓库文件尚无可导入内容，请重新同步仓库后再试。';
-      if (!silent) ElMessage.warning(documentImportHint.value);
-    } else if (!silent) {
-      ElMessage.info('仓库文档已经全部导入');
+      documentImportHint.value = '仓库文档将在下次同步完成后自动出现。';
     }
   } catch (error) {
     documentImportHint.value = readableError(error, '仓库文档导入失败');
-    if (!silent) ElMessage.error(documentImportHint.value);
   } finally {
     importingDocuments.value = false;
   }

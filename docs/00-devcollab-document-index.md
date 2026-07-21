@@ -25,7 +25,7 @@
 |---:|---|---|---|---|
 | 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
 | 91 | `91-local-interview-knowledge-map-v0.16.md` | 全栈学习总索引、Java 代码图与当前证据边界 | V0.16 | 已由 `.gitignore` 精确忽略 |
-| 92 | `92-local-frontend-technology-adr-v0.1.md` | 前端选型、知识基线和技术风险记录 | V0.1 | 已由 `.gitignore` 忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.2.md` | 前端选型、工作台布局、文档树交互和真实视觉排错 | V0.2 | 已由 `.gitignore` 精确忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | 登录全链路、JWT、Cookie、Origin 白名单与真实排错 | V0.3 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、保存可访问性与性能基线 | V0.7 | 已由 `.gitignore` 忽略 |

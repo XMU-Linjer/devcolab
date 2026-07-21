@@ -38,7 +38,6 @@
     >
       <DArrowRight v-if="modelValue" />
       <DArrowLeft v-else />
-      <span v-if="!modelValue">收起导航</span>
     </button>
   </aside>
 </template>
