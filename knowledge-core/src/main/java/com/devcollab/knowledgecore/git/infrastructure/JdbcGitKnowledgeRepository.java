@@ -50,7 +50,8 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getString("path"),
                     rs.getString("blob_sha"),
                     rs.getLong("size_bytes"),
-                    rs.getString("language")
+                    rs.getString("language"),
+                    rs.getString("content_text")
             );
 
     private static final RowMapper<CodeSymbol> SYMBOL_MAPPER =

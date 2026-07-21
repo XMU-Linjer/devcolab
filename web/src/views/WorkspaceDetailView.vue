@@ -1,22 +1,10 @@
 <template>
-  <main class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">D</span>
-        <span>DevCollab</span>
-      </div>
-
-      <nav class="nav-list">
-        <button class="nav-item" type="button" @click="router.push('/workspaces')">
-          <House class="nav-icon" />
-          <span>工作区</span>
-        </button>
-        <button class="nav-item is-active" type="button">
-          <Document class="nav-icon" />
-          <span>文档</span>
-        </button>
-      </nav>
-    </aside>
+  <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <AppSidebar
+      v-model="sidebarCollapsed"
+      active="documents"
+      :workspace-id="currentWorkspaceId()"
+    />
 
     <section class="workspace">
       <header class="topbar">
@@ -44,13 +32,22 @@
       <section class="document-workspace">
         <aside class="document-sidebar">
           <div class="document-sidebar-header">
-            <div>
-              <h2>文档树</h2>
-              <p class="section-hint">点击文档进入工作台，或右键管理文档结构。</p>
-            </div>
+          <div>
+            <h2>文档树</h2>
+            <p class="section-hint">点击文档进入工作台，或右键管理文档结构。</p>
+          </div>
+          <div class="document-tree-actions">
+            <el-button
+              size="small"
+              :loading="importingDocuments"
+              @click="importReadyRepositoryDocuments(currentWorkspaceId(), false)"
+            >
+              导入仓库文档
+            </el-button>
             <el-tag v-if="workspace" size="small" effect="light">
               {{ workspace.currentUserRole === 'ADMIN' ? '管理员' : '普通成员' }}
             </el-tag>
+          </div>
           </div>
 
           <el-skeleton v-if="loading" :rows="5" animated />
@@ -73,6 +70,9 @@
             v-else-if="documentTree.length === 0"
             description="还没有文档"
           >
+            <p v-if="documentImportHint" class="section-hint">
+              {{ documentImportHint }}
+            </p>
             <el-button type="primary" :icon="Plus" @click="openCreateRootDialog">
               创建第一篇文档
             </el-button>
@@ -164,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { Back, Document, House, Plus } from '@element-plus/icons-vue';
+import { Back, Document, Plus } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -178,7 +178,12 @@ import {
   type DocumentTreeNode,
 } from '@/api/document';
 import { getWorkspace, type Workspace } from '@/api/workspace';
+import {
+  importGitMarkdownDocuments,
+  listGitRepositories,
+} from '@/api/git';
 import DocumentCreateDialog from '@/components/document/DocumentCreateDialog.vue';
+import AppSidebar from '@/components/layout/AppSidebar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import DocumentTree, {
   type FlatDocumentTreeNode,
@@ -195,6 +200,11 @@ const workspace = ref<Workspace | null>(null);
 const documentTree = ref<DocumentTreeNode[]>([]);
 const loading = ref(false);
 const errorMessage = ref('');
+const sidebarCollapsed = ref(
+  localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
+);
+const importingDocuments = ref(false);
+const documentImportHint = ref('');
 
 const dialogVisible = ref(false);
 const createParentDocument = ref<FlatDocumentTreeNode | null>(null);
@@ -235,10 +245,60 @@ async function loadWorkspacePage() {
     ]);
     workspace.value = workspaceData;
     documentTree.value = treeData;
+    if (treeData.length === 0) {
+      await importReadyRepositoryDocuments(workspaceId, true);
+    }
   } catch (error) {
     errorMessage.value = readableError(error, '工作区加载失败');
   } finally {
     loading.value = false;
+  }
+}
+
+async function importReadyRepositoryDocuments(
+  workspaceId: string | null,
+  silent: boolean,
+) {
+  if (!workspaceId || importingDocuments.value) {
+    return;
+  }
+  importingDocuments.value = true;
+  documentImportHint.value = '';
+  try {
+    const repositories = (await listGitRepositories(workspaceId))
+      .filter((repository) => repository.syncStatus === 'READY');
+    if (repositories.length === 0) {
+      documentImportHint.value = '同步 Git 仓库后，Markdown 文档会自动进入文档树。';
+      if (!silent) ElMessage.info(documentImportHint.value);
+      return;
+    }
+    const results = await Promise.all(
+      repositories.map((repository) =>
+        importGitMarkdownDocuments(workspaceId, repository.id),
+      ),
+    );
+    const imported = results.reduce(
+      (total, result) => total + result.importedDocuments,
+      0,
+    );
+    const unavailable = results.reduce(
+      (total, result) => total + result.unavailableDocuments,
+      0,
+    );
+    if (imported > 0) {
+      await reloadDocumentTree(workspaceId);
+      ElMessage.success(`已从仓库导入 ${imported} 篇 Markdown 文档`);
+    } else if (unavailable > 0) {
+      documentImportHint.value = '仓库文件尚无可导入内容，请重新同步仓库后再试。';
+      if (!silent) ElMessage.warning(documentImportHint.value);
+    } else if (!silent) {
+      ElMessage.info('仓库文档已经全部导入');
+    }
+  } catch (error) {
+    documentImportHint.value = readableError(error, '仓库文档导入失败');
+    if (!silent) ElMessage.error(documentImportHint.value);
+  } finally {
+    importingDocuments.value = false;
   }
 }
 

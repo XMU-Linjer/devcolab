@@ -23,6 +23,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,6 +33,8 @@ import java.util.UUID;
 
 @Service
 public class GitRepositoryStorageService {
+
+    private static final long MAX_MARKDOWN_IMPORT_BYTES = 256 * 1024;
 
     private static final int PATCH_EXCERPT_LIMIT = 8_000;
 
@@ -168,11 +171,25 @@ public class GitRepositoryStorageService {
                 ObjectLoader loader = repository.open(objectId);
                 String path = walk.getPathString();
                 files.add(new GitRepositoryFileProjection(
-                        path, objectId.name(), loader.getSize(), language(path)
+                        path, objectId.name(), loader.getSize(), language(path),
+                        markdownContent(path, loader)
                 ));
             }
         }
         return List.copyOf(files);
+    }
+
+    private String markdownContent(String path, ObjectLoader loader)
+            throws IOException {
+        String normalized = path.toLowerCase(java.util.Locale.ROOT);
+        if (!(normalized.endsWith(".md") || normalized.endsWith(".markdown"))
+                || loader.getSize() > MAX_MARKDOWN_IMPORT_BYTES) {
+            return null;
+        }
+        return new String(
+                loader.getBytes((int) MAX_MARKDOWN_IMPORT_BYTES),
+                StandardCharsets.UTF_8
+        );
     }
 
     List<GitCommitProjection> scanCommits(Git git, Repository repository)

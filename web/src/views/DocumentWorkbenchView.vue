@@ -1,22 +1,10 @@
 <template>
-  <main class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">D</span>
-        <span>DevCollab</span>
-      </div>
-
-      <nav class="nav-list">
-        <button class="nav-item" type="button" @click="router.push('/workspaces')">
-          <House class="nav-icon" />
-          <span>工作区</span>
-        </button>
-        <button class="nav-item is-active" type="button">
-          <DocumentIcon class="nav-icon" />
-          <span>文档工作台</span>
-        </button>
-      </nav>
-    </aside>
+  <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <AppSidebar
+      v-model="sidebarCollapsed"
+      active="documents"
+      :workspace-id="workspaceId"
+    />
 
     <section class="workspace workbench-page">
       <header class="topbar">
@@ -228,7 +216,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Back, Document as DocumentIcon, House } from '@element-plus/icons-vue';
+import { Back } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
@@ -249,6 +237,7 @@ import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import DocumentStatusBar from '@/components/document/DocumentStatusBar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
+import AppSidebar from '@/components/layout/AppSidebar.vue';
 import DocumentTree, {
   type FlatDocumentTreeNode,
 } from '@/components/document/DocumentTree.vue';
@@ -274,6 +263,9 @@ const errorMessage = ref('');
 const busyAction = ref<'submit' | 'approve' | 'reject' | 'deprecate' | null>(null);
 const rightTab = ref<'timeline' | 'issues' | 'versions' | 'collaboration' | 'code'>('timeline');
 const focusBlockId = ref<string | null>(null);
+const sidebarCollapsed = ref(
+  localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
+);
 
 const workspaceId = computed(() => route.params.workspaceId as string);
 const documentId = computed(() => route.params.documentId as string);

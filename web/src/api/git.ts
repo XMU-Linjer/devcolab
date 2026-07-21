@@ -116,6 +116,22 @@ export async function listGitRepositoryFiles(workspaceId: string, repositoryId: 
   return data;
 }
 
+export interface GitMarkdownImportResult {
+  importedDocuments: number;
+  skippedDocuments: number;
+  unavailableDocuments: number;
+}
+
+export async function importGitMarkdownDocuments(
+  workspaceId: string,
+  repositoryId: string,
+) {
+  const { data } = await http.post<GitMarkdownImportResult>(
+    `/workspaces/${workspaceId}/git/repositories/${repositoryId}/documents/import`,
+  );
+  return data;
+}
+
 export async function ingestGitChange(
   workspaceId: string,
   repositoryId: string,

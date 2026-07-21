@@ -8,7 +8,17 @@ public record GitRepositoryFile(
         String path,
         String blobSha,
         long sizeBytes,
-        String language
+        String language,
+        String contentText
 ) {
+    public GitRepositoryFile(
+            UUID id,
+            UUID repositoryId,
+            String path,
+            String blobSha,
+            long sizeBytes,
+            String language
+    ) {
+        this(id, repositoryId, path, blobSha, sizeBytes, language, null);
+    }
 }
-

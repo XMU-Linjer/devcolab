@@ -1,26 +1,6 @@
 <template>
-  <main class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">D</span>
-        <span>DevCollab</span>
-      </div>
-
-      <nav class="nav-list">
-        <button class="nav-item is-active" type="button">
-          <House class="nav-icon" />
-          <span>工作区</span>
-        </button>
-        <button class="nav-item" type="button" disabled>
-          <Document class="nav-icon" />
-          <span>文档</span>
-        </button>
-        <button class="nav-item" type="button" disabled>
-          <Connection class="nav-icon" />
-          <span>协作</span>
-        </button>
-      </nav>
-    </aside>
+  <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <AppSidebar v-model="sidebarCollapsed" active="workspaces" />
 
     <section class="workspace">
       <header class="topbar">
@@ -108,13 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Connection,
-  Document,
-  House,
-  Plus,
-  SwitchButton,
-} from '@element-plus/icons-vue';
+import { Plus, SwitchButton } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -126,6 +100,7 @@ import {
   type WorkspaceRole,
 } from '@/api/workspace';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
+import AppSidebar from '@/components/layout/AppSidebar.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { readableError } from '@/utils/error';
@@ -138,6 +113,9 @@ const loading = ref(false);
 const loggingOut = ref(false);
 const dialogVisible = ref(false);
 const errorMessage = ref('');
+const sidebarCollapsed = ref(
+  localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
+);
 
 onMounted(() => {
   void loadWorkspaces();

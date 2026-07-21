@@ -39,10 +39,12 @@ public class GitRepositoryProjectionStore {
         for (GitRepositoryFileProjection file : files) {
             jdbcTemplate.update("""
                     INSERT INTO git_repository_files
-                        (id, repository_id, path, blob_sha, size_bytes, language)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (id, repository_id, path, blob_sha, size_bytes, language,
+                         content_text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, UUID.randomUUID(), repositoryId, file.path(),
-                    file.blobSha(), file.sizeBytes(), file.language());
+                    file.blobSha(), file.sizeBytes(), file.language(),
+                    file.contentText());
         }
     }
 

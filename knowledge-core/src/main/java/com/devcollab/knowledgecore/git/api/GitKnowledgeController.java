@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.git.api;
 
 import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
+import com.devcollab.knowledgecore.git.application.GitMarkdownImportService;
 import com.devcollab.knowledgecore.git.application.IngestGitChangeCommand;
 import com.devcollab.knowledgecore.git.application.RegisterGitRepositoryCommand;
 import com.devcollab.knowledgecore.security.CurrentUser;
@@ -25,9 +26,29 @@ import java.util.UUID;
 public class GitKnowledgeController {
 
     private final GitKnowledgeApplicationService service;
+    private final GitMarkdownImportService markdownImportService;
 
-    public GitKnowledgeController(GitKnowledgeApplicationService service) {
+    public GitKnowledgeController(
+            GitKnowledgeApplicationService service,
+            GitMarkdownImportService markdownImportService
+    ) {
         this.service = service;
+        this.markdownImportService = markdownImportService;
+    }
+
+    @PostMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/documents/import"
+    )
+    public GitMarkdownImportResponse importMarkdownDocuments(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return GitMarkdownImportResponse.from(
+                markdownImportService.importReadyMarkdown(
+                        workspaceId, repositoryId, currentUser.userId()
+                )
+        );
     }
 
     @PostMapping("/api/v1/workspaces/{workspaceId}/git/repositories")
