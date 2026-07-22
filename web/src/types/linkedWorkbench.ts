@@ -76,6 +76,7 @@ export interface LinkedFixture {
 export interface LinkedFileTreeNode {
   key: string;
   label: string;
+  kind: 'directory' | 'file' | 'unknown';
   children?: LinkedFileTreeNode[];
   file?: GitRepositoryFile;
 }

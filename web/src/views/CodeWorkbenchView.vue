@@ -136,9 +136,10 @@ import NotificationCenter from '@/components/notification/NotificationCenter.vue
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
 import { useLinkedWorkbenchState } from '@/composables/useLinkedWorkbenchState';
 import { buildLinkedWorkbenchFixture } from '@/fixtures/linkedWorkbenchMock';
-import type { LinkedDocumentChoice, LinkedFileTreeNode, LinkActivationSource, WorkbenchMode } from '@/types/linkedWorkbench';
+import type { LinkedDocumentChoice, LinkActivationSource, WorkbenchMode } from '@/types/linkedWorkbench';
 import { readableError } from '@/utils/error';
 import { focusPlan, linkIdForBlock } from '@/utils/linkedWorkbenchInteraction';
+import { buildRepositoryTree } from '@/utils/repositoryTree';
 
 const route = useRoute();
 const router = useRouter();
@@ -169,7 +170,7 @@ const {
 } = state;
 
 const activeRepository = computed(() => repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
-const fileTree = computed(() => buildFileTree(files.value));
+const fileTree = computed(() => buildRepositoryTree(files.value));
 const documentChoices = computed(() => flattenDocumentTree(documentTree.value));
 const latestVersion = computed(() => versions.value.reduce(
   (latest, item) => Math.max(latest, item.versionNo),
@@ -396,20 +397,6 @@ async function refreshSyncState() {
   if ((previous === 'SYNC_PENDING' || previous === 'SYNCING') && current !== previous && current !== 'SYNC_PENDING' && current !== 'SYNCING') {
     await loadRepositoryDetails();
   }
-}
-
-function buildFileTree(source: GitRepositoryFile[]) {
-  const root: LinkedFileTreeNode[] = [];
-  for (const file of source) {
-    let level = root;
-    file.path.split('/').forEach((part, index, parts) => {
-      const key = parts.slice(0, index + 1).join('/');
-      let node = level.find(item => item.key === key);
-      if (!node) { node = { key, label: part, ...(index === parts.length - 1 ? { file } : { children: [] }) }; level.push(node); }
-      if (node.children) level = node.children;
-    });
-  }
-  return root;
 }
 
 function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocumentChoice[] {
