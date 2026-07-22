@@ -146,7 +146,10 @@ async function handleCreateWorkspace(name: string) {
 }
 
 async function openWorkspace(workspaceId: string) {
-  await router.push(`/workspaces/${workspaceId}`);
+  await router.push({
+    name: 'workspace-code',
+    params: { workspaceId },
+  });
 }
 
 async function handleLogout() {

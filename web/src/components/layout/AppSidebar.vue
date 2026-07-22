@@ -20,7 +20,7 @@
         :linked-count="linkedCount"
         :review-count="reviewCount"
         :drift-count="driftCount"
-        @open-workspace="openDocuments"
+        @open-workspace="emit('open-workspace')"
         @open-linked="emit('open-linked')"
         @open-review="emit('open-review')"
         @open-drift="emit('open-drift')"
@@ -183,6 +183,7 @@ const emit = defineEmits<{
   'move-root': [node: FlatDocumentTreeNode];
   delete: [node: FlatDocumentTreeNode];
   'open-linked': [];
+  'open-workspace': [];
   'open-review': [];
   'open-drift': [];
 }>();
@@ -193,9 +194,10 @@ const DEFAULT_SIDEBAR_WIDTH = 280;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 360;
 const SIDEBAR_WIDTH_KEY = 'devcollab.sidebar.width';
-const sidebarVariant = computed(() => route.name === 'code-workbench' && props.workspaceId
-  ? 'LINKED_WORKBENCH'
-  : 'DEFAULT');
+type SidebarVariant = 'DEFAULT' | 'LINKED_WORKBENCH';
+const sidebarVariant = computed<SidebarVariant>(() => route.matched.some(
+  record => record.meta.sidebarVariant === 'LINKED_WORKBENCH',
+) ? 'LINKED_WORKBENCH' : 'DEFAULT');
 const isLinkedWorkbench = computed(() => sidebarVariant.value === 'LINKED_WORKBENCH');
 
 const sidebarRef = ref<HTMLElement | null>(null);

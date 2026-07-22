@@ -8,6 +8,7 @@
       :linked-count="links.length"
       :review-count="pendingReviewCount"
       :drift-count="driftedLinkIds.length"
+      @open-workspace="handleWorkspaceNavigation"
       @open-linked="handleLinkedNavigation"
       @open-review="handleReviewNavigation"
       @open-drift="handleModeChange('DRIFT_REVIEW')"
@@ -87,7 +88,7 @@
       >
         <template #header-actions>
           <NotificationCenter />
-          <el-button size="small" @click="router.push(`/workspaces/${workspaceId}`)">返回工作区</el-button>
+          <el-button size="small" @click="router.push('/workspaces')">返回列表</el-button>
           <el-button
             v-if="workspace.currentUserRole === 'ADMIN' && activeRepository"
             size="small"
@@ -340,6 +341,19 @@ async function handleModeChange(nextMode: WorkbenchMode) {
 async function handleLinkedNavigation() {
   sidebarNavigationActive.value = 'linked';
   await handleModeChange('LINKED');
+}
+
+async function handleWorkspaceNavigation() {
+  sidebarNavigationActive.value = 'linked';
+  state.setMode('LINKED');
+  toggleInspector(false);
+  await router.replace({
+    name: 'workspace-code',
+    params: { workspaceId: workspaceId.value },
+    query: route.query,
+  });
+  await nextTick();
+  focusActiveLink('system');
 }
 
 async function handleReviewNavigation() {

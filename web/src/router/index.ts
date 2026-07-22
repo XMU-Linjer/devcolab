@@ -1,12 +1,10 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import axios from 'axios';
 
 import { csrfHeader, getAccessToken, setAccessToken } from '@/api/http';
 import { useAuthStore } from '@/stores/auth';
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [
+export const appRoutes: RouteRecordRaw[] = [
     {
       path: '/',
       redirect: '/workspaces',
@@ -21,17 +19,23 @@ const router = createRouter({
     },
     {
       path: '/workspaces/:workspaceId',
-      name: 'workspace-detail',
+      name: 'workspace-root',
       meta: {
         requiresAuth: true,
+        sidebarVariant: 'LINKED_WORKBENCH',
       },
-      component: () => import('@/views/WorkspaceDetailView.vue'),
+      redirect: (to) => ({
+        name: 'workspace-code',
+        params: { workspaceId: to.params.workspaceId },
+        query: to.query,
+      }),
     },
     {
       path: '/workspaces/:workspaceId/code',
-      name: 'code-workbench',
+      name: 'workspace-code',
       meta: {
         requiresAuth: true,
+        sidebarVariant: 'LINKED_WORKBENCH',
       },
       component: () => import('@/views/CodeWorkbenchView.vue'),
     },
@@ -59,7 +63,11 @@ const router = createRouter({
       },
       component: () => import('@/views/RegisterView.vue'),
     },
-  ],
+];
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: appRoutes,
 });
 
 router.beforeEach(async (to) => {

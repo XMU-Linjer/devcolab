@@ -157,22 +157,12 @@ async function openNotification(item: NotificationItem) {
   }
   visible.value = false;
 
-  if (item.documentId) {
-    await router.push({
-      name: 'document-workbench',
-      params: {
-        workspaceId: item.workspaceId,
-        documentId: item.documentId,
-      },
-    });
-    return;
-  }
-
   await router.push({
-    name: 'workspace-detail',
+    name: 'workspace-code',
     params: {
       workspaceId: item.workspaceId,
     },
+    query: item.documentId ? { documentId: item.documentId } : undefined,
   });
 }
 

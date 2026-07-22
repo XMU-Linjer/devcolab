@@ -259,7 +259,7 @@ function handleRepositoryChange() {
 function openCodeWorkbench() {
   if (!activeRepositoryId.value) return;
   void router.push({
-    name: 'code-workbench',
+    name: 'workspace-code',
     params: { workspaceId: props.workspaceId },
     query: { repositoryId: activeRepositoryId.value },
   });

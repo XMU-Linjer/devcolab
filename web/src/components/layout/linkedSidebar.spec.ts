@@ -11,8 +11,18 @@ function testRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/workspaces', name: 'workspaces', component: { template: '<div />' } },
-      { path: '/workspaces/:workspaceId', name: 'workspace-detail', component: { template: '<div />' } },
-      { path: '/workspaces/:workspaceId/code', name: 'code-workbench', component: { template: '<div />' } },
+      {
+        path: '/workspaces/:workspaceId',
+        name: 'workspace-root',
+        redirect: to => ({ name: 'workspace-code', params: to.params }),
+        meta: { sidebarVariant: 'LINKED_WORKBENCH' },
+      },
+      {
+        path: '/workspaces/:workspaceId/code',
+        name: 'workspace-code',
+        component: { template: '<div />' },
+        meta: { sidebarVariant: 'LINKED_WORKBENCH' },
+      },
     ],
   });
 }
@@ -20,17 +30,19 @@ function testRouter() {
 describe('linked workbench sidebar', () => {
   it('uses the linked variant only on the linked workbench route', async () => {
     const router = testRouter();
-    await router.push('/workspaces/w1/code');
+    await router.push('/workspaces/w1');
     await router.isReady();
     const wrapper = mount(AppSidebar, {
       props: { modelValue: false, active: 'code', workspaceId: 'w1' },
       global: { plugins: [router] },
     });
     expect(wrapper.get('aside').attributes('data-variant')).toBe('LINKED_WORKBENCH');
+    expect(wrapper.find('nav[aria-label="主导航"]').exists()).toBe(false);
+    expect(wrapper.find('nav[aria-label="工程上下文导航"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('联动对照');
     expect(wrapper.text()).not.toContain('首页');
 
-    await router.push('/workspaces/w1');
+    await router.push('/workspaces');
     await wrapper.vm.$nextTick();
     expect(wrapper.get('aside').attributes('data-variant')).toBe('DEFAULT');
     expect(wrapper.text()).toContain('首页');
@@ -41,9 +53,11 @@ describe('linked workbench sidebar', () => {
       props: { activeItem: 'linked', linkedCount: 3, reviewCount: 2, driftCount: 1 },
     });
     const buttons = wrapper.findAll('button');
+    await buttons[0].trigger('click');
     await buttons[1].trigger('click');
     await buttons[2].trigger('click');
     await buttons[3].trigger('click');
+    expect(wrapper.emitted('open-workspace')).toHaveLength(1);
     expect(wrapper.emitted('open-linked')).toHaveLength(1);
     expect(wrapper.emitted('open-review')).toHaveLength(1);
     expect(wrapper.emitted('open-drift')).toHaveLength(1);
@@ -70,7 +84,9 @@ describe('linked workbench sidebar', () => {
     const wrapper = mount(LinkedRepositoryContext, {
       props: {
         repositories: [], repositoryId: '', fileTree: [], filesCount: 0, selectedFilePath: '',
-        documents: [], selectedDocumentId: '', activeAnchor: anchor,
+        documents: [{
+          id: 'd1', title: '订单 API 设计', depth: 0, version: 4, reviewStatus: 'DRAFT',
+        }], selectedDocumentId: '', activeAnchor: anchor,
         linkedBlockCount: 3, unresolvedIssueCount: 1, recentCommitCount: 4,
       },
       global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true, ElTree: true } },
@@ -79,6 +95,9 @@ describe('linked workbench sidebar', () => {
     expect(wrapper.text()).toContain('关联 Block3');
     expect(wrapper.find('.linked-repository-tree').exists()).toBe(true);
     expect(wrapper.find('.linked-context').attributes('style')).toBeUndefined();
+
+    await wrapper.get('.related-document').trigger('click');
+    expect(wrapper.emitted('select-document')?.[0]).toEqual(['d1']);
 
     await wrapper.setProps({ activeAnchor: null });
     expect(wrapper.text()).toContain('未选择代码符号');
