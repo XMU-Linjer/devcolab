@@ -16,6 +16,7 @@
 | 11 | `11-devcollab-editor-verification-v0.1.md` | 定义四类 Block 浏览器闭环、版本快照与多 Editor 性能基线 | V0.1 | 应提交 |
 | 12 | `12-devcollab-git-knowledge-design-v0.4.md` | 定义公开仓库同步、真实 Diff、Java 符号与确定性代码依赖图投影 | V0.4 | 应提交 |
 | 13 | `13-devcollab-git-markdown-import-design-v0.1.md` | 定义仓库 Markdown 快照、幂等导入文档树及可伸缩工作区导航 | V0.1 | 应提交 |
+| 14 | `14-devcollab-code-document-authoring-design-v0.1.md` | 定义真实代码—文档关系、受控上下文、异步文档提案、Evidence 与人工审阅边界 | V0.1 | Slice 1 已批准实施；Slice 2–7 仍为设计草案 |
 
 ### 设计权威资产
 
