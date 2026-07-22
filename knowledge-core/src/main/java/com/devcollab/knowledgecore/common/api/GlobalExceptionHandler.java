@@ -18,6 +18,7 @@ import com.devcollab.knowledgecore.notification.application.exception.Notificati
 import com.devcollab.knowledgecore.git.application.exception.GitChangeNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlreadyExistsException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.GitRepositoryFileNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
@@ -302,6 +303,19 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "GIT_REPOSITORY_NOT_FOUND",
+                exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(GitRepositoryFileNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGitRepositoryFileNotFound(
+            GitRepositoryFileNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                HttpStatus.NOT_FOUND,
+                "GIT_REPOSITORY_FILE_NOT_FOUND",
                 exception.getMessage(),
                 request
         );

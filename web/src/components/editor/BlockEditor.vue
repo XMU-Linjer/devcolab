@@ -91,7 +91,10 @@
         :busy="busyBlockId === block.id"
         :readonly="readonly"
         :editing-users="editingUsersByBlock(block.id)"
-        :class="{ 'is-focused': focusedBlockId === block.id }"
+        :class="{
+          'is-focused': focusedBlockId === block.id,
+          'is-linked-active': activeBlockId === block.id,
+        }"
         :data-block-id="block.id"
         @save="handleSave"
         @delete="handleDelete"
@@ -99,6 +102,7 @@
         @move-down="handleMove(block, index + 1)"
         @editing-start="emit('editing-start', block.id)"
         @editing-stop="emit('editing-stop', block.id)"
+        @select="emit('select-block', block.id)"
       />
     </div>
   </section>
@@ -129,6 +133,7 @@ import { isConflictError, readableError } from '@/utils/error';
 const props = defineProps<{
   documentId: string;
   focusBlockId?: string | null;
+  activeBlockId?: string | null;
   readonly?: boolean;
   remoteBlock?: DocumentBlock | null;
   editingStates?: EditingState[];
@@ -141,6 +146,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'editing-start': [blockId: string];
   'editing-stop': [blockId: string];
+  'select-block': [blockId: string];
+  'blocks-loaded': [blocks: DocumentBlock[]];
 }>();
 
 const blocks = ref<DocumentBlock[]>([]);
@@ -224,6 +231,15 @@ watch(
 );
 
 watch(
+  () => props.activeBlockId,
+  (blockId) => {
+    if (blockId) void focusBlock(blockId);
+  },
+);
+
+watch(blocks, value => emit('blocks-loaded', [...value]), { deep: true });
+
+watch(
   () => props.remoteBlock,
   (block) => {
     if (block?.documentId === props.documentId) {
@@ -265,6 +281,13 @@ async function focusRequestedBlock() {
       focusedBlockId.value = null;
     }
   }, 2200);
+}
+
+async function focusBlock(blockId: string) {
+  await nextTick();
+  editorRoot.value?.querySelector<HTMLElement>(
+    `[data-block-id="${blockId}"]`,
+  )?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 async function handleCreate(type: DocumentBlockType) {
@@ -372,4 +395,6 @@ function replaceBlock(block: DocumentBlock) {
 function editingUsersByBlock(blockId: string) {
   return (props.editingStates ?? []).filter((state) => state.blockId === blockId);
 }
+
+defineExpose({ focusBlock });
 </script>

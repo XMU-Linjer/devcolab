@@ -17,19 +17,34 @@
           <House class="nav-icon" />
           <span v-if="!modelValue" class="sidebar-label">首页</span>
         </button>
-      </nav>
-
-      <template v-if="workspaceId">
         <button
-          v-if="modelValue"
-          class="nav-item sidebar-document-shortcut"
+          v-if="workspaceId"
+          class="nav-item"
           :class="{ 'is-active': active === 'documents' }"
           type="button"
           title="工程文档"
-          @click="router.push(`/workspaces/${workspaceId}`)"
+          @click="openDocuments"
         >
           <Document class="nav-icon" />
+          <span v-if="!modelValue" class="sidebar-label">文档</span>
         </button>
+        <button
+          v-if="workspaceId"
+          class="nav-item"
+          :class="{ 'is-active': active === 'code' }"
+          type="button"
+          title="代码阅读"
+          @click="openCode"
+        >
+          <Files class="nav-icon" />
+          <span v-if="!modelValue" class="sidebar-label">代码</span>
+        </button>
+      </nav>
+
+      <template v-if="workspaceId && !modelValue">
+        <section v-if="active === 'code'" class="sidebar-document-section sidebar-code-section">
+          <slot name="workspace-panel" />
+        </section>
 
         <section v-else class="sidebar-document-section">
           <div class="sidebar-section-label">
@@ -101,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { DArrowLeft, DArrowRight, Document, House, Plus } from '@element-plus/icons-vue';
+import { DArrowLeft, DArrowRight, Document, Files, House, Plus } from '@element-plus/icons-vue';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -112,7 +127,7 @@ import DocumentTree, {
 
 const props = withDefaults(defineProps<{
   modelValue: boolean;
-  active: 'home' | 'documents';
+  active: 'home' | 'documents' | 'code';
   workspaceId?: string | null;
   documentTree?: DocumentTreeNode[];
   activeDocumentId?: string;
@@ -162,7 +177,19 @@ function toggle() {
 }
 
 function openHome() {
-  void router.push(props.workspaceId ? `/workspaces/${props.workspaceId}` : '/workspaces');
+  void router.push('/workspaces');
+}
+
+function openDocuments() {
+  if (props.workspaceId) {
+    void router.push(`/workspaces/${props.workspaceId}`);
+  }
+}
+
+function openCode() {
+  if (props.workspaceId) {
+    void router.push(`/workspaces/${props.workspaceId}/code`);
+  }
 }
 
 function startResize(event: PointerEvent) {

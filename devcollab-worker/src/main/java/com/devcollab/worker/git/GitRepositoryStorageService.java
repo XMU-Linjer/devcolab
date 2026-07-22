@@ -20,9 +20,11 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,7 +36,7 @@ import java.util.UUID;
 @Service
 public class GitRepositoryStorageService {
 
-    private static final long MAX_MARKDOWN_IMPORT_BYTES = 256 * 1024;
+    private static final long MAX_READABLE_SOURCE_BYTES = 512 * 1024;
 
     private static final int PATCH_EXCERPT_LIMIT = 8_000;
 
@@ -151,7 +153,7 @@ public class GitRepositoryStorageService {
                 .call();
     }
 
-    private List<GitRepositoryFileProjection> scanFiles(Repository repository)
+    List<GitRepositoryFileProjection> scanFiles(Repository repository)
             throws IOException {
         ObjectId treeId = repository.resolve("HEAD^{tree}");
         if (treeId == null) {
@@ -172,24 +174,53 @@ public class GitRepositoryStorageService {
                 String path = walk.getPathString();
                 files.add(new GitRepositoryFileProjection(
                         path, objectId.name(), loader.getSize(), language(path),
-                        markdownContent(path, loader)
+                        readableContent(path, loader)
                 ));
             }
         }
         return List.copyOf(files);
     }
 
-    private String markdownContent(String path, ObjectLoader loader)
+    private String readableContent(String path, ObjectLoader loader)
             throws IOException {
-        String normalized = path.toLowerCase(java.util.Locale.ROOT);
-        if (!(normalized.endsWith(".md") || normalized.endsWith(".markdown"))
-                || loader.getSize() > MAX_MARKDOWN_IMPORT_BYTES) {
+        if (!isReadableText(path)
+                || loader.getSize() > MAX_READABLE_SOURCE_BYTES) {
             return null;
         }
-        return new String(
-                loader.getBytes((int) MAX_MARKDOWN_IMPORT_BYTES),
-                StandardCharsets.UTF_8
-        );
+        byte[] bytes = loader.getBytes((int) MAX_READABLE_SOURCE_BYTES);
+        for (byte value : bytes) {
+            if (value == 0) {
+                return null;
+            }
+        }
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            return null;
+        }
+    }
+
+    private boolean isReadableText(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        return language(path) != null
+                || lower.endsWith(".xml")
+                || lower.endsWith(".json")
+                || lower.endsWith(".properties")
+                || lower.endsWith(".html")
+                || lower.endsWith(".css")
+                || lower.endsWith(".scss")
+                || lower.endsWith(".sh")
+                || lower.endsWith(".ps1")
+                || lower.endsWith(".gradle")
+                || lower.endsWith(".toml")
+                || lower.endsWith(".txt")
+                || lower.endsWith(".proto")
+                || lower.endsWith("dockerfile")
+                || lower.endsWith("makefile");
     }
 
     List<GitCommitProjection> scanCommits(Git git, Repository repository)
@@ -378,7 +409,15 @@ public class GitRepositoryStorageService {
             case "vue" -> "Vue";
             case "sql" -> "SQL";
             case "md" -> "Markdown";
+            case "markdown" -> "Markdown";
             case "yml", "yaml" -> "YAML";
+            case "xml" -> "XML";
+            case "json" -> "JSON";
+            case "html" -> "HTML";
+            case "css", "scss" -> "CSS";
+            case "sh" -> "Shell";
+            case "ps1" -> "PowerShell";
+            case "proto" -> "Protocol Buffers";
             default -> null;
         };
     }

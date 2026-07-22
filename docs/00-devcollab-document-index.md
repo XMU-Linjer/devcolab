@@ -17,6 +17,12 @@
 | 12 | `12-devcollab-git-knowledge-design-v0.4.md` | 定义公开仓库同步、真实 Diff、Java 符号与确定性代码依赖图投影 | V0.4 | 应提交 |
 | 13 | `13-devcollab-git-markdown-import-design-v0.1.md` | 定义仓库 Markdown 快照、幂等导入文档树及可伸缩工作区导航 | V0.1 | 应提交 |
 
+### 设计权威资产
+
+| 目录 | 内容 | 版本库状态 |
+|---|---|---|
+| `design/code-doc-linked-workbench/` | Code ↔ Doc Linked Workspace 的 HTML 原型、设计约束与应用验收截图 | 应提交 |
+
 正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 
 ## 2. 本地学习材料
@@ -25,7 +31,7 @@
 |---:|---|---|---|---|
 | 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
 | 91 | `91-local-interview-knowledge-map-v0.16.md` | 全栈学习总索引、Java 代码图与当前证据边界 | V0.16 | 已由 `.gitignore` 精确忽略 |
-| 92 | `92-local-frontend-technology-adr-v0.4.md` | 前端选型、单导航区、可拖拽宽度和真实视觉排错 | V0.4 | 已由 `.gitignore` 精确忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.5.md` | 前端选型、Code ↔ Doc 联动状态、四种模式与真实视觉验收 | V0.5 | 已由 `.gitignore` 精确忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | 登录全链路、JWT、Cookie、Origin 白名单与真实排错 | V0.3 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、保存可访问性与性能基线 | V0.7 | 已由 `.gitignore` 忽略 |
@@ -33,7 +39,7 @@
 | 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
 | 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
 | 99 | `99-local-redis-caffeine-architecture-learning-v0.2.md` | Redis 限流与去重、Caffeine 多级缓存、Kafka 跨节点失效及真实验收记录 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 99 | `99-local-git-knowledge-learning-v0.5.md` | Git 身份、代码图、Markdown 文档导入及本地排错 | V0.5 | 已由 `.gitignore` 精确忽略 |
+| 99 | `99-local-git-knowledge-learning-v0.10.md` | Git 身份、源码投影、Monaco Tabs 高度链与首次渲染排错 | V0.10 | 已由 `.gitignore` 精确忽略 |
 
 每份本地学习文档覆盖一个独立技术主题，按面试 4 维度（技术栈是什么 → 解决了什么问题/带来什么提升 → 业务闭环流程 → 架构设计原因）组织。91 为总索引，收录全部技术栈速查表。
 
@@ -53,6 +59,7 @@
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | Refresh Session、CSRF、Origin 白名单与真实掉线排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、版本快照与性能基线 | V0.7 | 已由 `.gitignore` 精确忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | Router、Axios、Vite/Nginx 代理与会话恢复联调 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 99 | `99-local-git-knowledge-learning-v0.5.md` | 公开仓库同步、Java AST 代码图、Markdown 文档导入与排错 | V0.5 | 已由 `.gitignore` 精确忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.5.md` | Code ↔ Doc 联动工作台、唯一活动 Link、四模式与浏览器验收 | V0.5 | 已由 `.gitignore` 精确忽略 |
+| 99 | `99-local-git-knowledge-learning-v0.10.md` | 公开仓库同步、Monaco Tabs 高度链、Java AST 代码图与排错 | V0.10 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。

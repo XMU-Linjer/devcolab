@@ -24,6 +24,32 @@ export interface GitRepositoryFile {
   blobSha: string;
   sizeBytes: number;
   language: string | null;
+  readable: boolean;
+}
+
+export interface CodeSymbol {
+  filePath: string;
+  symbolKey: string;
+  language: string;
+  symbolKind: string;
+  qualifiedName: string;
+  simpleName: string;
+  signature: string | null;
+  parentSymbolKey: string | null;
+  startLine: number | null;
+  endLine: number | null;
+}
+
+export interface GitRepositorySource {
+  repositoryId: string;
+  commitSha: string | null;
+  path: string;
+  blobSha: string;
+  sizeBytes: number;
+  language: string | null;
+  readable: boolean;
+  content: string | null;
+  symbols: CodeSymbol[];
 }
 
 export interface GitFileDiff {
@@ -112,6 +138,18 @@ export async function deleteGitRepository(workspaceId: string, repositoryId: str
 export async function listGitRepositoryFiles(workspaceId: string, repositoryId: string) {
   const { data } = await http.get<GitRepositoryFile[]>(
     `/workspaces/${workspaceId}/git/repositories/${repositoryId}/files`,
+  );
+  return data;
+}
+
+export async function getGitRepositorySource(
+  workspaceId: string,
+  repositoryId: string,
+  path: string,
+) {
+  const { data } = await http.get<GitRepositorySource>(
+    `/workspaces/${workspaceId}/git/repositories/${repositoryId}/source`,
+    { params: { path } },
   );
   return data;
 }

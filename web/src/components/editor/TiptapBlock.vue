@@ -5,6 +5,8 @@
       `is-${block.type.toLowerCase()}`,
       { 'is-dirty': dirty, 'has-remote-update': remotePending },
     ]"
+    @click="emit('select', block)"
+    @focusin="emit('select', block)"
   >
     <div class="block-toolbar">
       <div class="block-identity">
@@ -139,6 +141,7 @@ const emit = defineEmits<{
   'move-down': [block: DocumentBlock];
   'editing-start': [block: DocumentBlock];
   'editing-stop': [block: DocumentBlock];
+  select: [block: DocumentBlock];
 }>();
 
 const persistedText = ref(props.block.content.text);

@@ -6,9 +6,19 @@
         <h3>代码仓库与变更</h3>
         <p class="section-hint">仓库元数据由 Core 管理；外部 Webhook/Worker 后续复用同一变更契约。</p>
       </div>
-      <el-button v-if="isAdmin" type="primary" @click="repositoryDialog = true">
-        绑定仓库
-      </el-button>
+      <div class="repository-actions">
+        <el-button
+          v-if="activeRepository"
+          type="primary"
+          plain
+          @click="openCodeWorkbench"
+        >
+          打开代码工作台
+        </el-button>
+        <el-button v-if="isAdmin" type="primary" @click="repositoryDialog = true">
+          绑定仓库
+        </el-button>
+      </div>
     </div>
 
     <el-skeleton v-if="loading" :rows="4" animated />
@@ -54,64 +64,48 @@
         :closable="false"
       />
 
-      <el-tabs v-model="contentTab">
-        <el-tab-pane label="文件树" name="files">
-          <el-skeleton v-if="detailsLoading" :rows="5" animated />
-          <el-empty v-else-if="files.length === 0" description="同步完成后显示真实仓库文件" />
-          <el-tree
-            v-else
-            :data="fileTree"
-            node-key="key"
-            :props="{ label: 'label', children: 'children' }"
-            class="repository-tree"
-          >
-            <template #default="{ data }">
-              <span class="tree-node">
-                <span>{{ data.label }}</span>
-                <small v-if="data.file">{{ data.file.language || 'File' }} · {{ formatBytes(data.file.sizeBytes) }}</small>
+      <section class="repository-log">
+        <div class="repository-log-title">
+          <strong>最近变更</strong>
+          <span>完整代码与文件树请进入代码工作台</span>
+        </div>
+        <el-skeleton v-if="detailsLoading" :rows="3" animated />
+        <el-empty v-else-if="changes.length === 0" description="暂无同步变更" />
+        <div v-else class="change-list">
+          <article v-for="change in changes" :key="change.id" class="change-card">
+            <div class="change-title">
+              <el-tag size="small" :type="change.changeType === 'PULL_REQUEST' ? 'success' : 'info'">
+                {{ change.changeType === 'PULL_REQUEST' ? 'PR' : 'Commit' }}
+              </el-tag>
+              <strong>{{ change.title }}</strong>
+              <code>{{ change.commitSha.slice(0, 8) }}</code>
+            </div>
+            <div class="identity-row">
+              <span>
+                作者：{{ identity(change.authorName, change.authorEmail) }}
+                · {{ formatTime(change.authoredAt || change.occurredAt) }}
               </span>
-            </template>
-          </el-tree>
-        </el-tab-pane>
-        <el-tab-pane label="Git Log" name="changes">
-          <el-skeleton v-if="detailsLoading" :rows="3" animated />
-          <el-empty v-else-if="changes.length === 0" description="暂无同步变更" />
-          <div v-else class="change-list">
-            <article v-for="change in changes" :key="change.id" class="change-card">
-              <div class="change-title">
-                <el-tag size="small" :type="change.changeType === 'PULL_REQUEST' ? 'success' : 'info'">
-                  {{ change.changeType === 'PULL_REQUEST' ? 'PR' : 'Commit' }}
-                </el-tag>
-                <strong>{{ change.title }}</strong>
-                <code>{{ change.commitSha.slice(0, 8) }}</code>
-              </div>
-              <div class="identity-row">
-                <span>
-                  作者：{{ identity(change.authorName, change.authorEmail) }}
-                  · {{ formatTime(change.authoredAt || change.occurredAt) }}
-                </span>
-                <span v-if="hasDifferentCommitter(change)">
-                  提交者：{{ identity(change.committerName, change.committerEmail) }}
-                  · {{ formatTime(change.occurredAt) }}
-                </span>
-              </div>
-              <ul>
-                <li v-for="file in change.files" :key="file.id" class="diff-row">
-                  <span>{{ file.changeType }}</span>
-                  <button class="diff-path" type="button" @click="openDiff(change, file)">
-                    <code>{{ file.path }}</code>
-                    <small v-if="file.oldPath">原路径：{{ file.oldPath }}</small>
-                  </button>
-                  <em v-if="file.binaryFile">二进制变更</em>
-                  <em v-else class="line-stats">
-                    <b>+{{ file.additions }}</b> / <i>-{{ file.deletions }}</i>
-                  </em>
-                </li>
-              </ul>
-            </article>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
+              <span v-if="hasDifferentCommitter(change)">
+                提交者：{{ identity(change.committerName, change.committerEmail) }}
+                · {{ formatTime(change.occurredAt) }}
+              </span>
+            </div>
+            <ul>
+              <li v-for="file in change.files" :key="file.id" class="diff-row">
+                <span>{{ file.changeType }}</span>
+                <button class="diff-path" type="button" @click="openDiff(change, file)">
+                  <code>{{ file.path }}</code>
+                  <small v-if="file.oldPath">原路径：{{ file.oldPath }}</small>
+                </button>
+                <em v-if="file.binaryFile">二进制变更</em>
+                <em v-else class="line-stats">
+                  <b>+{{ file.additions }}</b> / <i>-{{ file.deletions }}</i>
+                </em>
+              </li>
+            </ul>
+          </article>
+        </div>
+      </section>
     </template>
 
     <el-dialog v-model="repositoryDialog" title="绑定 Git 仓库" width="520px" destroy-on-close>
@@ -178,12 +172,12 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import {
   deleteGitRepository,
   ingestGitChange,
   listGitChanges,
-  listGitRepositoryFiles,
   listGitRepositories,
   registerGitRepository,
   syncGitRepository,
@@ -193,15 +187,14 @@ import {
   type GitFileDiff,
   type GitProvider,
   type GitRepository,
-  type GitRepositoryFile,
 } from '@/api/git';
 import { readableError } from '@/utils/error';
 
 const props = defineProps<{ workspaceId: string; currentUserRole: 'ADMIN' | 'MEMBER' }>();
+const router = useRouter();
 const isAdmin = computed(() => props.currentUserRole === 'ADMIN');
 const repositories = ref<GitRepository[]>([]);
 const changes = ref<GitChange[]>([]);
-const files = ref<GitRepositoryFile[]>([]);
 const activeRepositoryId = ref('');
 const loading = ref(false);
 const detailsLoading = ref(false);
@@ -211,7 +204,6 @@ const repositoryDialog = ref(false);
 const changeDialog = ref(false);
 const diffDialog = ref(false);
 const selectedDiff = ref<{ change: GitChange; file: GitFileDiff } | null>(null);
-const contentTab = ref<'files' | 'changes'>('files');
 const activeRepository = computed(() => repositories.value.find(item => item.id === activeRepositoryId.value));
 const repositoryForm = reactive({ name: '', provider: 'GITHUB' as GitProvider, remoteUrl: '', defaultBranch: 'main' });
 const changeForm = reactive({
@@ -232,15 +224,6 @@ const pollTimer = window.setInterval(() => {
 }, 2500);
 onBeforeUnmount(() => window.clearInterval(pollTimer));
 
-interface FileTreeNode {
-  key: string;
-  label: string;
-  children?: FileTreeNode[];
-  file?: GitRepositoryFile;
-}
-
-const fileTree = computed(() => buildFileTree(files.value));
-
 async function loadRepositories(showLoading = true) {
   if (showLoading) loading.value = true;
   try {
@@ -257,15 +240,11 @@ async function loadRepositories(showLoading = true) {
 async function loadDetails() {
   if (!activeRepositoryId.value) {
     changes.value = [];
-    files.value = [];
     return;
   }
   detailsLoading.value = true;
   try {
-    [changes.value, files.value] = await Promise.all([
-      listGitChanges(props.workspaceId, activeRepositoryId.value),
-      listGitRepositoryFiles(props.workspaceId, activeRepositoryId.value),
-    ]);
+    changes.value = await listGitChanges(props.workspaceId, activeRepositoryId.value);
   } catch (error) {
     ElMessage.error(readableError(error, 'Git 变更加载失败'));
   } finally {
@@ -275,6 +254,15 @@ async function loadDetails() {
 
 function handleRepositoryChange() {
   void loadDetails();
+}
+
+function openCodeWorkbench() {
+  if (!activeRepositoryId.value) return;
+  void router.push({
+    name: 'code-workbench',
+    params: { workspaceId: props.workspaceId },
+    query: { repositoryId: activeRepositoryId.value },
+  });
 }
 
 async function handleRegister() {
@@ -289,7 +277,6 @@ async function handleRegister() {
     activeRepositoryId.value = repository.id;
     repositoryDialog.value = false;
     changes.value = [];
-    files.value = [];
     ElMessage.success('Git 仓库已绑定');
   } catch (error) {
     ElMessage.error(readableError(error, 'Git 仓库绑定失败'));
@@ -394,29 +381,6 @@ function statusType(status: GitRepository['syncStatus']) {
   return 'info';
 }
 
-function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function buildFileTree(source: GitRepositoryFile[]): FileTreeNode[] {
-  const root: FileTreeNode[] = [];
-  for (const file of source) {
-    let level = root;
-    const parts = file.path.split('/');
-    parts.forEach((part, index) => {
-      const key = parts.slice(0, index + 1).join('/');
-      let node = level.find(item => item.key === key);
-      if (!node) {
-        node = { key, label: part, ...(index === parts.length - 1 ? { file } : { children: [] }) };
-        level.push(node);
-      }
-      if (node.children) level = node.children;
-    });
-  }
-  return root;
-}
 </script>
 
 <style scoped>
@@ -445,7 +409,7 @@ function buildFileTree(source: GitRepositoryFile[]): FileTreeNode[] {
 .patch-view { max-height: 560px; overflow: auto; margin: 0; padding: 16px; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 12px; line-height: 1.55; white-space: pre; }
 .change-form { margin-top: 16px; }
 .full-width { width: 100%; }
-.repository-tree { max-height: 440px; overflow: auto; }
-.tree-node { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 16px; }
-.tree-node small { color: var(--text-secondary); }
+.repository-log { display: grid; gap: 14px; padding-top: 4px; }
+.repository-log-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.repository-log-title span { color: var(--text-secondary); font-size: 12px; }
 </style>

@@ -11,6 +11,7 @@ import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import com.devcollab.knowledgecore.git.application.exception.GitChangeNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlreadyExistsException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.GitRepositoryFileNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.GitChange;
@@ -148,6 +149,29 @@ public class GitKnowledgeApplicationService {
         workspaceService.requireMembership(workspaceId, currentUserId);
         requireRepository(repositoryId, workspaceId);
         return gitRepository.findFilesByRepositoryId(repositoryId);
+    }
+
+    public GitRepositorySourceDetails getSource(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String filePath
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
+        String normalizedPath = normalizePath(filePath);
+        GitRepositoryFile file = gitRepository.findFileByRepositoryIdAndPath(
+                        repositoryId, normalizedPath
+                )
+                .orElseThrow(GitRepositoryFileNotFoundException::new);
+        return new GitRepositorySourceDetails(
+                repositoryId,
+                repository.lastSyncedCommit(),
+                file,
+                gitRepository.findSymbolsByRepositoryId(
+                        repositoryId, normalizedPath
+                )
+        );
     }
 
     public CodeGraphDetails getCodeGraph(

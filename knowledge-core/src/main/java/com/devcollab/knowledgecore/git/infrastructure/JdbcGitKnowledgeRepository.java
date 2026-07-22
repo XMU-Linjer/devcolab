@@ -219,6 +219,17 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
     }
 
     @Override
+    public Optional<GitRepositoryFile> findFileByRepositoryIdAndPath(
+            UUID repositoryId,
+            String path
+    ) {
+        return jdbcTemplate.query("""
+                SELECT * FROM git_repository_files
+                 WHERE repository_id = ? AND path = ?
+                """, FILE_MAPPER, repositoryId, path).stream().findFirst();
+    }
+
+    @Override
     public List<CodeSymbol> findSymbolsByRepositoryId(
             UUID repositoryId,
             String filePath

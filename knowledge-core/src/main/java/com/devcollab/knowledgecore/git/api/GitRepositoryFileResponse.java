@@ -9,12 +9,13 @@ public record GitRepositoryFileResponse(
         String path,
         String blobSha,
         long sizeBytes,
-        String language
+        String language,
+        boolean readable
 ) {
     public static GitRepositoryFileResponse from(GitRepositoryFile file) {
         return new GitRepositoryFileResponse(
                 file.id(), file.path(), file.blobSha(),
-                file.sizeBytes(), file.language()
+                file.sizeBytes(), file.language(), file.contentText() != null
         );
     }
 }

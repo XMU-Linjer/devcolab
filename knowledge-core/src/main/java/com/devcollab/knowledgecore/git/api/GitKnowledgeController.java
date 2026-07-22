@@ -115,6 +115,20 @@ public class GitKnowledgeController {
     }
 
     @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source"
+    )
+    public GitRepositorySourceResponse getRepositorySource(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @RequestParam String path
+    ) {
+        return GitRepositorySourceResponse.from(service.getSource(
+                workspaceId, repositoryId, currentUser.userId(), path
+        ));
+    }
+
+    @GetMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/code-graph"
     )
     public CodeGraphResponse getCodeGraph(

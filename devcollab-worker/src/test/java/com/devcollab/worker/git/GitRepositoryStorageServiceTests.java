@@ -166,6 +166,50 @@ class GitRepositoryStorageServiceTests {
         }
     }
 
+    @Test
+    void projectsReadableSourceButSkipsBinaryAndOversizedFiles() throws Exception {
+        GitRepositoryProjectionStore store = mock(GitRepositoryProjectionStore.class);
+        GitRepositoryStorageService service = service(store);
+        Path repositoryDirectory = tempDir.resolve("source-fixture");
+        Files.createDirectories(repositoryDirectory);
+        try (Repository repository = FileRepositoryBuilder.create(
+                repositoryDirectory.resolve(".git").toFile()
+        )) {
+            repository.create();
+            try (Git git = new Git(repository)) {
+                Files.writeString(
+                        repositoryDirectory.resolve("OrderService.java"),
+                        "class OrderService { void createOrder() {} }\n"
+                );
+                Files.write(
+                        repositoryDirectory.resolve("Binary.java"),
+                        new byte[]{'c', 'l', 'a', 's', 's', 0, 'X'}
+                );
+                Files.writeString(
+                        repositoryDirectory.resolve("Huge.java"),
+                        "x".repeat(512 * 1024 + 1)
+                );
+                Files.writeString(repositoryDirectory.resolve("README.md"), "# Read me\n");
+                git.add().addFilepattern(".").call();
+                git.commit().setMessage("source fixture").call();
+
+                Map<String, GitRepositoryFileProjection> projected = service
+                        .scanFiles(repository).stream()
+                        .collect(Collectors.toMap(
+                                GitRepositoryFileProjection::path,
+                                value -> value
+                        ));
+
+                assertThat(projected.get("OrderService.java").contentText())
+                        .contains("createOrder");
+                assertThat(projected.get("README.md").contentText())
+                        .isEqualTo("# Read me\n");
+                assertThat(projected.get("Binary.java").contentText()).isNull();
+                assertThat(projected.get("Huge.java").contentText()).isNull();
+            }
+        }
+    }
+
     private GitRepositoryStorageService service(GitRepositoryProjectionStore store) {
         return new GitRepositoryStorageService(
                 new GitRepositoryStorageProperties(

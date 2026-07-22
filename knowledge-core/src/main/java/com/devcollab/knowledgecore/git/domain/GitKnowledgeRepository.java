@@ -21,6 +21,11 @@ public interface GitKnowledgeRepository {
 
     List<GitRepositoryFile> findFilesByRepositoryId(UUID repositoryId);
 
+    Optional<GitRepositoryFile> findFileByRepositoryIdAndPath(
+            UUID repositoryId,
+            String path
+    );
+
     List<CodeSymbol> findSymbolsByRepositoryId(UUID repositoryId, String filePath);
 
     List<CodeSymbolDependency> findSymbolDependenciesByRepositoryId(

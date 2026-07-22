@@ -140,6 +140,14 @@ class GitKnowledgeIntegrationTests {
         String servicePath = "src/main/java/demo/service/OrderService.java";
 
         jdbcTemplate.update("""
+                INSERT INTO git_repository_files
+                    (id, repository_id, path, blob_sha, size_bytes, language,
+                     content_text)
+                VALUES (?, ?, ?, 'service-blob', 62, 'Java', ?)
+                """, UUID.randomUUID(), repositoryUuid, servicePath,
+                "package demo.service;\nclass OrderService implements OrderPort {}\n");
+
+        jdbcTemplate.update("""
                 INSERT INTO code_symbols
                     (id, repository_id, file_path, symbol_key, language,
                      symbol_kind, qualified_name, simple_name, signature,
@@ -184,8 +192,30 @@ class GitKnowledgeIntegrationTests {
                         .value(apiPath));
 
         mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source",
+                        workspaceId, repositoryId)
+                        .queryParam("path", servicePath)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.path").value(servicePath))
+                .andExpect(jsonPath("$.readable").value(true))
+                .andExpect(jsonPath("$.content").value(
+                        "package demo.service;\nclass OrderService implements OrderPort {}\n"
+                ))
+                .andExpect(jsonPath("$.symbols[0].qualifiedName")
+                        .value("demo.service.OrderService"));
+
+        mockMvc.perform(get(
                         "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/code-graph",
                         workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsider.token())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source",
+                        workspaceId, repositoryId)
+                        .queryParam("path", servicePath)
                         .header(HttpHeaders.AUTHORIZATION, bearer(outsider.token())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
