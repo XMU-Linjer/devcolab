@@ -1,11 +1,40 @@
 <template>
-  <aside ref="sidebarRef" class="sidebar" :class="{ 'is-collapsed': modelValue }">
+  <aside
+    ref="sidebarRef"
+    class="sidebar"
+    :class="{
+      'is-collapsed': modelValue,
+      'is-linked-workbench': isLinkedWorkbench,
+    }"
+    :data-variant="sidebarVariant"
+  >
     <div class="brand">
-      <span class="brand-mark">D</span>
+      <span class="brand-mark">{{ isLinkedWorkbench ? 'DC' : 'D' }}</span>
       <span v-if="!modelValue" class="sidebar-label">DevCollab</span>
     </div>
 
-    <div class="sidebar-content">
+    <template v-if="isLinkedWorkbench">
+      <LinkedWorkspaceNavigation
+        :collapsed="modelValue"
+        :active-item="linkedNavigationActive"
+        :linked-count="linkedCount"
+        :review-count="reviewCount"
+        :drift-count="driftCount"
+        @open-workspace="openDocuments"
+        @open-linked="emit('open-linked')"
+        @open-review="emit('open-review')"
+        @open-drift="emit('open-drift')"
+      />
+      <div v-if="!modelValue" class="linked-context-scroller">
+        <slot name="workspace-panel" />
+      </div>
+      <aside v-if="!modelValue" class="linked-sync-card">
+        <strong>联动同步已开启</strong>
+        <p>点击代码或文档 Block，另一侧会自动定位并高亮对应内容。</p>
+      </aside>
+    </template>
+
+    <div v-else class="sidebar-content">
       <nav class="nav-list" aria-label="主导航">
         <button
           class="nav-item"
@@ -42,11 +71,7 @@
       </nav>
 
       <template v-if="workspaceId && !modelValue">
-        <section v-if="active === 'code'" class="sidebar-document-section sidebar-code-section">
-          <slot name="workspace-panel" />
-        </section>
-
-        <section v-else class="sidebar-document-section">
+        <section class="sidebar-document-section">
           <div class="sidebar-section-label">
             <span>工程文档</span>
             <button
@@ -117,13 +142,14 @@
 
 <script setup lang="ts">
 import { DArrowLeft, DArrowRight, Document, Files, House, Plus } from '@element-plus/icons-vue';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import type { DocumentTreeNode } from '@/api/document';
 import DocumentTree, {
   type FlatDocumentTreeNode,
 } from '@/components/document/DocumentTree.vue';
+import LinkedWorkspaceNavigation from '@/components/layout/LinkedWorkspaceNavigation.vue';
 
 const props = withDefaults(defineProps<{
   modelValue: boolean;
@@ -132,11 +158,19 @@ const props = withDefaults(defineProps<{
   documentTree?: DocumentTreeNode[];
   activeDocumentId?: string;
   manageable?: boolean;
+  linkedNavigationActive?: 'linked' | 'review' | 'drift';
+  linkedCount?: number;
+  reviewCount?: number;
+  driftCount?: number;
 }>(), {
   workspaceId: null,
   documentTree: () => [],
   activeDocumentId: undefined,
   manageable: false,
+  linkedNavigationActive: 'linked',
+  linkedCount: 0,
+  reviewCount: 0,
+  driftCount: 0,
 });
 
 const emit = defineEmits<{
@@ -148,13 +182,21 @@ const emit = defineEmits<{
   move: [node: FlatDocumentTreeNode];
   'move-root': [node: FlatDocumentTreeNode];
   delete: [node: FlatDocumentTreeNode];
+  'open-linked': [];
+  'open-review': [];
+  'open-drift': [];
 }>();
 
+const route = useRoute();
 const router = useRouter();
-const DEFAULT_SIDEBAR_WIDTH = 252;
-const MIN_SIDEBAR_WIDTH = 220;
-const MAX_SIDEBAR_WIDTH = 420;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+const MIN_SIDEBAR_WIDTH = 240;
+const MAX_SIDEBAR_WIDTH = 360;
 const SIDEBAR_WIDTH_KEY = 'devcollab.sidebar.width';
+const sidebarVariant = computed(() => route.name === 'code-workbench' && props.workspaceId
+  ? 'LINKED_WORKBENCH'
+  : 'DEFAULT');
+const isLinkedWorkbench = computed(() => sidebarVariant.value === 'LINKED_WORKBENCH');
 
 const sidebarRef = ref<HTMLElement | null>(null);
 const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH);

@@ -1,6 +1,17 @@
 <template>
   <main class="app-shell linked-page-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
-    <AppSidebar v-model="sidebarCollapsed" active="code" :workspace-id="workspaceId">
+    <AppSidebar
+      v-model="sidebarCollapsed"
+      active="code"
+      :workspace-id="workspaceId"
+      :linked-navigation-active="sidebarNavigationActive"
+      :linked-count="links.length"
+      :review-count="pendingReviewCount"
+      :drift-count="driftedLinkIds.length"
+      @open-linked="handleLinkedNavigation"
+      @open-review="handleReviewNavigation"
+      @open-drift="handleModeChange('DRIFT_REVIEW')"
+    >
       <template #workspace-panel>
         <LinkedRepositoryContext
           :repositories="repositories"
@@ -8,15 +19,17 @@
           :file-tree="fileTree"
           :files-count="files.length"
           :selected-file-path="selectedFilePath"
-          :documents="documentChoices"
+          :documents="relatedDocumentChoices"
           :selected-document-id="selectedDocumentId"
           :active-anchor="activeCodeAnchor"
-          :drift-count="driftedLinkIds.length"
+          :file-link-counts="fileLinkCounts"
+          :linked-block-count="activeLinkedBlockCount"
+          :unresolved-issue-count="activeUnresolvedIssueCount"
+          :recent-commit-count="recentCommitCount"
           :loading="contextLoading"
           @select-repository="handleRepositoryChange"
           @select-file="openSourceByPath"
           @select-document="handleDocumentChange"
-          @open-drift="handleModeChange('DRIFT_REVIEW')"
         />
       </template>
     </AppSidebar>
@@ -105,10 +118,12 @@ import {
 } from '@/api/document';
 import {
   getGitRepositorySource,
+  listGitChanges,
   listGitRepositories,
   listGitRepositoryFiles,
   syncGitRepository,
   type GitRepository,
+  type GitChange,
   type GitRepositoryFile,
   type GitRepositorySource,
 } from '@/api/git';
@@ -130,6 +145,7 @@ const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const workspace = ref<Workspace | null>(null);
 const repositories = ref<GitRepository[]>([]);
 const files = ref<GitRepositoryFile[]>([]);
+const gitChanges = ref<GitChange[]>([]);
 const documentTree = ref<DocumentTreeNode[]>([]);
 const document = ref<DocumentSummary | null>(null);
 const versions = ref<DocumentVersion[]>([]);
@@ -140,6 +156,7 @@ const documentLoading = ref(false);
 const syncing = ref(false);
 const errorMessage = ref('');
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
+const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
 const workbenchShellRef = ref<InstanceType<typeof LinkedWorkbenchShell> | null>(null);
 
 const state = useLinkedWorkbenchState();
@@ -153,6 +170,33 @@ const {
 const activeRepository = computed(() => repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
 const fileTree = computed(() => buildFileTree(files.value));
 const documentChoices = computed(() => flattenDocumentTree(documentTree.value));
+const latestVersion = computed(() => versions.value.reduce(
+  (latest, item) => Math.max(latest, item.versionNo),
+  0,
+));
+const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
+  const selected = documentChoices.value.find(item => item.id === selectedDocumentId.value);
+  if (!selected) return documentChoices.value.slice(0, 3);
+  return [{
+    ...selected,
+    version: latestVersion.value || undefined,
+    reviewStatus: document.value?.reviewStatus,
+  }];
+});
+const pendingReviewCount = computed(() => issues.value.filter(issue => issue.status === 'OPEN').length);
+const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
+  ? { [selectedFilePath.value]: links.value.length }
+  : {});
+const activeLinkedBlockCount = computed(() => activeCodeAnchor.value
+  ? links.value.filter(link => link.codeAnchorId === activeCodeAnchor.value?.id).length
+  : 0);
+const activeUnresolvedIssueCount = computed(() => activeCodeAnchor.value
+  ? issues.value.filter(issue => issue.codeAnchorId === activeCodeAnchor.value?.id
+    && issue.status === 'OPEN').length
+  : 0);
+const recentCommitCount = computed(() => gitChanges.value.filter(change =>
+  change.files.some(file => file.path === selectedFilePath.value || file.oldPath === selectedFilePath.value),
+).length);
 const documentReadonly = computed(() => document.value?.reviewStatus === 'DEPRECATED' || document.value?.reviewStatus === 'SUPERSEDED');
 
 const {
@@ -195,8 +239,11 @@ async function loadWorkbench() {
 }
 
 async function loadRepositoryDetails() {
-  if (!selectedRepositoryId.value) { files.value = []; selectedSource.value = null; return; }
-  files.value = await listGitRepositoryFiles(workspaceId.value, selectedRepositoryId.value);
+  if (!selectedRepositoryId.value) { files.value = []; gitChanges.value = []; selectedSource.value = null; return; }
+  [files.value, gitChanges.value] = await Promise.all([
+    listGitRepositoryFiles(workspaceId.value, selectedRepositoryId.value),
+    listGitChanges(workspaceId.value, selectedRepositoryId.value).catch(() => []),
+  ]);
   const current = files.value.find(file => file.path === selectedFilePath.value && file.readable)
     ?? files.value.find(file => file.readable) ?? files.value[0];
   if (current) await openSource(current);
@@ -284,7 +331,23 @@ function handleBlockSelection(blockId: string) {
 }
 
 async function handleModeChange(nextMode: WorkbenchMode) {
+  sidebarNavigationActive.value = nextMode === 'DRIFT_REVIEW' ? 'drift' : 'linked';
   state.setMode(nextMode);
+  await nextTick();
+  focusActiveLink('system');
+}
+
+async function handleLinkedNavigation() {
+  sidebarNavigationActive.value = 'linked';
+  await handleModeChange('LINKED');
+}
+
+async function handleReviewNavigation() {
+  state.setMode('LINKED');
+  sidebarNavigationActive.value = 'review';
+  toggleInspector(true);
+  const firstPendingIssue = issues.value.find(issue => issue.status === 'OPEN');
+  if (firstPendingIssue) state.activateLink(firstPendingIssue.linkId, 'system');
   await nextTick();
   focusActiveLink('system');
 }

@@ -31,7 +31,7 @@
 |---:|---|---|---|---|
 | 90 | `90-local-search-outbox-es-learning-v0.1.md` | PostgreSQL 搜索、Transactional Outbox、ES 搜索投影、PG vs ES 基准对比 | V0.1 | 已由 `.gitignore` 忽略 |
 | 91 | `91-local-interview-knowledge-map-v0.16.md` | 全栈学习总索引、Java 代码图与当前证据边界 | V0.16 | 已由 `.gitignore` 精确忽略 |
-| 92 | `92-local-frontend-technology-adr-v0.5.md` | 前端选型、Code ↔ Doc 联动状态、四种模式与真实视觉验收 | V0.5 | 已由 `.gitignore` 精确忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.6.md` | Code ↔ Doc 上下文侧栏、路由变体、单一滚动责任与真实视觉验收 | V0.6 | 已由 `.gitignore` 精确忽略 |
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | 登录全链路、JWT、Cookie、Origin 白名单与真实排错 | V0.3 | 已由 `.gitignore` 忽略 |
 | 94 | `94-local-workspace-document-permission-v0.2.md` | 工作空间、成员权限、文档树管理、RBAC 隔离 | V0.2 | 已由 `.gitignore` 忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、保存可访问性与性能基线 | V0.7 | 已由 `.gitignore` 忽略 |
@@ -59,7 +59,7 @@
 | 93 | `93-local-authentication-interview-guide-v0.3.md` | Refresh Session、CSRF、Origin 白名单与真实掉线排错 | V0.3 | 已由 `.gitignore` 精确忽略 |
 | 95 | `95-local-document-block-learning-guide-v0.7.md` | Tiptap 浏览器闭环、Schema 排错、版本快照与性能基线 | V0.7 | 已由 `.gitignore` 精确忽略 |
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | Router、Axios、Vite/Nginx 代理与会话恢复联调 | V0.2 | 已由 `.gitignore` 精确忽略 |
-| 92 | `92-local-frontend-technology-adr-v0.5.md` | Code ↔ Doc 联动工作台、唯一活动 Link、四模式与浏览器验收 | V0.5 | 已由 `.gitignore` 精确忽略 |
+| 92 | `92-local-frontend-technology-adr-v0.6.md` | Code ↔ Doc 上下文侧栏、唯一活动 Link、四模式与浏览器验收 | V0.6 | 已由 `.gitignore` 精确忽略 |
 | 99 | `99-local-git-knowledge-learning-v0.10.md` | 公开仓库同步、Monaco Tabs 高度链、Java AST 代码图与排错 | V0.10 | 已由 `.gitignore` 精确忽略 |
 
 > 说明：较早的本地学习材料保留为历史版本；上表“当前有效本地学习入口修正”中的对应主题新版本优先于旧快照。

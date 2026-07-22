@@ -84,4 +84,6 @@ export interface LinkedDocumentChoice {
   id: string;
   title: string;
   depth: number;
+  version?: number;
+  reviewStatus?: string;
 }
