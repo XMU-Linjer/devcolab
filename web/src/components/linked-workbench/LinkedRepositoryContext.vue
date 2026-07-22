@@ -38,8 +38,11 @@
               :is="data.kind === 'directory' ? (node.expanded ? FolderOpened : Folder) : Document"
               class="repository-node-icon"
             />
-            <span>{{ data.label }}</span>
-            <small v-if="data.file && fileLinkCounts[data.file.path]">
+            <span class="repository-node-label">{{ data.label }}</span>
+            <small
+              v-if="data.file && fileLinkCounts[data.file.path]"
+              class="repository-node-meta"
+            >
               {{ fileLinkCounts[data.file.path] }}
             </small>
           </span>
@@ -184,7 +187,7 @@ watch(
 .linked-context-title { display: flex; align-items: center; justify-content: space-between; color: #667085; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
 .linked-context-title small { color: #98a2b3; }
 .repository-selector { width: 100%; }
-.linked-repository-tree { overflow: visible; background: transparent; scroll-behavior: auto; }
+.linked-repository-tree { overflow: hidden; background: transparent; scroll-behavior: auto; }
 .linked-repository-tree :deep(.el-tree-node__content) { min-width: 0; height: 32px; border-radius: 7px; transition: background-color 60ms linear; }
 .linked-repository-tree :deep(.el-tree-node__content:hover) { background: #f5f7fb; }
 .linked-repository-tree :deep(.el-tree-node:focus-visible > .el-tree-node__content) { outline: 2px solid #84adff; outline-offset: -2px; }
@@ -195,10 +198,10 @@ watch(
 .linked-repository-tree :deep(.el-collapse-transition-leave-active) { transition: none !important; }
 .linked-repository-tree :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content),
 .linked-repository-tree :deep(.el-tree-node.is-current > .el-tree-node__content) { background: #edf2ff; color: #315ee8; font-weight: 700; }
-.linked-tree-node { display: flex; min-width: 0; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
-.linked-tree-node > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.linked-tree-node small { flex: 0 0 auto; color: #98a2b3; font-size: 10px; }
-.repository-node-icon { flex: 0 0 auto; width: 14px; color: #667085; }
+.linked-tree-node { display: flex; min-width: 0; width: auto; flex: 1 1 auto; align-items: center; justify-content: flex-start; gap: 6px; overflow: hidden; }
+.repository-node-icon { display: inline-flex; flex: 0 0 14px; width: 14px; color: #667085; }
+.repository-node-label { min-width: 0; flex: 1 1 auto; margin-left: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.repository-node-meta { flex: 0 0 auto; margin-left: auto; padding-right: 6px; color: #98a2b3; font-size: 10px; }
 .related-documents { gap: 3px; }
 .related-document { display: flex; min-width: 0; align-items: center; gap: 7px; border: 0; border-radius: 7px; padding-block: 8px; padding-right: 9px; background: transparent; color: #475467; text-align: left; cursor: pointer; }
 .related-document span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

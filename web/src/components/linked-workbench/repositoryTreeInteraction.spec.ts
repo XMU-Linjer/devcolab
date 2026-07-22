@@ -5,6 +5,7 @@ import { nextTick } from 'vue';
 import type { GitRepositoryFile } from '@/api/git';
 import { buildRepositoryTree } from '@/utils/repositoryTree';
 import LinkedRepositoryContext from './LinkedRepositoryContext.vue';
+import repositoryContextSource from './LinkedRepositoryContext.vue?raw';
 
 function file(path: string): GitRepositoryFile {
   return {
@@ -105,5 +106,51 @@ describe('repository tree interaction', () => {
 
     expect(wrapper.emitted('select-file')?.[0]).toEqual(['README.md']);
     expect(wrapper.getComponent({ name: 'ElTree' }).props('nodeKey')).toBe('key');
+  });
+
+  it('keeps icons and labels left aligned while reserving the right edge for metadata', async () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        fileTree: buildRepositoryTree(sourceFiles),
+        selectedFilePath: 'README.md',
+        fileLinkCounts: { 'README.md': 3 },
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+    await flushPromises();
+
+    const selectedRow = wrapper.get('.el-tree-node.is-current .linked-tree-node');
+    const children = Array.from(selectedRow.element.children);
+    expect(children[0]?.classList.contains('repository-node-icon')).toBe(true);
+    expect(children[1]?.classList.contains('repository-node-label')).toBe(true);
+    expect(children[2]?.classList.contains('repository-node-meta')).toBe(true);
+    expect(selectedRow.get('.repository-node-label').text()).toBe('README.md');
+    expect(selectedRow.get('.repository-node-meta').text()).toBe('3');
+
+    expect(repositoryContextSource).toMatch(/\.linked-tree-node \{[^}]*justify-content: flex-start/);
+    expect(repositoryContextSource).toMatch(/\.repository-node-label \{[^}]*flex: 1 1 auto[^}]*margin-left: 0[^}]*text-align: left[^}]*text-overflow: ellipsis/);
+    expect(repositoryContextSource).toMatch(/\.repository-node-meta \{[^}]*flex: 0 0 auto[^}]*margin-left: auto/);
+  });
+
+  it('uses the same icon-label structure for directories and files without horizontal scrolling', () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        fileTree: buildRepositoryTree(sourceFiles),
+        selectedFilePath: '',
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+
+    const rows = wrapper.findAll('.linked-tree-node');
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row.element.children[0]?.classList.contains('repository-node-icon')).toBe(true);
+      expect(row.element.children[1]?.classList.contains('repository-node-label')).toBe(true);
+      expect(row.attributes('title')).toBeTruthy();
+    }
+    expect(repositoryContextSource).toMatch(/\.linked-repository-tree \{[^}]*overflow: hidden/);
+    expect(repositoryContextSource).toMatch(/\.linked-tree-node \{[^}]*width: auto[^}]*flex: 1 1 auto[^}]*overflow: hidden/);
   });
 });
