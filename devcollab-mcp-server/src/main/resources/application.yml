@@ -13,6 +13,11 @@ devcollab:
     max-code-lines: ${DEVCOLLAB_MCP_MAX_CODE_LINES:400}
     max-output-characters: ${DEVCOLLAB_MCP_MAX_OUTPUT_CHARACTERS:40000}
     max-path-characters: ${DEVCOLLAB_MCP_MAX_PATH_CHARACTERS:2048}
+    max-document-blocks: ${DEVCOLLAB_MCP_MAX_DOCUMENT_BLOCKS:100}
+    max-document-content-characters: ${DEVCOLLAB_MCP_MAX_DOCUMENT_CONTENT_CHARACTERS:30000}
+    max-bindings: ${DEVCOLLAB_MCP_MAX_BINDINGS:50}
+    max-candidates: ${DEVCOLLAB_MCP_MAX_CANDIDATES:20}
+    max-document-query-characters: ${DEVCOLLAB_MCP_MAX_DOCUMENT_QUERY_CHARACTERS:500}
     allowed-origins:
       - ${DEVCOLLAB_MCP_ALLOWED_ORIGIN_LOCALHOST:http://localhost:*}
       - ${DEVCOLLAB_MCP_ALLOWED_ORIGIN_LOOPBACK:http://127.0.0.1:*}

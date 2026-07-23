@@ -16,6 +16,23 @@ public interface KnowledgeCoreGateway {
             McpUserIdentity identity
     );
 
+    DocumentStructure getDocumentStructure(
+            UUID workspaceId,
+            UUID documentId,
+            boolean includeBlockContent,
+            int maxBlocks,
+            int maxContentChars,
+            McpUserIdentity identity
+    );
+
+    BindingQueryResult getFileBindings(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            int maxBindings,
+            McpUserIdentity identity
+    );
+
     record WorkspaceContext(
             UUID workspaceId,
             String name,
@@ -43,6 +60,51 @@ public interface KnowledgeCoreGateway {
             String language,
             boolean readable,
             String content
+    ) {
+    }
+
+    record DocumentStructure(
+            UUID documentId,
+            UUID workspaceId,
+            String title,
+            String documentType,
+            String reviewStatus,
+            java.time.Instant updatedAt,
+            List<BlockInfo> blocks,
+            boolean isTruncated,
+            int omittedBlockCount,
+            int omittedCharacterCount
+    ) {
+    }
+
+    record BlockInfo(
+            UUID blockId,
+            String blockType,
+            int sortOrder,
+            long version,
+            String plainText,
+            String content,
+            boolean isContentTruncated
+    ) {
+    }
+
+    record BindingQueryResult(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            boolean fileHasBindings,
+            List<BindingInfo> bindings,
+            boolean isTruncated,
+            int omittedBindingCount
+    ) {
+    }
+
+    record BindingInfo(
+            UUID bindingId,
+            String pathPattern,
+            UUID documentId,
+            String documentTitle,
+            UUID blockId
     ) {
     }
 }

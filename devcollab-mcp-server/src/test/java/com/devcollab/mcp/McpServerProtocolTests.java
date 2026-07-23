@@ -50,7 +50,9 @@ class McpServerProtocolTests {
                     .extracting(McpSchema.Tool::name)
                     .containsExactlyInAnyOrder(
                             "devcollab.workspace.get_context",
-                            "devcollab.code.read"
+                            "devcollab.code.read",
+                            "devcollab.document.get_structure",
+                            "devcollab.binding.list"
                     );
             for (McpSchema.Tool tool : tools) {
                 assertThat(tool.inputSchema())

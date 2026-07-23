@@ -92,6 +92,71 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
         }
     }
 
+    @Override
+    public DocumentStructure getDocumentStructure(UUID workspaceId, UUID documentId, boolean includeBlockContent, int maxBlocks, int maxContentChars, McpUserIdentity identity) {
+        try {
+            DocumentStructurePayload payload = restClient.get()
+                    .uri(builder -> builder
+                            .path("/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure")
+                            .queryParam("includeBlockContent", includeBlockContent)
+                            .queryParam("maxBlocks", maxBlocks)
+                            .queryParam("maxContentCharacters", maxContentChars)
+                            .build(workspaceId, documentId))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .retrieve()
+                    .body(DocumentStructurePayload.class);
+            if (payload == null) {
+                throw new McpToolException(McpToolErrorCode.DOCUMENT_NOT_FOUND, "Document structure not found");
+            }
+            return new DocumentStructure(
+                    payload.documentId(),
+                    payload.workspaceId(),
+                    payload.title(),
+                    payload.documentType(),
+                    payload.reviewStatus(),
+                    payload.updatedAt(),
+                    payload.blocks() == null ? List.of() : payload.blocks().stream()
+                            .map(b -> new BlockInfo(b.blockId(), b.blockType(), b.sortOrder(), b.version(), b.plainText(), b.content(), b.isContentTruncated()))
+                            .toList(),
+                    payload.isTruncated(),
+                    payload.omittedBlockCount(),
+                    payload.omittedCharacterCount()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.DOCUMENT_NOT_FOUND);
+        }
+    }
+
+    @Override
+    public BindingQueryResult getFileBindings(UUID workspaceId, UUID repositoryId, String filePath, int maxBindings, McpUserIdentity identity) {
+        try {
+            BindingQueryResultPayload payload = restClient.get()
+                    .uri(builder -> builder.path("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings")
+                            .queryParam("filePath", filePath)
+                            .queryParam("maxBindings", maxBindings)
+                            .build(workspaceId, repositoryId))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .retrieve()
+                    .body(BindingQueryResultPayload.class);
+            if (payload == null) {
+                throw new McpToolException(McpToolErrorCode.INTERNAL_ERROR, "Binding query returned empty response");
+            }
+            return new BindingQueryResult(
+                    payload.workspaceId(),
+                    payload.repositoryId(),
+                    payload.filePath(),
+                    payload.fileHasBindings(),
+                    payload.bindings() == null ? List.of() : payload.bindings().stream()
+                            .map(b -> new BindingInfo(b.bindingId(), b.pathPattern(), b.documentId(), b.documentTitle(), b.blockId()))
+                            .toList(),
+                    payload.isTruncated(),
+                    payload.omittedBindingCount()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.FILE_NOT_FOUND);
+        }
+    }
+
     private <T> T get(
             String path,
             McpUserIdentity identity,
@@ -128,6 +193,9 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                 }
                 if ("GIT_REPOSITORY_FILE_NOT_FOUND".equals(code)) {
                     return new McpToolException(McpToolErrorCode.FILE_NOT_FOUND, "Repository file was not found");
+                }
+                if ("DOCUMENT_NOT_FOUND".equals(code)) {
+                    return new McpToolException(McpToolErrorCode.DOCUMENT_NOT_FOUND, "Document was not found");
                 }
                 return new McpToolException(notFoundFallback, "Requested DevCollab context was not found");
             }
@@ -175,6 +243,51 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             String language,
             boolean readable,
             String content
+    ) {
+    }
+
+    private record DocumentStructurePayload(
+            UUID documentId,
+            UUID workspaceId,
+            String title,
+            String documentType,
+            String reviewStatus,
+            java.time.Instant updatedAt,
+            List<BlockInfoPayload> blocks,
+            boolean isTruncated,
+            int omittedBlockCount,
+            int omittedCharacterCount
+    ) {
+    }
+
+    private record BlockInfoPayload(
+            UUID blockId,
+            String blockType,
+            int sortOrder,
+            long version,
+            String plainText,
+            String content,
+            boolean isContentTruncated
+    ) {
+    }
+
+    private record BindingQueryResultPayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            boolean fileHasBindings,
+            List<BindingInfoPayload> bindings,
+            boolean isTruncated,
+            int omittedBindingCount
+    ) {
+    }
+
+    private record BindingInfoPayload(
+            UUID bindingId,
+            String pathPattern,
+            UUID documentId,
+            String documentTitle,
+            UUID blockId
     ) {
     }
 }

@@ -74,6 +74,27 @@ public class DocumentController {
         );
     }
 
+    @GetMapping("/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure")
+    public DocumentStructureResponse getStructure(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "false") boolean includeBlockContent,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxBlocks,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxContentCharacters
+    ) {
+        return DocumentStructureResponse.from(
+                documentService.getDocumentStructure(
+                        workspaceId,
+                        documentId,
+                        currentUser.userId(),
+                        includeBlockContent,
+                        maxBlocks,
+                        maxContentCharacters
+                )
+        );
+    }
+
     @PatchMapping("/api/v1/documents/{documentId}")
     public DocumentResponse update(
             @PathVariable UUID documentId,

@@ -311,6 +311,80 @@ public class GitKnowledgeApplicationService {
         return gitRepository.findBindingsByDocumentId(documentId);
     }
 
+    public CodeBindingQueryResult queryBindings(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String filePath,
+            Integer maxBindings
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
+
+        String normalizedPath = normalizePath(filePath);
+
+        List<CodeDocumentBinding> allRepoBindings = gitRepository.findBindingsByRepositoryId(repositoryId);
+
+        boolean fileHasBindings = false;
+        for (CodeDocumentBinding binding : allRepoBindings) {
+            if (matches(binding.pathPattern(), normalizedPath)) {
+                fileHasBindings = true;
+                break;
+            }
+        }
+
+        java.util.Set<UUID> seenDocumentIds = new java.util.HashSet<>();
+        List<CodeBindingQueryItem> result = new java.util.ArrayList<>();
+
+        for (CodeDocumentBinding binding : allRepoBindings) {
+            if (!matches(binding.pathPattern(), normalizedPath)) {
+                continue;
+            }
+
+            if (seenDocumentIds.contains(binding.documentId())) {
+                continue;
+            }
+            seenDocumentIds.add(binding.documentId());
+
+            Document document = documentRepository.findById(binding.documentId())
+                    .orElse(null);
+            String documentTitle = document != null ? document.title() : null;
+
+            result.add(new CodeBindingQueryItem(
+                    binding.id(),
+                    binding.documentId(),
+                    binding.blockId(),
+                    binding.pathPattern(),
+                    documentTitle
+            ));
+        }
+
+        result.sort(java.util.Comparator
+                .comparing(CodeBindingQueryItem::documentTitle, java.util.Comparator.nullsLast(String::compareToIgnoreCase))
+                .thenComparing(CodeBindingQueryItem::documentId)
+                .thenComparing(CodeBindingQueryItem::blockId, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                .thenComparing(CodeBindingQueryItem::bindingId));
+
+        boolean isTruncated = false;
+        int omittedBindingCount = 0;
+        int effectiveMax = maxBindings != null && maxBindings > 0 ? maxBindings : Integer.MAX_VALUE;
+        if (result.size() > effectiveMax) {
+            omittedBindingCount = result.size() - effectiveMax;
+            result = result.subList(0, effectiveMax);
+            isTruncated = true;
+        }
+
+        return new CodeBindingQueryResult(
+                workspaceId,
+                repositoryId,
+                filePath,
+                fileHasBindings,
+                result,
+                isTruncated,
+                omittedBindingCount
+        );
+    }
+
     @Transactional
     public void deleteBinding(UUID bindingId, UUID currentUserId) {
         CodeDocumentBinding binding = gitRepository.findBindingById(bindingId)
@@ -402,12 +476,9 @@ public class GitKnowledgeApplicationService {
     }
 
     private String normalizePath(String value) {
-        String path = value.trim().replace('\\', '/');
-        if (path.isBlank() || path.startsWith("/") || path.contains("../")
-                || path.equals("..") || path.contains("//")) {
-            throw new InvalidCodeBindingException("代码路径必须是仓库内相对路径");
-        }
-        return path;
+        String normalized = com.devcollab.knowledgecore.common.util.RepositoryPathValidator.normalize(value);
+        com.devcollab.knowledgecore.common.util.RepositoryPathValidator.validate(value, "代码路径必须是仓库内相对路径");
+        return normalized;
     }
 
     private boolean matches(String pattern, String path) {

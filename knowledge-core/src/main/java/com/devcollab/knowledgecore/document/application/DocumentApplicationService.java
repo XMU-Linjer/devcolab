@@ -149,6 +149,100 @@ public class DocumentApplicationService {
         return document;
     }
 
+    public DocumentStructureDto getDocumentStructure(
+            UUID workspaceId,
+            UUID documentId,
+            UUID currentUserId,
+            boolean includeBlockContent,
+            Integer maxBlocks,
+            Integer maxContentCharacters
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        Document document = requireDocument(documentId);
+        if (!document.workspaceId().equals(workspaceId)) {
+            throw new DocumentNotFoundException();
+        }
+
+        List<DocumentBlock> allBlocks = new java.util.ArrayList<>(blockRepository.findAllByDocumentId(documentId));
+        allBlocks.sort(java.util.Comparator.comparingInt(DocumentBlock::sortOrder));
+
+        int totalBlocks = allBlocks.size();
+        boolean isTruncated = false;
+        int omittedBlockCount = 0;
+
+        if (maxBlocks != null && maxBlocks > 0 && totalBlocks > maxBlocks) {
+            allBlocks = allBlocks.subList(0, maxBlocks);
+            isTruncated = true;
+            omittedBlockCount = totalBlocks - maxBlocks;
+        }
+
+        int remainingChars = (maxContentCharacters != null && maxContentCharacters > 0)
+                ? maxContentCharacters : Integer.MAX_VALUE;
+        int totalTruncatedChars = 0;
+        List<DocumentBlockStructureDto> blockDtos = new java.util.ArrayList<>();
+        for (DocumentBlock block : allBlocks) {
+            String plainText = null;
+            String content = null;
+            boolean isContentTruncated = false;
+
+            if (includeBlockContent) {
+                String sourceText = block.text();
+                if (sourceText != null && !sourceText.isEmpty() && remainingChars > 0) {
+                    int codePoints = sourceText.codePointCount(0, sourceText.length());
+                    if (codePoints <= remainingChars) {
+                        plainText = sourceText;
+                        remainingChars -= codePoints;
+                    } else {
+                        int cutoff = sourceText.offsetByCodePoints(0, remainingChars);
+                        plainText = sourceText.substring(0, cutoff);
+                        totalTruncatedChars += (codePoints - remainingChars);
+                        remainingChars = 0;
+                        isContentTruncated = true;
+                        isTruncated = true;
+                    }
+                }
+                String contentJson = block.contentJson();
+                if (contentJson != null && !contentJson.isEmpty() && remainingChars > 0) {
+                    int codePoints = contentJson.codePointCount(0, contentJson.length());
+                    if (codePoints <= remainingChars) {
+                        content = contentJson;
+                        remainingChars -= codePoints;
+                    } else {
+                        int cutoff = contentJson.offsetByCodePoints(0, remainingChars);
+                        content = contentJson.substring(0, cutoff);
+                        totalTruncatedChars += (codePoints - remainingChars);
+                        remainingChars = 0;
+                        isContentTruncated = true;
+                        isTruncated = true;
+                    }
+                }
+            }
+
+            blockDtos.add(new DocumentBlockStructureDto(
+                    block.id(),
+                    block.type().name(),
+                    block.sortOrder(),
+                    block.version(),
+                    plainText,
+                    content,
+                    isContentTruncated
+            ));
+        }
+
+        return new DocumentStructureDto(
+                document.id(),
+                document.workspaceId(),
+                document.title(),
+                document.documentType().name(),
+                document.reviewStatus().name(),
+                document.updatedAt(),
+                blockDtos,
+                isTruncated,
+                omittedBlockCount,
+                totalTruncatedChars
+        );
+    }
+
     @Transactional
     public Document update(
             UUID documentId,

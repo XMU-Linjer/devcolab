@@ -210,6 +210,19 @@ public class GitKnowledgeController {
                 .stream().map(CodeDocumentBindingResponse::from).toList();
     }
 
+    @GetMapping("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings")
+    public CodeBindingQueryResponse queryBindings(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @RequestParam String filePath,
+            @RequestParam(required = false) Integer maxBindings,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return CodeBindingQueryResponse.from(service.queryBindings(
+                workspaceId, repositoryId, currentUser.userId(), filePath, maxBindings
+        ));
+    }
+
     @DeleteMapping("/api/v1/code-bindings/{bindingId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteBinding(

@@ -88,6 +88,94 @@ final class McpToolSchemas {
                 )
         );
     }
+    
+    static Map<String, Object> documentStructureInput() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("workspaceId", uuidProperty("DevCollab workspace identifier"));
+        properties.put("documentId", uuidProperty("DevCollab document identifier"));
+        properties.put("includeBlockContent", Map.of(
+                "type", "boolean",
+                "default", false
+        ));
+        properties.put("maxBlocks", Map.of(
+                "type", "integer",
+                "minimum", 1,
+                "maximum", 500
+        ));
+        properties.put("maxContentCharacters", Map.of(
+                "type", "integer",
+                "minimum", 1,
+                "maximum", 100000
+        ));
+        return objectSchema(properties, List.of("workspaceId", "documentId"));
+    }
+
+    static Map<String, Object> documentStructureOutput() {
+        Map<String, Object> blockProperties = new LinkedHashMap<>();
+        blockProperties.put("blockId", uuidProperty("Block identifier"));
+        blockProperties.put("blockType", Map.of("type", "string"));
+        blockProperties.put("sortOrder", Map.of("type", "integer"));
+        blockProperties.put("version", Map.of("type", "integer"));
+        blockProperties.put("plainText", Map.of("type", List.of("string", "null")));
+        blockProperties.put("content", Map.of("type", List.of("string", "null")));
+        blockProperties.put("contentTruncated", Map.of("type", "boolean"));
+        Map<String, Object> block = objectSchema(
+                blockProperties,
+                List.of("blockId", "blockType", "sortOrder", "version")
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "documentId", uuidProperty("Document identifier"),
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "title", Map.of("type", "string"),
+                        "documentType", Map.of("type", "string"),
+                        "reviewStatus", Map.of("type", "string"),
+                        "updatedAt", Map.of("type", "string", "format", "date-time"),
+                        "blocks", Map.of("type", "array", "items", block),
+                        "truncated", Map.of("type", "boolean"),
+                        "omittedBlockCount", Map.of("type", "integer"),
+                        "omittedCharacterCount", Map.of("type", "integer")
+                ),
+                List.of("documentId", "workspaceId", "title", "documentType", "reviewStatus", "updatedAt", "blocks", "truncated", "omittedBlockCount", "omittedCharacterCount")
+        );
+    }
+    
+    static Map<String, Object> bindingListInput() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("workspaceId", uuidProperty("DevCollab workspace identifier"));
+        properties.put("repositoryId", uuidProperty("Registered repository identifier"));
+        properties.put("filePath", Map.of(
+                "type", "string",
+                "minLength", 1,
+                "maxLength", 2048
+        ));
+        return objectSchema(properties, List.of("workspaceId", "repositoryId", "filePath"));
+    }
+
+    static Map<String, Object> bindingListOutput() {
+        Map<String, Object> binding = objectSchema(
+                Map.of(
+                        "bindingId", uuidProperty("Binding identifier"),
+                        "pathPattern", Map.of("type", "string"),
+                        "documentId", uuidProperty("Document identifier"),
+                        "documentTitle", Map.of("type", List.of("string", "null")),
+                        "blockId", uuidProperty("Block identifier", true)
+                ),
+                List.of("bindingId", "pathPattern", "documentId", "documentTitle")
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "filePath", Map.of("type", "string"),
+                        "fileHasBindings", Map.of("type", "boolean"),
+                        "bindings", Map.of("type", "array", "items", binding),
+                        "truncated", Map.of("type", "boolean"),
+                        "omittedBindingCount", Map.of("type", "integer")
+                ),
+                List.of("workspaceId", "repositoryId", "filePath", "fileHasBindings", "bindings", "truncated", "omittedBindingCount")
+        );
+    }
 
     private static Map<String, Object> toolOutputSchema(
             Map<String, Object> successProperties,
@@ -128,6 +216,17 @@ final class McpToolSchemas {
     }
 
     private static Map<String, Object> uuidProperty(String description) {
+        return uuidProperty(description, false);
+    }
+
+    private static Map<String, Object> uuidProperty(String description, boolean nullable) {
+        if (nullable) {
+            return Map.of(
+                    "type", List.of("string", "null"),
+                    "format", "uuid",
+                    "description", description
+            );
+        }
         return Map.of(
                 "type", "string",
                 "format", "uuid",

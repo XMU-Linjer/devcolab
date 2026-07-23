@@ -8,6 +8,8 @@ public enum McpToolErrorCode {
     WORKSPACE_NOT_FOUND(false),
     REPOSITORY_NOT_FOUND(false),
     FILE_NOT_FOUND(false),
+    DOCUMENT_NOT_FOUND(false),
+    INVALID_DOCUMENT_QUERY(false),
     PERMISSION_DENIED(false),
     CONTEXT_LIMIT_EXCEEDED(false),
     CORE_UNAVAILABLE(true),
