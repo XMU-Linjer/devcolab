@@ -1,5 +1,8 @@
 <template>
-  <main class="app-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+  <main
+    class="app-shell"
+    :class="{ 'is-sidebar-collapsed': sidebarCollapsed }"
+  >
     <AppSidebar v-model="sidebarCollapsed" active="home" />
 
     <section class="workspace">
@@ -8,15 +11,30 @@
           <p class="eyebrow">Knowledge Core</p>
           <h1>工作区</h1>
         </div>
+
         <div class="topbar-actions">
           <NotificationCenter />
+
           <span class="current-user">
-            {{ authStore.currentUser?.displayName || authStore.currentUser?.username }}
+            {{
+              authStore.currentUser?.displayName
+                || authStore.currentUser?.username
+            }}
           </span>
-          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
+
+          <el-button
+            type="primary"
+            :icon="Plus"
+            @click="dialogVisible = true"
+          >
             创建工作区
           </el-button>
-          <el-button :icon="SwitchButton" :loading="loggingOut" @click="handleLogout">
+
+          <el-button
+            :icon="SwitchButton"
+            :loading="loggingOut"
+            @click="handleLogout"
+          >
             退出
           </el-button>
         </div>
@@ -26,8 +44,12 @@
         <div class="panel-header">
           <div>
             <h2>我的工作区</h2>
-            <p>工作区是文档树、Block 编辑和协作权限的业务入口。先创建工作区，再在里面维护项目知识。</p>
+            <p>
+              工作区是文档树、Block 编辑和协作权限的业务入口。
+              先创建工作区，再在里面维护项目知识。
+            </p>
           </div>
+
           <el-tag type="success" effect="light">
             {{ workspaces.length }} 个工作区
           </el-tag>
@@ -42,7 +64,13 @@
           :closable="false"
         >
           <template #default>
-            <el-button text type="primary" @click="loadWorkspaces">重新加载</el-button>
+            <el-button
+              text
+              type="primary"
+              @click="loadWorkspaces"
+            >
+              重新加载
+            </el-button>
           </template>
         </el-alert>
 
@@ -54,7 +82,11 @@
           v-else-if="workspaces.length === 0"
           description="还没有工作区"
         >
-          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">
+          <el-button
+            type="primary"
+            :icon="Plus"
+            @click="dialogVisible = true"
+          >
             创建第一个工作区
           </el-button>
         </el-empty>
@@ -68,14 +100,25 @@
           >
             <div class="workspace-card-header">
               <h3>{{ workspaceItem.name }}</h3>
+
               <el-tag size="small" effect="light">
                 {{ roleText(workspaceItem.currentUserRole) }}
               </el-tag>
             </div>
-            <p>创建时间：{{ formatTime(workspaceItem.createdAt) }}</p>
-            <p>更新时间：{{ formatTime(workspaceItem.updatedAt) }}</p>
+
+            <p>
+              创建时间：{{ formatTime(workspaceItem.createdAt) }}
+            </p>
+
+            <p>
+              更新时间：{{ formatTime(workspaceItem.updatedAt) }}
+            </p>
+
             <div class="workspace-card-bottom">
-              <span class="card-link">进入工作区 →</span>
+              <span class="card-link">
+                进入工作区 →
+              </span>
+
               <el-dropdown
                 trigger="click"
                 @click.stop
@@ -117,6 +160,7 @@
       v-model="dialogVisible"
       @create="handleCreateWorkspace"
     />
+
     <WorkspaceRenameDialog
       v-model="renameDialogVisible"
       :workspace-name="workspacePendingRename?.name || ''"
@@ -124,6 +168,7 @@
       @confirm="handleRenameWorkspace"
       @closed="workspacePendingRename = null"
     />
+
     <WorkspaceDeleteDialog
       v-model="deleteDialogVisible"
       :workspace-name="workspacePendingDelete?.name || ''"
@@ -139,6 +184,7 @@ import { ElMessage } from 'element-plus';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { registerGitRepository } from '@/api/git';
 import {
   createWorkspace,
   deleteWorkspace,
@@ -147,13 +193,19 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from '@/api/workspace';
-import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
+import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import WorkspaceDeleteDialog from '@/components/workspace/WorkspaceDeleteDialog.vue';
 import WorkspaceRenameDialog from '@/components/workspace/WorkspaceRenameDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { readableError } from '@/utils/error';
+
+interface WorkspaceCreatePayload {
+  name: string;
+  repositoryUrl: string;
+  branch: string;
+}
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -169,6 +221,7 @@ const deleteDialogVisible = ref(false);
 const deletingWorkspace = ref(false);
 const workspacePendingDelete = ref<Workspace | null>(null);
 const errorMessage = ref('');
+
 const sidebarCollapsed = ref(
   localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
 );
@@ -184,27 +237,73 @@ async function loadWorkspaces() {
   try {
     workspaces.value = await listWorkspaces();
   } catch (error) {
-    errorMessage.value = readableError(error, '工作区加载失败');
+    errorMessage.value = readableError(
+      error,
+      '工作区加载失败',
+    );
   } finally {
     loading.value = false;
   }
 }
 
-async function handleCreateWorkspace(name: string) {
+async function handleCreateWorkspace(
+  payload: WorkspaceCreatePayload,
+) {
+  let workspace: Workspace | null = null;
+
   try {
-    const workspace = await createWorkspace({ name });
-    workspaces.value = [workspace, ...workspaces.value];
+    // 第一步：创建工作区
+    workspace = await createWorkspace({
+      name: payload.name,
+    });
+
+    workspaces.value = [
+      workspace,
+      ...workspaces.value,
+    ];
+
+    // 第二步：把 GitHub 仓库登记到该工作区
+    await registerGitRepository(workspace.id, {
+      name: repositoryNameFromUrl(payload.repositoryUrl),
+      provider: 'GITHUB',
+      remoteUrl: payload.repositoryUrl,
+      defaultBranch: payload.branch,
+    });
+
     dialogVisible.value = false;
-    ElMessage.success('工作区创建成功');
+
+    ElMessage.success(
+      '工作区创建成功，仓库正在同步',
+    );
+
+    // 第三步：进入现有代码工作台
+    await openWorkspace(workspace.id);
   } catch (error) {
-    ElMessage.error(readableError(error, '工作区创建失败'));
+    if (workspace !== null) {
+      dialogVisible.value = false;
+
+      ElMessage.error(
+        readableError(
+          error,
+          '工作区已创建，但 GitHub 仓库导入失败',
+        ),
+      );
+
+      return;
+    }
+
+    ElMessage.error(
+      readableError(error, '工作区创建失败'),
+    );
   }
 }
 
 async function openWorkspace(workspaceId: string) {
   await router.push({
     name: 'workspace-code',
-    params: { workspaceId },
+    params: {
+      workspaceId,
+    },
   });
 }
 
@@ -277,6 +376,7 @@ async function handleDeleteWorkspace() {
 
 async function handleLogout() {
   loggingOut.value = true;
+
   try {
     await authStore.logout();
     ElMessage.success('已退出登录');
@@ -286,8 +386,27 @@ async function handleLogout() {
   }
 }
 
+function repositoryNameFromUrl(
+  repositoryUrl: string,
+): string {
+  const normalizedUrl = repositoryUrl
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+
+  const lastSlashIndex = normalizedUrl.lastIndexOf('/');
+
+  if (lastSlashIndex === -1) {
+    return normalizedUrl;
+  }
+
+  return normalizedUrl.substring(lastSlashIndex + 1);
+}
+
 function roleText(role: WorkspaceRole) {
-  return role === 'ADMIN' ? '管理员' : '普通用户';
+  return role === 'ADMIN'
+    ? '管理员'
+    : '普通用户';
 }
 
 function formatTime(value: string) {
