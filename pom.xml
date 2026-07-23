@@ -24,6 +24,7 @@
         <module>knowledge-core</module>
         <module>devcollab-worker</module>
         <module>collaboration-gateway</module>
+        <module>devcollab-mcp-server</module>
     </modules>
 
     <properties>

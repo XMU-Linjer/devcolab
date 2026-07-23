@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: devcollab-mcp-server
+
+server:
+  port: ${DEVCOLLAB_MCP_PORT:8091}
+
+devcollab:
+  mcp:
+    endpoint: ${DEVCOLLAB_MCP_ENDPOINT:/mcp}
+    server-name: ${DEVCOLLAB_MCP_SERVER_NAME:devcollab-context-server}
+    server-version: ${DEVCOLLAB_MCP_SERVER_VERSION:0.1.0}
+    max-code-lines: ${DEVCOLLAB_MCP_MAX_CODE_LINES:400}
+    max-output-characters: ${DEVCOLLAB_MCP_MAX_OUTPUT_CHARACTERS:40000}
+    max-path-characters: ${DEVCOLLAB_MCP_MAX_PATH_CHARACTERS:2048}
+    allowed-origins:
+      - ${DEVCOLLAB_MCP_ALLOWED_ORIGIN_LOCALHOST:http://localhost:*}
+      - ${DEVCOLLAB_MCP_ALLOWED_ORIGIN_LOOPBACK:http://127.0.0.1:*}
+    allowed-hosts:
+      - ${DEVCOLLAB_MCP_ALLOWED_HOST_LOCALHOST:localhost:*}
+      - ${DEVCOLLAB_MCP_ALLOWED_HOST_LOOPBACK:127.0.0.1:*}
+    core-base-url: ${DEVCOLLAB_CORE_BASE_URL:http://localhost:8080}
+    core-timeout: ${DEVCOLLAB_MCP_CORE_TIMEOUT:PT3S}
+  security:
+    jwt:
+      issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
+      audience: ${DEVCOLLAB_JWT_AUDIENCE:devcollab-web}
+      secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
