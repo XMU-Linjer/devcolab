@@ -51,52 +51,57 @@ public class ContextBudgetPolicy {
         }
 
         int startLine = requestedStartLine == null ? 1 : requestedStartLine;
-        int endLine = requestedEndLine == null
-                ? Math.min(totalLines, properties.maxCodeLines())
-                : requestedEndLine;
-        if (startLine < 1 || endLine < startLine || startLine > totalLines) {
+        int requestedFinalLine = requestedEndLine == null ? totalLines : requestedEndLine;
+        if (startLine < 1 || requestedFinalLine < startLine || startLine > totalLines) {
             throw new McpToolException(
                     McpToolErrorCode.INVALID_LINE_RANGE,
                     "Requested line range is outside the file"
             );
         }
 
-        endLine = Math.min(endLine, totalLines);
-        int budgetedEndLine = Math.min(endLine, startLine + properties.maxCodeLines() - 1);
-        StringBuilder selected = new StringBuilder();
-        int actualEndLine = startLine - 1;
-        for (int line = startLine; line <= budgetedEndLine; line++) {
-            String candidate = allLines[line - 1];
-            int separatorLength = selected.isEmpty() ? 0 : 1;
-            if (selected.length() + separatorLength + candidate.length() > properties.maxOutputCharacters()) {
-                int remaining = properties.maxOutputCharacters() - selected.length() - separatorLength;
-                if (remaining > 0) {
-                    if (!selected.isEmpty()) {
-                        selected.append('\n');
-                    }
-                    selected.append(candidate, 0, Math.min(candidate.length(), remaining));
-                }
-                break;
-            }
-            if (!selected.isEmpty()) {
-                selected.append('\n');
-            }
-            selected.append(candidate);
-            actualEndLine = line;
-        }
+        requestedFinalLine = Math.min(requestedFinalLine, totalLines);
+        int budgetedEndLine = Math.min(
+                requestedFinalLine,
+                startLine + properties.maxCodeLines() - 1
+        );
+        String requestedContent = join(allLines, startLine, requestedFinalLine);
+        String lineBudgetedContent = join(allLines, startLine, budgetedEndLine);
+        String selected = lineBudgetedContent.length() <= properties.maxOutputCharacters()
+                ? lineBudgetedContent
+                : lineBudgetedContent.substring(0, properties.maxOutputCharacters());
 
-        boolean truncated = actualEndLine < endLine
-                || requestedEndLine == null && endLine < totalLines
-                || selected.length() >= properties.maxOutputCharacters();
-        int omittedLineCount = truncated ? Math.max(0, totalLines - Math.max(actualEndLine, 0)) : 0;
+        int selectedLineBreaks = Math.toIntExact(selected.chars().filter(character -> character == '\n').count());
+        int representedLineOffset = selected.endsWith("\n")
+                ? Math.max(0, selectedLineBreaks - 1)
+                : selectedLineBreaks;
+        int actualEndLine = selected.isEmpty()
+                ? startLine
+                : Math.min(budgetedEndLine, startLine + representedLineOffset);
+        boolean truncated = selected.length() < requestedContent.length();
+        int omittedLineCount = truncated ? Math.max(0, requestedFinalLine - actualEndLine) : 0;
+        int omittedCharacterCount = truncated
+                ? Math.max(0, requestedContent.length() - selected.length())
+                : 0;
         return new BudgetedContent(
-                selected.toString(),
+                selected,
                 startLine,
-                Math.max(actualEndLine, startLine),
+                actualEndLine,
                 totalLines,
                 truncated,
-                omittedLineCount
+                omittedLineCount,
+                omittedCharacterCount
         );
+    }
+
+    private String join(String[] lines, int startLine, int endLine) {
+        StringBuilder joined = new StringBuilder();
+        for (int line = startLine; line <= endLine; line++) {
+            if (!joined.isEmpty()) {
+                joined.append('\n');
+            }
+            joined.append(lines[line - 1]);
+        }
+        return joined.toString();
     }
 
     public record BudgetedContent(
@@ -105,7 +110,8 @@ public class ContextBudgetPolicy {
             int endLine,
             int totalLines,
             boolean truncated,
-            int omittedLineCount
+            int omittedLineCount,
+            int omittedCharacterCount
     ) {
         public Map<String, Object> metadata() {
             return Map.of(
@@ -113,7 +119,8 @@ public class ContextBudgetPolicy {
                     "endLine", endLine,
                     "totalLines", totalLines,
                     "truncated", truncated,
-                    "omittedLineCount", omittedLineCount
+                    "omittedLineCount", omittedLineCount,
+                    "omittedCharacterCount", omittedCharacterCount
             );
         }
     }

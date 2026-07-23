@@ -1,0 +1,55 @@
+package com.devcollab.mcp.capability.tool;
+
+import com.devcollab.mcp.error.McpToolErrorCode;
+import com.devcollab.mcp.error.McpToolException;
+
+import java.util.Map;
+import java.util.UUID;
+
+final class McpToolArguments {
+
+    private McpToolArguments() {
+    }
+
+    static UUID requiredUuid(Map<String, Object> arguments, String name) {
+        String value = requiredString(arguments, name);
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            throw new McpToolException(
+                    McpToolErrorCode.INVALID_ARGUMENT,
+                    name + " must be a valid UUID"
+            );
+        }
+    }
+
+    static String requiredString(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " is required");
+        }
+        return text;
+    }
+
+    static Integer optionalInteger(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " must be an integer");
+    }
+
+    static boolean optionalBoolean(Map<String, Object> arguments, String name, boolean defaultValue) {
+        Object value = arguments.get(name);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " must be a boolean");
+    }
+}
