@@ -3,11 +3,13 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Workspace } from '@/api/workspace';
+import WorkspaceRenameDialog from '@/components/workspace/WorkspaceRenameDialog.vue';
 
 const mocks = vi.hoisted(() => ({
   listWorkspaces: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
+  renameWorkspace: vi.fn(),
   registerGitRepository: vi.fn(),
   routerPush: vi.fn(),
   logout: vi.fn(),
@@ -17,6 +19,7 @@ vi.mock('@/api/workspace', () => ({
   listWorkspaces: mocks.listWorkspaces,
   createWorkspace: mocks.createWorkspace,
   deleteWorkspace: mocks.deleteWorkspace,
+  renameWorkspace: mocks.renameWorkspace,
 }));
 
 vi.mock('@/api/git', () => ({
@@ -69,11 +72,26 @@ async function mountHome(): Promise<VueWrapper> {
 async function openDeleteDialog(wrapper: VueWrapper) {
   await wrapper.get('.workspace-card-menu').trigger('click');
   await flushPromises();
-  const deleteItem = document.body.querySelector<HTMLElement>(
-    '.el-dropdown-menu__item',
-  );
+  const deleteItem = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.el-dropdown-menu__item',
+    ),
+  ).find(item => item.textContent?.includes('删除工作区'));
   expect(deleteItem?.textContent).toContain('删除工作区');
   deleteItem?.click();
+  await flushPromises();
+}
+
+async function openRenameDialog(wrapper: VueWrapper) {
+  await wrapper.get('.workspace-card-menu').trigger('click');
+  await flushPromises();
+  const renameItem = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.el-dropdown-menu__item',
+    ),
+  ).find(item => item.textContent?.includes('重命名工作区'));
+  expect(renameItem).toBeDefined();
+  renameItem?.click();
   await flushPromises();
 }
 
@@ -92,6 +110,11 @@ describe('HomeView workspace deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.deleteWorkspace.mockResolvedValue(undefined);
+    mocks.renameWorkspace.mockResolvedValue({
+      ...workspace,
+      name: '重命名后的工作区',
+      updatedAt: '2026-07-23T09:30:00Z',
+    });
   });
 
   afterEach(() => {
@@ -111,6 +134,84 @@ describe('HomeView workspace deletion', () => {
     await wrapper.get('.workspace-card-menu').trigger('click');
     await flushPromises();
     expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it('shows rename before delete and stops rename from navigating', async () => {
+    const wrapper = await mountHome();
+    await wrapper.get('.workspace-card-menu').trigger('click');
+    await flushPromises();
+
+    const items = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.el-dropdown-menu__item',
+      ),
+    );
+    expect(items.map(item => item.textContent?.trim())).toEqual([
+      '重命名工作区',
+      '删除工作区',
+    ]);
+
+    items[0]?.click();
+    await flushPromises();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('重命名工作区');
+  });
+
+  it('replaces only the renamed workspace with the server response', async () => {
+    const wrapper = await mountHome();
+    await openRenameDialog(wrapper);
+
+    const input = document.body.querySelector<HTMLInputElement>(
+      '#workspace-rename-name',
+    )!;
+    expect(input.value).toBe(workspace.name);
+    input.value = '  重命名后的工作区  ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+
+    const saveButton = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(button => button.textContent?.includes('保存'));
+    saveButton?.click();
+    await flushPromises();
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(mocks.renameWorkspace).toHaveBeenCalledTimes(1);
+    expect(mocks.renameWorkspace).toHaveBeenCalledWith(
+      workspace.id,
+      { name: '重命名后的工作区' },
+    );
+    expect(wrapper.get('.workspace-card h3').text())
+      .toBe('重命名后的工作区');
+    expect(wrapper.findComponent(WorkspaceRenameDialog).props('modelValue'))
+      .toBe(false);
+  });
+
+  it('keeps the original card and dialog when rename fails', async () => {
+    mocks.renameWorkspace.mockRejectedValueOnce(
+      new Error('重命名服务暂时不可用'),
+    );
+    const wrapper = await mountHome();
+    await openRenameDialog(wrapper);
+
+    const input = document.body.querySelector<HTMLInputElement>(
+      '#workspace-rename-name',
+    )!;
+    input.value = '失败后的名称';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+
+    const saveButton = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(button => button.textContent?.includes('保存'));
+    saveButton?.click();
+    await flushPromises();
+
+    expect(wrapper.get('.workspace-card h3').text()).toBe(workspace.name);
+    expect(document.body.querySelector<HTMLInputElement>(
+      '#workspace-rename-name',
+    )?.value).toBe('失败后的名称');
   });
 
   it('deletes only after exact confirmation and updates the count', async () => {

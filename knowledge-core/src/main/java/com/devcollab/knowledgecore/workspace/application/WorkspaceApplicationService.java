@@ -87,6 +87,31 @@ public class WorkspaceApplicationService {
     }
 
     @Transactional
+    public WorkspaceView rename(
+            UUID workspaceId,
+            UUID currentUserId,
+            RenameWorkspaceCommand command
+    ) {
+        Workspace workspace = requireWorkspace(workspaceId);
+        WorkspaceMember currentMember = memberRepository
+                .findByWorkspaceIdAndUserId(workspaceId, currentUserId)
+                .orElseThrow(WorkspaceNotFoundException::new);
+        if (currentMember.role() != WorkspaceRole.ADMIN) {
+            throw new WorkspaceAccessDeniedException();
+        }
+
+        Workspace renamed = new Workspace(
+                workspace.id(),
+                command.name().trim(),
+                workspace.createdBy(),
+                workspace.createdAt(),
+                Instant.now()
+        );
+        workspaceRepository.save(renamed);
+        return WorkspaceView.from(renamed, currentMember.role());
+    }
+
+    @Transactional
     public void delete(UUID workspaceId, UUID currentUserId) {
         requireWorkspace(workspaceId);
         WorkspaceMember currentMember = memberRepository

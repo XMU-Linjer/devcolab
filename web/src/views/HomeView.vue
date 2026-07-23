@@ -79,7 +79,7 @@
               <el-dropdown
                 trigger="click"
                 @click.stop
-                @command="openDeleteDialog(workspaceItem)"
+                @command="handleWorkspaceCommand($event, workspaceItem)"
               >
                 <button
                   class="workspace-card-menu"
@@ -91,6 +91,12 @@
                 </button>
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="rename"
+                      @click.stop
+                    >
+                      重命名工作区
+                    </el-dropdown-item>
                     <el-dropdown-item
                       command="delete"
                       class="workspace-delete-menu-item"
@@ -111,6 +117,13 @@
       v-model="dialogVisible"
       @create="handleCreateWorkspace"
     />
+    <WorkspaceRenameDialog
+      v-model="renameDialogVisible"
+      :workspace-name="workspacePendingRename?.name || ''"
+      :loading="renamingWorkspace"
+      @confirm="handleRenameWorkspace"
+      @closed="workspacePendingRename = null"
+    />
     <WorkspaceDeleteDialog
       v-model="deleteDialogVisible"
       :workspace-name="workspacePendingDelete?.name || ''"
@@ -130,6 +143,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   listWorkspaces,
+  renameWorkspace,
   type Workspace,
   type WorkspaceRole,
 } from '@/api/workspace';
@@ -137,6 +151,7 @@ import NotificationCenter from '@/components/notification/NotificationCenter.vue
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
 import WorkspaceDeleteDialog from '@/components/workspace/WorkspaceDeleteDialog.vue';
+import WorkspaceRenameDialog from '@/components/workspace/WorkspaceRenameDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { readableError } from '@/utils/error';
 
@@ -147,6 +162,9 @@ const workspaces = ref<Workspace[]>([]);
 const loading = ref(false);
 const loggingOut = ref(false);
 const dialogVisible = ref(false);
+const renameDialogVisible = ref(false);
+const renamingWorkspace = ref(false);
+const workspacePendingRename = ref<Workspace | null>(null);
 const deleteDialogVisible = ref(false);
 const deletingWorkspace = ref(false);
 const workspacePendingDelete = ref<Workspace | null>(null);
@@ -188,6 +206,44 @@ async function openWorkspace(workspaceId: string) {
     name: 'workspace-code',
     params: { workspaceId },
   });
+}
+
+function handleWorkspaceCommand(
+  command: string | number | object,
+  workspace: Workspace,
+) {
+  if (command === 'rename') {
+    workspacePendingRename.value = workspace;
+    renameDialogVisible.value = true;
+    return;
+  }
+  if (command === 'delete') {
+    openDeleteDialog(workspace);
+  }
+}
+
+async function handleRenameWorkspace(name: string) {
+  const workspace = workspacePendingRename.value;
+  if (workspace === null || renamingWorkspace.value) {
+    return;
+  }
+
+  renamingWorkspace.value = true;
+  try {
+    const renamed = await renameWorkspace(workspace.id, { name });
+    workspaces.value = workspaces.value.map(
+      item => item.id === renamed.id ? renamed : item,
+    );
+    renameDialogVisible.value = false;
+    workspacePendingRename.value = null;
+    ElMessage.success('工作区名称已更新');
+  } catch (error) {
+    ElMessage.error(
+      readableError(error, '工作区重命名失败'),
+    );
+  } finally {
+    renamingWorkspace.value = false;
+  }
 }
 
 function openDeleteDialog(workspace: Workspace) {
