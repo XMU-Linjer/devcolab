@@ -124,3 +124,4 @@ uploads/
 .DS_Store
 Thumbs.db
 Desktop.ini
+/docs/100-local-transactional-outbox-learning-guide-v0.1.md
