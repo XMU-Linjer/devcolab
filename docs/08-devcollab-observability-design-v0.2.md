@@ -137,7 +137,13 @@ fault-drill PASS
 | Kafka lag 未纳入指标 | 暂不覆盖 | 接入 Kafka exporter 或 Worker 消费位点指标 |
 | Trace 采样仅适合本地 | 本地默认可提高采样 | 生产按流量和成本设置采样率 |
 
-## 8. 参考文档
+## 8. MCP 调用观测与脱敏
+
+MCP Tool 调用至少记录或度量以下字段：`toolName`、`toolCallId`、`userId`、`workspaceId`、`repositoryId`、`latencyMs`、`inputSize`、`outputSize`、`truncated`、`resultStatus` 和 `errorCode`。Trace 使用稳定 Tool 名称和低基数状态属性；完整文件路径不得作为 Metric 标签。
+
+日志与 Span 禁止记录 JWT、Authorization Header、Refresh Token、完整代码正文、完整文档正文、密钥和仓库凭证。审计只保存主体、对象 ID、结果、耗时、大小和截断状态，错误响应不得包含堆栈、SQL 或本地存储路径。
+
+## 9. 参考文档
 
 - `02-devcollab-system-architecture-v0.3.md`
 - `03-devcollab-architecture-verification-v0.1.md`

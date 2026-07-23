@@ -250,7 +250,7 @@ flowchart TB
         Gateway["Collaboration Gateway<br/>Netty + WebSocket<br/>连接、房间、心跳、背压"]
         Core["Knowledge Core<br/>Spring Boot<br/>权限、文档、版本、操作日志、Outbox"]
         Worker["Async Worker<br/>Kafka Consumer<br/>快照、Git、搜索、通知、对象"]
-        MCP["MCP Context Server<br/>可信上下文与权限审计"]
+        MCP["devcollab-mcp-server<br/>Streamable HTTP /mcp<br/>可信上下文与权限审计"]
     end
 
     subgraph AgentServices[Agent 服务]
@@ -298,7 +298,7 @@ flowchart TB
     Agent -->|生成向量| Embed
     Agent --> LLM
     Agent -->|结果事件| Kafka
-    MCP -->|只读 gRPC| Core
+    MCP -->|JWT 身份 + 只读 gRPC/受认证 HTTP| Core
 
     Gateway --> OTel
     Core --> OTel
@@ -388,7 +388,7 @@ Agent Service 不直接修改 Core 业务表。工作流 Checkpoint 和中间 Ar
 
 ### 8.5 MCP Context Server
 
-技术：Java、MCP SDK、gRPC、JWT/OAuth、OpenTelemetry。
+技术：Java 21、Spring Boot 3.5.x、官方 MCP Java SDK、Streamable HTTP、Jackson 2、JWT、gRPC/受认证 HTTP、OpenTelemetry。
 
 职责：
 
@@ -399,6 +399,10 @@ Agent Service 不直接修改 Core 业务表。工作流 Checkpoint 和中间 Ar
 - 返回当前生效文档和风险；
 - MCP 调用审计；
 - 限流、超时和错误映射。
+
+第一阶段独立模块名为 `devcollab-mcp-server`，通过 Streamable HTTP `/mcp` 暴露协议端点。MCP Server 从 `Authorization: Bearer` 解析现有 Access Token，向 Core 传递可信用户身份；Core 对每次工作空间和仓库读取重新执行成员权限校验。MCP Server 不访问 PostgreSQL、不读取 `.data`、不执行 JGit，也不复制 Core Repository 或权限模型。
+
+后续 LangGraph Agent 作为 MCP Client 调用领域能力。MCP Server 只负责协议、认证、预算、审计和受控能力注册；DeepSeek 等模型 Provider 不嵌入 MCP Server，任何文档变更只允许形成待人工审核的结构化方案。
 
 ---
 
@@ -413,6 +417,7 @@ Agent Service 不直接修改 Core 业务表。工作流 Checkpoint 和中间 Ar
 | Agent | Core | gRPC | 获取指定版本的结构化上下文 |
 | Core/Worker/Agent | Kafka | Kafka Protocol | 持久异步事件、广播、积压与重放 |
 | Coding Agent | MCP Server | MCP | 标准化工具、资源和可信上下文 |
+| MCP Server | Core | gRPC 或受认证 HTTP | 传递可信用户身份，由 Core 二次授权并返回只读业务投影 |
 | Worker | Git 平台 | HTTPS API/Webhook | Commit、PR 和 Diff 集成 |
 | Worker | Elasticsearch/MinIO | HTTP SDK | 搜索投影和对象存储 |
 

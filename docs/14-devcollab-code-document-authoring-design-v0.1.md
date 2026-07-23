@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档类型 | 代码—文档关联与异步文档施工专项设计 |
-| 文档状态 | Slice 1 已批准实施；Slice 2–7 仍为设计草案 |
+| 文档状态 | Slice 1 与 MCP 阶段一已批准实施；其余阶段仍为设计草案 |
 | 版本 | V0.1 |
 | 日期 | 2026-07-22 |
 | 适用范围 | Web、Knowledge Core、Worker、Agent Review Service、PostgreSQL、Kafka、MinIO |
@@ -26,13 +26,18 @@
 - Linked Workbench 移除生产 Fixture；
 - 权限、幂等、刷新恢复和 E2E。
 
+MCP 已批准实施：
+
+- 阶段一 `devcollab.workspace.get_context` 与 `devcollab.code.read`；
+- 只读、逐次鉴权、上下文预算和审计；
+- MCP Server 经 Core 读取真实 Git 投影，不直连数据库或 `.data`。
+
 尚未批准实施：
 
 - SYMBOL/RANGE Anchor；
 - 完整 Evidence；
 - 漂移计算；
 - Agent；
-- MCP；
 - RAG；
 - Sandbox。
 
@@ -537,6 +542,23 @@ Trace 贯穿 Web 请求、Task、Outbox Event、Kafka Consumer、模型调用、
 | 6 Context/MCP | 统一 Manifest、外部 Agent 只读上下文 | 权限、审计、最小披露 | 不写 Core | 外部身份与泄露 |
 | 7 检索增强 | BM25/Vector/RRF 补充候选 | 离线检索评测、权限过滤 | 不替代显式关系 | 相关性不可量化 |
 
+MCP 能力按以下四个阶段单独推进：
+
+1. `workspace.get_context`、`code.read`：读取真实工作区与代码投影。
+2. `document.get_structure`、`document.find_candidates`、`binding.list`：补齐文档和关系候选，只读。
+3. `review.submit_document_change`：只创建 `PENDING_REVIEW` 结构化变更方案。
+4. LangGraph + DeepSeek 单 Agent：通过 MCP Client 使用上述能力，不直连数据库或 `.data`。
+
+未来写入闭环固定为：
+
+```text
+Agent 生成结构化变更计划
+→ MCP submit_document_change
+→ PENDING_REVIEW
+→ 用户审核
+→ Core 事务应用
+```
+
 ## 21. 第一垂直切片
 
 推荐 1–2 周只完成“现有 path binding 接入新版 Linked Workbench，并补足精确 File Link 和真实 Block Link”。
@@ -568,7 +590,7 @@ Trace 贯穿 Web 请求、Task、Outbox Event、Kafka Consumer、模型调用、
 ## 23. 暂不实现
 
 - LangGraph、多 Agent、LangChain、Agents SDK。
-- MCP Context Server。
+- MCP 第二至第四阶段能力。
 - RAG、向量数据库和 ES 语义检索。
 - Sandbox、构建、测试执行和补丁验证。
 - 全仓库自由扫描和自动依赖扩展。

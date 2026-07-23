@@ -124,7 +124,13 @@ GET .../code-graph?filePath={repositoryRelativePath}
 4. 使用 Elasticsearch 混合检索补充候选文档，再通过 MCP 向 Agent 提供受控证据。
 5. Agent 只创建带证据的影响建议或 Issue，不直接修改并发布文档。
 
-## 9. 相关基线
+## 9. MCP 只读投影边界
+
+MCP Context Server 只读取 Worker 已写入 Knowledge Core 的 Git 仓库、文件和代码图投影，不直接读取 clone 目录，也不执行 JGit。`devcollab.code.read` 返回真实 `commitHash`、仓库相对 `path`、`language`、受预算限制的文本内容、实际行范围以及显式 `truncated`/`omittedLineCount`。
+
+MCP 接入不得修改现有仓库登记、Outbox、Kafka、clone、fetch 和 scan 流程；路径始终按仓库相对路径校验，二进制及不支持的文件类型拒绝读取。
+
+## 10. 相关基线
 
 - `02-devcollab-system-architecture-v0.3.md`
 - `03-devcollab-architecture-verification-v0.1.md`

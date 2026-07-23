@@ -56,7 +56,7 @@ flowchart LR
     subgraph AgentService[Agent Review Service]
         Indexer["RAG Indexer<br/>加载、切分、Embedding"]
         API["Review API / Consumer<br/>任务受理与幂等"]
-        Graph["LangGraph Workflow<br/>受控状态图"]
+        Graph["LangGraph Workflow<br/>受控状态图 + MCP Client"]
         Rules["Deterministic Rules"]
         Retrieval["LangChain Retriever<br/>混合检索与重排"]
         Reviewers["Reviewer Workers<br/>一致性 / 可靠性 / 安全"]
@@ -75,7 +75,8 @@ flowchart LR
 
     Kafka --> API
     API --> Graph
-    Graph -->|gRPC读取锚点事实| Core
+    Graph -->|MCP Client| MCP["DevCollab MCP Server"]
+    MCP -->|可信身份 + Core 二次授权| Core
     Graph --> Rules
     Graph --> Retrieval
     Retrieval --> ES
@@ -88,6 +89,8 @@ flowchart LR
 ```
 
 Agent Review Service 包含两个相互隔离的运行单元：RAG Indexer 负责知识入库，Review Runtime 负责审阅任务。二者可以位于同一代码仓库，但使用独立消费者组、线程池、限流和失败队列，避免批量重建索引影响在线审阅。
+
+Agent 的领域 Tool 入口统一使用 MCP Client，经 DevCollab MCP Server 调用 Knowledge Core。Agent 不直连 Core 数据库、不读取 `.data`，DeepSeek 等模型 Provider 不嵌入 MCP Server。MCP 提供稳定、受权限控制的领域能力，LangGraph 负责有限状态工作流；任何生成结果只能提交待审核方案，不能直接写正式文档。
 
 ## 4. RAG 知识入库
 
@@ -287,6 +290,8 @@ Reviewer 不是三个无限自主 Agent，而是共享同一 Context Pack、使�
 | `verify_evidence_refs` | Core gRPC | 批量验证来源对象、版本和内容摘要 |
 
 Tool 使用 LangChain Schema 定义参数，但鉴权、超时、返回大小和调用次数由服务端强制执行。模型不得拼接任意 SQL、Elasticsearch DSL、文件路径或外部 URL。
+
+上述 Tool 由 Agent 通过 MCP Client 调用；第一阶段只施工 `devcollab.workspace.get_context` 和 `devcollab.code.read`，不施工 LangGraph、DeepSeek 或写入 Tool。
 
 ### 7.2 Issue 输出
 
