@@ -30,3 +30,7 @@ export async function getWorkspace(workspaceId: string): Promise<Workspace> {
   const { data } = await http.get<Workspace>(`/workspaces/${workspaceId}`);
   return data;
 }
+
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  await http.delete(`/workspaces/${workspaceId}`);
+}

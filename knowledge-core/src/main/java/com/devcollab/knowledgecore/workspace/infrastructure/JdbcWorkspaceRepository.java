@@ -72,4 +72,12 @@ public class JdbcWorkspaceRepository implements WorkspaceRepository {
                 userId
         );
     }
+
+    @Override
+    public void deleteById(UUID workspaceId) {
+        jdbcTemplate.update(
+                "DELETE FROM workspaces WHERE id = ?",
+                workspaceId
+        );
+    }
 }

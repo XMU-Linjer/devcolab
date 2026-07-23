@@ -74,7 +74,34 @@
             </div>
             <p>创建时间：{{ formatTime(workspaceItem.createdAt) }}</p>
             <p>更新时间：{{ formatTime(workspaceItem.updatedAt) }}</p>
-            <span class="card-link">进入工作区 →</span>
+            <div class="workspace-card-bottom">
+              <span class="card-link">进入工作区 →</span>
+              <el-dropdown
+                trigger="click"
+                @click.stop
+                @command="openDeleteDialog(workspaceItem)"
+              >
+                <button
+                  class="workspace-card-menu"
+                  type="button"
+                  aria-label="工作区更多操作"
+                  @click.stop
+                >
+                  ⋯
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="delete"
+                      class="workspace-delete-menu-item"
+                      @click.stop
+                    >
+                      删除工作区
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </article>
         </div>
       </section>
@@ -83,6 +110,12 @@
     <WorkspaceCreateDialog
       v-model="dialogVisible"
       @create="handleCreateWorkspace"
+    />
+    <WorkspaceDeleteDialog
+      v-model="deleteDialogVisible"
+      :workspace-name="workspacePendingDelete?.name || ''"
+      :loading="deletingWorkspace"
+      @confirm="handleDeleteWorkspace"
     />
   </main>
 </template>
@@ -95,6 +128,7 @@ import { useRouter } from 'vue-router';
 
 import {
   createWorkspace,
+  deleteWorkspace,
   listWorkspaces,
   type Workspace,
   type WorkspaceRole,
@@ -102,6 +136,7 @@ import {
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
+import WorkspaceDeleteDialog from '@/components/workspace/WorkspaceDeleteDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { readableError } from '@/utils/error';
 
@@ -112,6 +147,9 @@ const workspaces = ref<Workspace[]>([]);
 const loading = ref(false);
 const loggingOut = ref(false);
 const dialogVisible = ref(false);
+const deleteDialogVisible = ref(false);
+const deletingWorkspace = ref(false);
+const workspacePendingDelete = ref<Workspace | null>(null);
 const errorMessage = ref('');
 const sidebarCollapsed = ref(
   localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
@@ -150,6 +188,35 @@ async function openWorkspace(workspaceId: string) {
     name: 'workspace-code',
     params: { workspaceId },
   });
+}
+
+function openDeleteDialog(workspace: Workspace) {
+  workspacePendingDelete.value = workspace;
+  deleteDialogVisible.value = true;
+}
+
+async function handleDeleteWorkspace() {
+  const workspace = workspacePendingDelete.value;
+  if (workspace === null || deletingWorkspace.value) {
+    return;
+  }
+
+  deletingWorkspace.value = true;
+  try {
+    await deleteWorkspace(workspace.id);
+    workspaces.value = workspaces.value.filter(
+      item => item.id !== workspace.id,
+    );
+    deleteDialogVisible.value = false;
+    workspacePendingDelete.value = null;
+    ElMessage.success('工作区已删除');
+  } catch (error) {
+    ElMessage.error(
+      readableError(error, '工作区删除失败'),
+    );
+  } finally {
+    deletingWorkspace.value = false;
+  }
 }
 
 async function handleLogout() {

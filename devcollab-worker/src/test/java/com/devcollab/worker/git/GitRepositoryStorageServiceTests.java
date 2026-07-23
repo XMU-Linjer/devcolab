@@ -72,6 +72,49 @@ class GitRepositoryStorageServiceTests {
     }
 
     @Test
+    void deletesEmptyWorkspaceDirectoryAfterLastRepository() throws Exception {
+        GitRepositoryProjectionStore store = mock(GitRepositoryProjectionStore.class);
+        GitRepositoryStorageService service = service(store);
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        Path workspaceDirectory = tempDir.resolve(workspaceId.toString());
+        Path repositoryDirectory = workspaceDirectory
+                .resolve(repositoryId.toString())
+                .resolve("repository");
+        Files.createDirectories(repositoryDirectory);
+        Files.writeString(repositoryDirectory.resolve("README.md"), "hello");
+
+        service.delete(workspaceId, repositoryId);
+
+        assertThat(workspaceDirectory).doesNotExist();
+    }
+
+    @Test
+    void keepsOtherWorkspaceAndRepositoryDirectories() throws Exception {
+        GitRepositoryProjectionStore store = mock(GitRepositoryProjectionStore.class);
+        GitRepositoryStorageService service = service(store);
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        UUID otherRepositoryId = UUID.randomUUID();
+        UUID otherWorkspaceId = UUID.randomUUID();
+        Path deletedRepository = tempDir.resolve(workspaceId.toString())
+                .resolve(repositoryId.toString()).resolve("repository");
+        Path keptRepository = tempDir.resolve(workspaceId.toString())
+                .resolve(otherRepositoryId.toString()).resolve("repository");
+        Path otherWorkspaceRepository = tempDir.resolve(otherWorkspaceId.toString())
+                .resolve(UUID.randomUUID().toString()).resolve("repository");
+        Files.createDirectories(deletedRepository);
+        Files.createDirectories(keptRepository);
+        Files.createDirectories(otherWorkspaceRepository);
+
+        service.delete(workspaceId, repositoryId);
+
+        assertThat(deletedRepository.getParent()).doesNotExist();
+        assertThat(keptRepository).exists();
+        assertThat(otherWorkspaceRepository).exists();
+    }
+
+    @Test
     void rejectsNonAllowlistedRemoteAndRecordsFailure() {
         GitRepositoryProjectionStore store = mock(GitRepositoryProjectionStore.class);
         UUID repositoryId = UUID.randomUUID();

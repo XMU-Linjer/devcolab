@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -95,15 +96,44 @@ public class GitRepositoryStorageService {
     public void delete(UUID workspaceId, UUID repositoryId) {
         Path directory = repositoryDirectory(workspaceId, repositoryId).getParent();
         if (!Files.exists(directory)) {
+            try {
+                deleteWorkspaceDirectoryIfEmpty(workspaceId);
+            } catch (IOException exception) {
+                throw new IllegalStateException(
+                        "Git workspace directory cleanup failed workspace="
+                                + workspaceId,
+                        exception
+                );
+            }
             return;
         }
         try {
             deleteDirectory(directory);
+            deleteWorkspaceDirectoryIfEmpty(workspaceId);
         } catch (IOException exception) {
             throw new IllegalStateException(
                     "Git repository directory deletion failed repository=" + repositoryId,
                     exception
             );
+        }
+    }
+
+    private void deleteWorkspaceDirectoryIfEmpty(UUID workspaceId)
+            throws IOException {
+        Path root = properties.dataRoot().toAbsolutePath().normalize();
+        Path workspaceDirectory = root.resolve(workspaceId.toString())
+                .toAbsolutePath()
+                .normalize();
+        if (workspaceDirectory.equals(root)
+                || !workspaceDirectory.startsWith(root)) {
+            throw new IllegalArgumentException(
+                    "Workspace storage path escapes data root"
+            );
+        }
+        try {
+            Files.deleteIfExists(workspaceDirectory);
+        } catch (DirectoryNotEmptyException ignored) {
+            // Other repositories in this workspace still need the directory.
         }
     }
 

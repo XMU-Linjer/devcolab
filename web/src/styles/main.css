@@ -570,10 +570,41 @@ h1 {
 
 .card-link {
   display: inline-flex;
-  margin-top: 8px;
   color: #2454d6;
   font-size: 13px;
   font-weight: 600;
+}
+
+.workspace-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.workspace-card-menu {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #65738a;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.workspace-card-menu:hover,
+.workspace-card-menu:focus-visible {
+  background: #eef3fa;
+  outline: none;
+}
+
+.workspace-delete-menu-item {
+  color: #d83b46;
 }
 
 .document-workspace {

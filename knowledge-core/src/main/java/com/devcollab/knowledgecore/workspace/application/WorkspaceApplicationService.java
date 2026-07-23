@@ -1,5 +1,9 @@
 package com.devcollab.knowledgecore.workspace.application;
 
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
+import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
+import com.devcollab.knowledgecore.git.domain.GitRepository;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import com.devcollab.knowledgecore.workspace.domain.Workspace;
@@ -12,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -20,15 +25,21 @@ public class WorkspaceApplicationService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository memberRepository;
     private final WorkspaceMemberCacheService memberCache;
+    private final GitKnowledgeRepository gitRepository;
+    private final OutboxEventPublisher outboxPublisher;
 
     public WorkspaceApplicationService(
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository memberRepository,
-            WorkspaceMemberCacheService memberCache
+            WorkspaceMemberCacheService memberCache,
+            GitKnowledgeRepository gitRepository,
+            OutboxEventPublisher outboxPublisher
     ) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
         this.memberCache = memberCache;
+        this.gitRepository = gitRepository;
+        this.outboxPublisher = outboxPublisher;
     }
 
     @Transactional
@@ -73,6 +84,38 @@ public class WorkspaceApplicationService {
                 currentUserId
         );
         return WorkspaceView.from(workspace, member.role());
+    }
+
+    @Transactional
+    public void delete(UUID workspaceId, UUID currentUserId) {
+        requireWorkspace(workspaceId);
+        WorkspaceMember currentMember = memberRepository
+                .findByWorkspaceIdAndUserId(workspaceId, currentUserId)
+                .orElseThrow(WorkspaceNotFoundException::new);
+        if (currentMember.role() != WorkspaceRole.ADMIN) {
+            throw new WorkspaceAccessDeniedException();
+        }
+
+        List<WorkspaceMember> members =
+                memberRepository.findAllByWorkspaceId(workspaceId);
+        List<GitRepository> repositories =
+                gitRepository.findRepositoriesByWorkspaceId(workspaceId);
+
+        workspaceRepository.deleteById(workspaceId);
+        for (GitRepository repository : repositories) {
+            outboxPublisher.publish(
+                    "GIT_REPOSITORY",
+                    repository.id(),
+                    OutboxEventTypes.GIT_REPOSITORY_DELETE_REQUESTED,
+                    Map.of(
+                            "workspaceId", workspaceId.toString(),
+                            "repositoryId", repository.id().toString()
+                    )
+            );
+        }
+        members.forEach(member ->
+                memberCache.evict(workspaceId, member.userId())
+        );
     }
 
     public WorkspaceMember requireMembership(

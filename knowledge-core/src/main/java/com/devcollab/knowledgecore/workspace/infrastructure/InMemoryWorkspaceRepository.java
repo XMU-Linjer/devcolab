@@ -46,4 +46,9 @@ public class InMemoryWorkspaceRepository implements WorkspaceRepository {
                 .sorted(Comparator.comparing(Workspace::createdAt))
                 .toList();
     }
+
+    @Override
+    public void deleteById(UUID workspaceId) {
+        workspaces.remove(workspaceId);
+    }
 }
