@@ -52,7 +52,8 @@ class McpServerProtocolTests {
                             "devcollab.workspace.get_context",
                             "devcollab.code.read",
                             "devcollab.document.get_structure",
-                            "devcollab.binding.list"
+                            "devcollab.binding.list",
+                            "devcollab.document.find_candidates"
                     );
             for (McpSchema.Tool tool : tools) {
                 assertThat(tool.inputSchema())

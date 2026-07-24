@@ -177,6 +177,55 @@ final class McpToolSchemas {
         );
     }
 
+    static Map<String, Object> findCandidatesInput(int maxQueryCharacters) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("workspaceId", uuidProperty("DevCollab workspace identifier"));
+        properties.put("query", Map.of(
+                "type", "string",
+                "minLength", 1,
+                "maxLength", maxQueryCharacters,
+                "description", "Search query to find matching documents"
+        ));
+        properties.put("scope", Map.of(
+                "type", "string",
+                "enum", List.of("ALL", "TITLE", "CONTENT"),
+                "default", "ALL",
+                "description", "Search scope: ALL, TITLE, or CONTENT"
+        ));
+        properties.put("maxResults", Map.of(
+                "type", "integer",
+                "minimum", 1,
+                "maximum", 100
+        ));
+        return objectSchema(properties, List.of("workspaceId", "query"));
+    }
+
+    static Map<String, Object> findCandidatesOutput() {
+        Map<String, Object> candidateProperties = new LinkedHashMap<>();
+        candidateProperties.put("type", Map.of("type", "string"));
+        candidateProperties.put("documentId", uuidProperty("Document identifier"));
+        candidateProperties.put("documentTitle", Map.of("type", List.of("string", "null")));
+        candidateProperties.put("blockId", uuidProperty("Block identifier", true));
+        candidateProperties.put("snippet", Map.of("type", List.of("string", "null")));
+        candidateProperties.put("updatedAt", Map.of("type", List.of("string", "null"), "format", "date-time"));
+        Map<String, Object> candidate = objectSchema(
+                candidateProperties,
+                List.of("type", "documentId", "documentTitle")
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "query", Map.of("type", "string"),
+                        "scope", Map.of("type", "string"),
+                        "candidates", Map.of("type", "array", "items", candidate),
+                        "totalResults", Map.of("type", "integer"),
+                        "truncated", Map.of("type", "boolean"),
+                        "omittedCount", Map.of("type", "integer")
+                ),
+                List.of("workspaceId", "query", "scope", "candidates", "totalResults", "truncated", "omittedCount")
+        );
+    }
+
     private static Map<String, Object> toolOutputSchema(
             Map<String, Object> successProperties,
             List<String> successRequired

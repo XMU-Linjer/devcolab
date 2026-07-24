@@ -157,6 +157,38 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
         }
     }
 
+    @Override
+    public List<SearchCandidate> searchDocuments(UUID workspaceId, String keyword, String scope, int limit, McpUserIdentity identity) {
+        try {
+            List<SearchHitPayload> hits = restClient.get()
+                    .uri(builder -> builder
+                            .path("/api/v1/workspaces/{workspaceId}/search")
+                            .queryParam("keyword", keyword)
+                            .queryParam("scope", scope)
+                            .build(workspaceId))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+            if (hits == null) {
+                return List.of();
+            }
+            return hits.stream()
+                    .limit(limit)
+                    .map(h -> new SearchCandidate(
+                            h.type(),
+                            h.documentId(),
+                            h.documentTitle(),
+                            h.blockId(),
+                            h.snippet(),
+                            h.updatedAt()
+                    ))
+                    .toList();
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.INTERNAL_ERROR);
+        }
+    }
+
     private <T> T get(
             String path,
             McpUserIdentity identity,
@@ -288,6 +320,16 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             UUID documentId,
             String documentTitle,
             UUID blockId
+    ) {
+    }
+
+    private record SearchHitPayload(
+            String type,
+            UUID documentId,
+            String documentTitle,
+            UUID blockId,
+            String snippet,
+            java.time.Instant updatedAt
     ) {
     }
 }

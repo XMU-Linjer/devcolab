@@ -33,6 +33,14 @@ public interface KnowledgeCoreGateway {
             McpUserIdentity identity
     );
 
+    List<SearchCandidate> searchDocuments(
+            UUID workspaceId,
+            String keyword,
+            String scope,
+            int limit,
+            McpUserIdentity identity
+    );
+
     record WorkspaceContext(
             UUID workspaceId,
             String name,
@@ -105,6 +113,16 @@ public interface KnowledgeCoreGateway {
             UUID documentId,
             String documentTitle,
             UUID blockId
+    ) {
+    }
+
+    record SearchCandidate(
+            String type,
+            UUID documentId,
+            String documentTitle,
+            UUID blockId,
+            String snippet,
+            java.time.Instant updatedAt
     ) {
     }
 }
