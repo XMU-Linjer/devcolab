@@ -59,6 +59,22 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     rs.getString("proposed_content_json")
             );
 
+    private static final RowMapper<BindingProposal> BINDING_PROPOSAL_MAPPER =
+            (rs, rowNum) -> new BindingProposal(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("change_request_id", UUID.class),
+                    rs.getString("client_binding_proposal_id"),
+                    rs.getInt("sequence_number"),
+                    BindingAction.valueOf(rs.getString("action")),
+                    rs.getObject("repository_id", UUID.class),
+                    rs.getString("file_path"),
+                    rs.getObject("document_id", UUID.class),
+                    rs.getObject("created_document_operation_id", UUID.class),
+                    rs.getObject("binding_id", UUID.class),
+                    rs.getString("reason"),
+                    rs.getTimestamp("created_at").toInstant()
+            );
+
     private static final RowMapper<Evidence> EVIDENCE_MAPPER =
             (rs, rowNum) -> new Evidence(
                     rs.getObject("id", UUID.class),
@@ -129,6 +145,22 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
     }
 
     @Override
+    public BindingProposal saveBindingProposal(BindingProposal value) {
+        jdbcTemplate.update("""
+                INSERT INTO document_change_binding_proposals (
+                    id, change_request_id, client_binding_proposal_id, sequence_number,
+                    action, repository_id, file_path, document_id,
+                    created_document_operation_id, binding_id, reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                value.id(), value.changeRequestId(), value.clientBindingProposalId(),
+                value.sequenceNumber(), value.action().name(), value.repositoryId(),
+                value.filePath(), value.documentId(), value.createdDocumentOperationId(),
+                value.bindingId(), value.reason(), Timestamp.from(value.createdAt()));
+        return value;
+    }
+
+    @Override
     public Evidence saveEvidence(Evidence value) {
         jdbcTemplate.update("""
                 INSERT INTO document_change_evidence (
@@ -188,6 +220,15 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
     }
 
     @Override
+    public List<BindingProposal> findBindingProposals(UUID requestId) {
+        return jdbcTemplate.query("""
+                SELECT * FROM document_change_binding_proposals
+                 WHERE change_request_id = ?
+                 ORDER BY sequence_number, id
+                """, BINDING_PROPOSAL_MAPPER, requestId);
+    }
+
+    @Override
     public List<Evidence> findEvidence(UUID requestId) {
         return jdbcTemplate.query("""
                 SELECT * FROM document_change_evidence
@@ -229,6 +270,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                        r.reviewed_at,
                        (SELECT COUNT(*) FROM document_change_operations o
                          WHERE o.change_request_id = r.id) operation_count,
+                       (SELECT COUNT(*) FROM document_change_binding_proposals bp
+                         WHERE bp.change_request_id = r.id) binding_proposal_count,
                        (SELECT COUNT(*) FROM document_change_evidence e
                          WHERE e.change_request_id = r.id) evidence_count
                   FROM document_change_requests r
@@ -247,6 +290,7 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                         rs.getTimestamp("created_at").toInstant(),
                         instant(rs.getTimestamp("reviewed_at")),
                         rs.getLong("operation_count"),
+                        rs.getLong("binding_proposal_count"),
                         rs.getLong("evidence_count")
                 ), workspaceId, status.name(), size, offset);
     }

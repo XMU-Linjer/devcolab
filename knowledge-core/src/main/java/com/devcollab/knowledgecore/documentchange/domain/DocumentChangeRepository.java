@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.domain;
 
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.ChangeRequest;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingProposal;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Evidence;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.ListItem;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Operation;
@@ -16,6 +17,8 @@ public interface DocumentChangeRepository {
     ChangeRequest saveRequest(ChangeRequest request);
 
     Operation saveOperation(Operation operation);
+
+    BindingProposal saveBindingProposal(BindingProposal proposal);
 
     Evidence saveEvidence(Evidence evidence);
 
@@ -33,6 +36,8 @@ public interface DocumentChangeRepository {
     );
 
     List<Operation> findOperations(UUID requestId);
+
+    List<BindingProposal> findBindingProposals(UUID requestId);
 
     List<Evidence> findEvidence(UUID requestId);
 

@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.application;
 
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.OperationType;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.SourceType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -96,18 +97,33 @@ public final class DocumentChangeViews {
     ) {
     }
 
+    public record BindingProposalView(
+            UUID bindingProposalId,
+            String clientBindingProposalId,
+            int sequenceNumber,
+            BindingAction action,
+            TargetView documentTarget,
+            RepositoryView repository,
+            String filePath,
+            UUID bindingId,
+            String reason
+    ) {
+    }
+
     public record DetailView(
             RequestView request,
             List<OperationView> operations,
+            List<BindingProposalView> bindingProposals,
             List<EvidenceView> requestEvidence,
             boolean replayed
     ) {
         public DetailView(
                 RequestView request,
                 List<OperationView> operations,
+                List<BindingProposalView> bindingProposals,
                 List<EvidenceView> requestEvidence
         ) {
-            this(request, operations, requestEvidence, false);
+            this(request, operations, bindingProposals, requestEvidence, false);
         }
     }
 
@@ -120,6 +136,7 @@ public final class DocumentChangeViews {
             Instant createdAt,
             Instant reviewedAt,
             long operationCount,
+            long bindingProposalCount,
             long evidenceCount,
             List<String> affectedDocumentTitles
     ) {

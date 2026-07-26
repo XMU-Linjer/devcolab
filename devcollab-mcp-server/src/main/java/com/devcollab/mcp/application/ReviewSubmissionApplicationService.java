@@ -42,14 +42,28 @@ public class ReviewSubmissionApplicationService {
                 properties.maxRationaleCharacters(),
                 "rationale"
         );
-        List<?> operations = list(arguments.get("operations"), "operations");
-        if (operations.isEmpty()
-                || operations.size() > properties.maxOperations()) {
+        Object operationsValue = arguments.get("operations");
+        List<?> operations = operationsValue == null ? List.of() : list(operationsValue, "operations");
+        
+        Object bindingProposalsValue = arguments.get("bindingProposals");
+        List<?> bindingProposals = bindingProposalsValue == null ? List.of() : list(bindingProposalsValue, "bindingProposals");
+
+        if (operations.isEmpty() && bindingProposals.isEmpty()) {
+            throw invalid("must contain at least one operation or binding proposal");
+        }
+        if (operations.size() > properties.maxOperations()) {
             throw invalid(
-                    "operations must contain 1 to "
+                    "operations must not exceed "
                             + properties.maxOperations() + " entries"
             );
         }
+        if (bindingProposals.size() > properties.maxOperations()) {
+            throw invalid(
+                    "bindingProposals must not exceed "
+                            + properties.maxOperations() + " entries"
+            );
+        }
+
         for (Object operation : operations) {
             Map<?, ?> item = map(operation, "operation");
             validateText(item.get("clientOperationId"), 100, "clientOperationId");
@@ -64,6 +78,13 @@ public class ReviewSubmissionApplicationService {
                     > properties.maxProposedCharacters() * 4) {
                 throw invalid("proposedContent exceeds the configured budget");
             }
+        }
+        
+        for (Object proposal : bindingProposals) {
+            Map<?, ?> item = map(proposal, "binding proposal");
+            validateText(item.get("clientBindingProposalId"), 100, "clientBindingProposalId");
+            validateText(item.get("filePath"), 1000, "bindingProposal.filePath");
+            validateText(item.get("reason"), 1000, "bindingProposal.reason");
         }
         Object evidenceValue = arguments.get("evidence");
         List<?> evidence = evidenceValue == null

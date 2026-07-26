@@ -189,7 +189,7 @@ class DocumentChangeQueryIntegrationTests {
         assertThat(replay.idempotentReplay()).isTrue();
         CreateCommand changed = new CreateCommand(
                 command.clientRequestId(), "different", command.rationale(),
-                command.operations(), command.evidence()
+                command.operations(), java.util.List.of(), command.evidence()
         );
         assertThatThrownBy(() -> service.create(
                 fixture.workspaceId(), fixture.userId(), changed
@@ -219,6 +219,7 @@ class DocumentChangeQueryIntegrationTests {
         CreateCommand withEvidence = new CreateCommand(
                 base.clientRequestId(), base.summary(), base.rationale(),
                 base.operations(),
+                java.util.List.of(),
                 java.util.List.of(
                         new CreateEvidenceCommand(
                                 null, git.id(), "src/Example.java",
@@ -260,7 +261,7 @@ class DocumentChangeQueryIntegrationTests {
         );
         CreateCommand crossWorkspace = new CreateCommand(
                 "cross", "summary", "rationale",
-                java.util.List.of(operation), java.util.List.of()
+                java.util.List.of(operation), java.util.List.of(), java.util.List.of()
         );
         assertThatThrownBy(() -> service.create(
                 fixture.workspaceId(), fixture.userId(), crossWorkspace
@@ -272,6 +273,7 @@ class DocumentChangeQueryIntegrationTests {
                         operationWithText("same", 1),
                         operationWithText("same", 2)
                 ),
+                java.util.List.of(),
                 java.util.List.of()
         );
         assertThatThrownBy(() -> service.create(
@@ -381,6 +383,7 @@ class DocumentChangeQueryIntegrationTests {
                                 null, null, null, null
                         )
                 ),
+                java.util.List.of(),
                 java.util.List.of()
         );
         var created = service.create(
@@ -632,6 +635,7 @@ class DocumentChangeQueryIntegrationTests {
                         null,
                         null
                 )),
+                java.util.List.of(),
                 java.util.List.of()
         );
     }

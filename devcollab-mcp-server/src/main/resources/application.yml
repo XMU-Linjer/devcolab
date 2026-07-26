@@ -12,7 +12,7 @@ devcollab:
     server-version: ${DEVCOLLAB_MCP_SERVER_VERSION:0.1.0}
     max-code-lines: ${DEVCOLLAB_MCP_MAX_CODE_LINES:400}
     max-output-characters: ${DEVCOLLAB_MCP_MAX_OUTPUT_CHARACTERS:40000}
-    max-path-characters: ${DEVCOLLAB_MCP_MAX_PATH_CHARACTERS:2048}
+    max-path-characters: ${DEVCOLLAB_MCP_MAX_PATH_CHARACTERS:1000}
     max-document-blocks: ${DEVCOLLAB_MCP_MAX_DOCUMENT_BLOCKS:100}
     max-document-content-characters: ${DEVCOLLAB_MCP_MAX_DOCUMENT_CONTENT_CHARACTERS:30000}
     max-bindings: ${DEVCOLLAB_MCP_MAX_BINDINGS:50}

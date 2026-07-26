@@ -62,6 +62,26 @@ public final class DocumentChangeModel {
     ) {
     }
 
+    public enum BindingAction {
+        UPSERT_BINDING, REMOVE_BINDING
+    }
+
+    public record BindingProposal(
+            UUID id,
+            UUID changeRequestId,
+            String clientBindingProposalId,
+            int sequenceNumber,
+            BindingAction action,
+            UUID repositoryId,
+            String filePath,
+            UUID documentId,
+            UUID createdDocumentOperationId,
+            UUID bindingId,
+            String reason,
+            Instant createdAt
+    ) {
+    }
+
     public record Evidence(
             UUID id,
             UUID changeRequestId,
@@ -88,6 +108,7 @@ public final class DocumentChangeModel {
             Instant createdAt,
             Instant reviewedAt,
             long operationCount,
+            long bindingProposalCount,
             long evidenceCount
     ) {
     }

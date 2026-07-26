@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.documentchange.application.DocumentChangeView
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.PageView;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.OperationType;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
 import com.devcollab.knowledgecore.document.domain.DocumentType;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.security.CurrentUser;
@@ -139,7 +140,8 @@ public class DocumentChangeController {
             @NotBlank @Size(max = 100) String clientRequestId,
             @NotBlank @Size(max = 300) String summary,
             @NotBlank @Size(max = 10_000) String rationale,
-            @NotEmpty @Size(max = 50) List<@Valid OperationRequest> operations,
+            @Size(max = 50) List<@Valid OperationRequest> operations,
+            @Size(max = 50) List<@Valid BindingProposalRequest> bindingProposals,
             @Size(max = 50) List<@Valid EvidenceRequest> evidence
     ) {
         CreateCommand toCommand() {
@@ -148,6 +150,10 @@ public class DocumentChangeController {
                     summary,
                     rationale,
                     operations.stream().map(OperationRequest::toCommand).toList(),
+                    bindingProposals == null ? List.of()
+                            : bindingProposals.stream()
+                            .map(BindingProposalRequest::toCommand)
+                            .toList(),
                     evidence == null ? List.of()
                             : evidence.stream()
                             .map(EvidenceRequest::toCommand)
@@ -196,6 +202,32 @@ public class DocumentChangeController {
             Integer schemaVersion,
             JsonNode document
     ) {
+    }
+
+    public record BindingProposalRequest(
+            @NotBlank @Size(max = 100) String clientBindingProposalId,
+            int sequenceNumber,
+            @NotNull BindingAction action,
+            @NotNull UUID repositoryId,
+            @NotBlank @Size(max = 1000) String filePath,
+            UUID documentId,
+            String createdDocumentClientOperationId,
+            UUID bindingId,
+            @NotBlank @Size(max = 1000) String reason
+    ) {
+        CreateBindingProposalCommand toCommand() {
+            return new CreateBindingProposalCommand(
+                    clientBindingProposalId,
+                    sequenceNumber,
+                    action,
+                    repositoryId,
+                    filePath,
+                    documentId,
+                    createdDocumentClientOperationId,
+                    bindingId,
+                    reason
+            );
+        }
     }
 
     public record EvidenceRequest(

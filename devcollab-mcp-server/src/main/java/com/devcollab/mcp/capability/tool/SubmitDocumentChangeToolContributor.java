@@ -2,6 +2,7 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.ReviewSubmissionApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
+import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.config.ReviewSubmissionProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
@@ -27,6 +28,7 @@ public class SubmitDocumentChangeToolContributor implements McpToolContributor {
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
     private final ReviewSubmissionProperties properties;
+    private final McpProperties mcpProperties;
     private final ObjectMapper objectMapper;
 
     public SubmitDocumentChangeToolContributor(
@@ -34,12 +36,14 @@ public class SubmitDocumentChangeToolContributor implements McpToolContributor {
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
             ReviewSubmissionProperties properties,
+            McpProperties mcpProperties,
             ObjectMapper objectMapper
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
         this.properties = properties;
+        this.mcpProperties = mcpProperties;
         this.objectMapper = objectMapper;
     }
 
@@ -52,7 +56,7 @@ public class SubmitDocumentChangeToolContributor implements McpToolContributor {
                         "Create an idempotent PENDING proposal. "
                                 + "This tool never changes formal documents."
                 )
-                .inputSchema(McpToolSchemas.submitDocumentChangeInput(properties))
+                .inputSchema(McpToolSchemas.submitDocumentChangeInput(properties, mcpProperties.maxPathCharacters()))
                 .outputSchema(McpToolSchemas.submitDocumentChangeOutput())
                 .annotations(McpSchema.ToolAnnotations.builder()
                         .readOnlyHint(false)

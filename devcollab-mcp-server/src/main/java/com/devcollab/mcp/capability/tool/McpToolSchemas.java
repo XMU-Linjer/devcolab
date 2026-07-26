@@ -267,7 +267,8 @@ final class McpToolSchemas {
     }
 
     static Map<String, Object> submitDocumentChangeInput(
-            ReviewSubmissionProperties limits
+            ReviewSubmissionProperties limits,
+            int maxPathCharacters
     ) {
         Map<String, Object> content = objectSchema(
                 Map.of(
@@ -353,7 +354,7 @@ final class McpToolSchemas {
                 "repositoryId",
                 uuidProperty("Evidence repository identifier")
         );
-        evidenceProperties.put("filePath", stringProperty(1, 1000));
+        evidenceProperties.put("filePath", stringProperty(1, maxPathCharacters));
         evidenceProperties.put("startLine", Map.of(
                 "type", List.of("integer", "null"),
                 "minimum", 1
@@ -388,11 +389,32 @@ final class McpToolSchemas {
                 "rationale",
                 stringProperty(1, limits.maxRationaleCharacters())
         );
+        Map<String, Object> bindingProposalProperties = new LinkedHashMap<>();
+        bindingProposalProperties.put("clientBindingProposalId", stringProperty(1, 100));
+        bindingProposalProperties.put("sequenceNumber", Map.of("type", "integer", "minimum", 1));
+        bindingProposalProperties.put("action", Map.of("type", "string", "enum", List.of("UPSERT_BINDING", "REMOVE_BINDING")));
+        bindingProposalProperties.put("repositoryId", uuidProperty("Binding repository identifier"));
+        bindingProposalProperties.put("filePath", stringProperty(1, maxPathCharacters));
+        bindingProposalProperties.put("documentId", uuidProperty("Target document identifier", true));
+        bindingProposalProperties.put("createdDocumentClientOperationId", nullableStringProperty(1, 100));
+        bindingProposalProperties.put("bindingId", uuidProperty("Existing binding identifier", true));
+        bindingProposalProperties.put("reason", stringProperty(1, 1000));
+
+        Map<String, Object> bindingProposal = objectSchema(
+                bindingProposalProperties,
+                List.of("clientBindingProposalId", "sequenceNumber", "action", "repositoryId", "filePath", "reason")
+        );
+
         properties.put("operations", Map.of(
                 "type", "array",
-                "minItems", 1,
+                "minItems", 0,
                 "maxItems", limits.maxOperations(),
                 "items", operation
+        ));
+        properties.put("bindingProposals", Map.of(
+                "type", "array",
+                "maxItems", limits.maxOperations(),
+                "items", bindingProposal
         ));
         properties.put("evidence", Map.of(
                 "type", "array",
