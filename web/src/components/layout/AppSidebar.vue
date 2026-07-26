@@ -20,9 +20,12 @@
         :linked-count="linkedCount"
         :review-count="reviewCount"
         :drift-count="driftCount"
+        :review-status="reviewStatus"
+        :review-status-counts="reviewStatusCounts"
         @open-workspace="emit('open-workspace')"
         @open-linked="emit('open-linked')"
         @open-review="emit('open-review')"
+        @open-review-status="emit('open-review-status', $event)"
         @open-drift="emit('open-drift')"
       />
       <div v-if="!modelValue" class="linked-context-scroller">
@@ -162,6 +165,8 @@ const props = withDefaults(defineProps<{
   linkedCount?: number;
   reviewCount?: number;
   driftCount?: number;
+  reviewStatus?: 'pending' | 'applied' | 'rejected' | 'stale';
+  reviewStatusCounts?: Record<'pending' | 'applied' | 'rejected' | 'stale', number>;
 }>(), {
   workspaceId: null,
   documentTree: () => [],
@@ -171,6 +176,13 @@ const props = withDefaults(defineProps<{
   linkedCount: 0,
   reviewCount: 0,
   driftCount: 0,
+  reviewStatus: 'pending',
+  reviewStatusCounts: () => ({
+    pending: 0,
+    applied: 0,
+    rejected: 0,
+    stale: 0,
+  }),
 });
 
 const emit = defineEmits<{
@@ -185,6 +197,7 @@ const emit = defineEmits<{
   'open-linked': [];
   'open-workspace': [];
   'open-review': [];
+  'open-review-status': [status: 'pending' | 'applied' | 'rejected' | 'stale'];
   'open-drift': [];
 }>();
 

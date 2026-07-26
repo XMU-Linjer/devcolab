@@ -26,6 +26,18 @@
       <span v-if="!collapsed" class="sidebar-label">待我评审</span>
       <span v-if="!collapsed" class="sidebar-nav-badge">{{ reviewCount }}</span>
     </button>
+    <div v-if="!collapsed && activeItem === 'review'" class="review-status-navigation">
+      <button
+        v-for="item in reviewStatuses"
+        :key="item.value"
+        type="button"
+        :class="{ 'is-active': reviewStatus === item.value }"
+        @click="emit('open-review-status', item.value)"
+      >
+        <span>{{ item.label }}</span>
+        <small>{{ reviewStatusCounts[item.value] || 0 }}</small>
+      </button>
+    </div>
     <button
       class="nav-item"
       :class="{ 'is-active': activeItem === 'drift' }"
@@ -49,20 +61,37 @@ withDefaults(defineProps<{
   linkedCount?: number;
   reviewCount?: number;
   driftCount?: number;
+  reviewStatus?: 'pending' | 'applied' | 'rejected' | 'stale';
+  reviewStatusCounts?: Record<'pending' | 'applied' | 'rejected' | 'stale', number>;
 }>(), {
   collapsed: false,
   activeItem: 'linked',
   linkedCount: 0,
   reviewCount: 0,
   driftCount: 0,
+  reviewStatus: 'pending',
+  reviewStatusCounts: () => ({
+    pending: 0,
+    applied: 0,
+    rejected: 0,
+    stale: 0,
+  }),
 });
 
 const emit = defineEmits<{
   'open-workspace': [];
   'open-linked': [];
   'open-review': [];
+  'open-review-status': [status: 'pending' | 'applied' | 'rejected' | 'stale'];
   'open-drift': [];
 }>();
+
+const reviewStatuses = [
+  { value: 'pending' as const, label: '待处理' },
+  { value: 'applied' as const, label: '已应用' },
+  { value: 'rejected' as const, label: '已拒绝' },
+  { value: 'stale' as const, label: '已失效' },
+];
 </script>
 
 <style scoped>
@@ -89,5 +118,37 @@ const emit = defineEmits<{
 .nav-item.is-active .sidebar-nav-badge {
   background: #fff;
   color: #315ee8;
+}
+
+.review-status-navigation {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px 34px;
+}
+
+.review-status-navigation button {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+  text-align: left;
+}
+
+.review-status-navigation button:hover,
+.review-status-navigation button.is-active {
+  background: #eef3ff;
+  color: #2454d6;
+  font-weight: 600;
+}
+
+.review-status-navigation small {
+  color: #98a2b3;
+  font-size: 11px;
 }
 </style>

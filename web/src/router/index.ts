@@ -40,6 +40,24 @@ export const appRoutes: RouteRecordRaw[] = [
       component: () => import('@/views/CodeWorkbenchView.vue'),
     },
     {
+      path: '/workspaces/:workspaceId/reviews/:status(pending|applied|rejected|stale)',
+      name: 'workspace-reviews',
+      meta: {
+        requiresAuth: true,
+        sidebarVariant: 'LINKED_WORKBENCH',
+      },
+      component: () => import('@/views/ReviewWorkbenchView.vue'),
+    },
+    {
+      path: '/workspaces/:workspaceId/reviews/:status(pending|applied|rejected|stale)/:requestId',
+      name: 'workspace-review-detail',
+      meta: {
+        requiresAuth: true,
+        sidebarVariant: 'LINKED_WORKBENCH',
+      },
+      component: () => import('@/views/ReviewWorkbenchView.vue'),
+    },
+    {
       path: '/w/:workspaceId/docs/:documentId',
       name: 'document-workbench',
       meta: {

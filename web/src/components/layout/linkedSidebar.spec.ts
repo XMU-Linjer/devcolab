@@ -63,6 +63,27 @@ describe('linked workbench sidebar', () => {
     expect(wrapper.emitted('open-drift')).toHaveLength(1);
   });
 
+  it('renders one route-driven review status group with server counts', async () => {
+    const wrapper = mount(LinkedWorkspaceNavigation, {
+      props: {
+        activeItem: 'review',
+        reviewStatus: 'stale',
+        reviewStatusCounts: {
+          pending: 3,
+          applied: 12,
+          rejected: 4,
+          stale: 2,
+        },
+      },
+    });
+    expect(wrapper.text()).toContain('待处理');
+    expect(wrapper.text()).toContain('已失效');
+    const activeStatus = wrapper.get('.review-status-navigation button.is-active');
+    expect(activeStatus.text()).toContain('已失效');
+    await activeStatus.trigger('click');
+    expect(wrapper.emitted('open-review-status')).toEqual([['stale']]);
+  });
+
   it('keeps selection outside the sidebar when collapsed', async () => {
     const router = testRouter();
     await router.push('/workspaces/w1/code');

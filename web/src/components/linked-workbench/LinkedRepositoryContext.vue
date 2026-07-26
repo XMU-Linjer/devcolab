@@ -50,7 +50,7 @@
       </el-tree>
     </section>
 
-    <section class="linked-context-section related-documents">
+    <section v-if="showDocuments" class="linked-context-section related-documents">
       <div class="linked-context-title"><span>关联文档</span><small>{{ documents.length }}</small></div>
       <button
         v-for="document in documents"
@@ -69,7 +69,7 @@
       <p v-if="documents.length === 0" class="linked-context-empty">当前上下文暂无关联文档</p>
     </section>
 
-    <section class="linked-context-section context-summary">
+    <section v-if="showSummary" class="linked-context-section context-summary">
       <div class="linked-context-title"><span>当前符号</span></div>
       <strong>{{ activeAnchor?.symbolName || '未选择代码符号' }}</strong>
       <dl v-if="activeAnchor" class="symbol-metrics">
@@ -107,11 +107,15 @@ const props = withDefaults(defineProps<{
   unresolvedIssueCount?: number;
   recentCommitCount?: number;
   loading?: boolean;
+  showDocuments?: boolean;
+  showSummary?: boolean;
 }>(), {
   fileLinkCounts: () => ({}),
   linkedBlockCount: 0,
   unresolvedIssueCount: 0,
   recentCommitCount: 0,
+  showDocuments: true,
+  showSummary: true,
 });
 
 const emit = defineEmits<{

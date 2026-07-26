@@ -109,6 +109,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
+import { getPendingDocumentChangeCount } from '@/api/documentChange';
 import {
   getDocument,
   listDocumentTree,
@@ -185,7 +186,7 @@ const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
     reviewStatus: document.value?.reviewStatus,
   }];
 });
-const pendingReviewCount = computed(() => issues.value.filter(issue => issue.status === 'OPEN').length);
+const pendingReviewCount = ref(0);
 const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
   ? { [selectedFilePath.value]: links.value.length }
   : {});
@@ -223,8 +224,11 @@ async function loadWorkbench() {
   if (!workspaceId.value) { errorMessage.value = '工作区地址无效'; return; }
   contextLoading.value = true;
   try {
-    [workspace.value, repositories.value, documentTree.value] = await Promise.all([
-      getWorkspace(workspaceId.value), listGitRepositories(workspaceId.value), listDocumentTree(workspaceId.value),
+    [workspace.value, repositories.value, documentTree.value, pendingReviewCount.value] = await Promise.all([
+      getWorkspace(workspaceId.value),
+      listGitRepositories(workspaceId.value),
+      listDocumentTree(workspaceId.value),
+      getPendingDocumentChangeCount(workspaceId.value).catch(() => 0),
     ]);
     const queryRepositoryId = typeof route.query.repositoryId === 'string' ? route.query.repositoryId : '';
     state.selectedRepositoryId.value = repositories.value.some(item => item.id === queryRepositoryId)
@@ -358,13 +362,16 @@ async function handleWorkspaceNavigation() {
 }
 
 async function handleReviewNavigation() {
-  state.setMode('LINKED');
-  sidebarNavigationActive.value = 'review';
-  toggleInspector(true);
-  const firstPendingIssue = issues.value.find(issue => issue.status === 'OPEN');
-  if (firstPendingIssue) state.activateLink(firstPendingIssue.linkId, 'system');
-  await nextTick();
-  focusActiveLink('system');
+  await router.push({
+    name: 'workspace-reviews',
+    params: {
+      workspaceId: workspaceId.value,
+      status: 'pending',
+    },
+    query: {
+      repositoryId: selectedRepositoryId.value || undefined,
+    },
+  });
 }
 
 function focusActiveLink(source: LinkActivationSource) {

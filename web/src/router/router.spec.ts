@@ -58,4 +58,23 @@ describe('workspace routes', () => {
     expect(router.currentRoute.value.name).toBe('workspace-code');
     expect(completedNavigations).toBe(1);
   });
+
+  it('keeps review list and detail routes inside the linked workspace shell', async () => {
+    const router = createTestRouter();
+    await router.push('/workspaces/w1/reviews/pending');
+    expect(router.currentRoute.value.name).toBe('workspace-reviews');
+    expect(router.currentRoute.value.matched.some(
+      record => record.meta.sidebarVariant === 'LINKED_WORKBENCH',
+    )).toBe(true);
+
+    await router.push('/workspaces/w1/reviews/stale/r1?operationId=o1');
+    expect(router.currentRoute.value.name).toBe('workspace-review-detail');
+    expect(router.currentRoute.value.query.operationId).toBe('o1');
+  });
+
+  it('does not accept arbitrary review status segments', async () => {
+    const router = createTestRouter();
+    await router.push('/workspaces/w1/reviews/unknown');
+    expect(router.currentRoute.value.matched).toHaveLength(0);
+  });
 });
