@@ -325,15 +325,7 @@ public class GitKnowledgeApplicationService {
 
         List<CodeDocumentBinding> allRepoBindings = gitRepository.findBindingsByRepositoryId(repositoryId);
 
-        boolean fileHasBindings = false;
-        for (CodeDocumentBinding binding : allRepoBindings) {
-            if (matches(binding.pathPattern(), normalizedPath)) {
-                fileHasBindings = true;
-                break;
-            }
-        }
-
-        java.util.Set<UUID> seenDocumentIds = new java.util.HashSet<>();
+        java.util.Set<UUID> seenBindingIds = new java.util.HashSet<>();
         List<CodeBindingQueryItem> result = new java.util.ArrayList<>();
 
         for (CodeDocumentBinding binding : allRepoBindings) {
@@ -341,10 +333,9 @@ public class GitKnowledgeApplicationService {
                 continue;
             }
 
-            if (seenDocumentIds.contains(binding.documentId())) {
+            if (!seenBindingIds.add(binding.id())) {
                 continue;
             }
-            seenDocumentIds.add(binding.documentId());
 
             Document document = documentRepository.findById(binding.documentId())
                     .orElse(null);
@@ -365,6 +356,7 @@ public class GitKnowledgeApplicationService {
                 .thenComparing(CodeBindingQueryItem::blockId, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
                 .thenComparing(CodeBindingQueryItem::bindingId));
 
+        boolean fileHasBindings = !result.isEmpty();
         boolean isTruncated = false;
         int omittedBindingCount = 0;
         int effectiveMax = maxBindings != null && maxBindings > 0 ? maxBindings : Integer.MAX_VALUE;

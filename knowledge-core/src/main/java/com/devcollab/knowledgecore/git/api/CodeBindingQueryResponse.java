@@ -10,7 +10,7 @@ public record CodeBindingQueryResponse(
         String filePath,
         boolean fileHasBindings,
         List<CodeBindingQueryItemResponse> bindings,
-        boolean isTruncated,
+        boolean truncated,
         int omittedBindingCount
 ) {
     public static CodeBindingQueryResponse from(CodeBindingQueryResult result) {

@@ -164,14 +164,17 @@ public class DocumentApplicationService {
         }
 
         List<DocumentBlock> allBlocks = new java.util.ArrayList<>(blockRepository.findAllByDocumentId(documentId));
-        allBlocks.sort(java.util.Comparator.comparingInt(DocumentBlock::sortOrder));
+        allBlocks.sort(java.util.Comparator
+                .comparingInt(DocumentBlock::sortOrder)
+                .thenComparing(DocumentBlock::id));
 
         int totalBlocks = allBlocks.size();
         boolean isTruncated = false;
         int omittedBlockCount = 0;
+        List<DocumentBlock> visibleBlocks = allBlocks;
 
         if (maxBlocks != null && maxBlocks > 0 && totalBlocks > maxBlocks) {
-            allBlocks = allBlocks.subList(0, maxBlocks);
+            visibleBlocks = allBlocks.subList(0, maxBlocks);
             isTruncated = true;
             omittedBlockCount = totalBlocks - maxBlocks;
         }
@@ -179,39 +182,45 @@ public class DocumentApplicationService {
         int remainingChars = (maxContentCharacters != null && maxContentCharacters > 0)
                 ? maxContentCharacters : Integer.MAX_VALUE;
         int totalTruncatedChars = 0;
+        if (includeBlockContent && omittedBlockCount > 0) {
+            for (int index = visibleBlocks.size(); index < allBlocks.size(); index++) {
+                totalTruncatedChars += contentCharacterCount(allBlocks.get(index));
+            }
+        }
         List<DocumentBlockStructureDto> blockDtos = new java.util.ArrayList<>();
-        for (DocumentBlock block : allBlocks) {
+        for (DocumentBlock block : visibleBlocks) {
             String plainText = null;
             String content = null;
             boolean isContentTruncated = false;
 
             if (includeBlockContent) {
                 String sourceText = block.text();
-                if (sourceText != null && !sourceText.isEmpty() && remainingChars > 0) {
+                if (sourceText != null && !sourceText.isEmpty()) {
                     int codePoints = sourceText.codePointCount(0, sourceText.length());
-                    if (codePoints <= remainingChars) {
+                    if (remainingChars > 0 && codePoints <= remainingChars) {
                         plainText = sourceText;
                         remainingChars -= codePoints;
-                    } else {
+                    } else if (remainingChars > 0) {
                         int cutoff = sourceText.offsetByCodePoints(0, remainingChars);
                         plainText = sourceText.substring(0, cutoff);
                         totalTruncatedChars += (codePoints - remainingChars);
                         remainingChars = 0;
                         isContentTruncated = true;
                         isTruncated = true;
+                    } else {
+                        totalTruncatedChars += codePoints;
+                        isContentTruncated = true;
+                        isTruncated = true;
                     }
                 }
                 String contentJson = block.contentJson();
-                if (contentJson != null && !contentJson.isEmpty() && remainingChars > 0) {
+                if (contentJson != null && !contentJson.isEmpty()) {
                     int codePoints = contentJson.codePointCount(0, contentJson.length());
-                    if (codePoints <= remainingChars) {
+                    if (remainingChars > 0 && codePoints <= remainingChars) {
                         content = contentJson;
                         remainingChars -= codePoints;
                     } else {
-                        int cutoff = contentJson.offsetByCodePoints(0, remainingChars);
-                        content = contentJson.substring(0, cutoff);
-                        totalTruncatedChars += (codePoints - remainingChars);
-                        remainingChars = 0;
+                        totalTruncatedChars += codePoints;
                         isContentTruncated = true;
                         isTruncated = true;
                     }
@@ -241,6 +250,17 @@ public class DocumentApplicationService {
                 omittedBlockCount,
                 totalTruncatedChars
         );
+    }
+
+    private int contentCharacterCount(DocumentBlock block) {
+        int count = 0;
+        if (block.text() != null) {
+            count += block.text().codePointCount(0, block.text().length());
+        }
+        if (block.contentJson() != null) {
+            count += block.contentJson().codePointCount(0, block.contentJson().length());
+        }
+        return count;
     }
 
     @Transactional

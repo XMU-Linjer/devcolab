@@ -116,9 +116,9 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.reviewStatus(),
                     payload.updatedAt(),
                     payload.blocks() == null ? List.of() : payload.blocks().stream()
-                            .map(b -> new BlockInfo(b.blockId(), b.blockType(), b.sortOrder(), b.version(), b.plainText(), b.content(), b.isContentTruncated()))
+                            .map(b -> new BlockInfo(b.blockId(), b.blockType(), b.sortOrder(), b.version(), b.plainText(), b.content(), b.contentTruncated()))
                             .toList(),
-                    payload.isTruncated(),
+                    payload.truncated(),
                     payload.omittedBlockCount(),
                     payload.omittedCharacterCount()
             );
@@ -149,7 +149,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.bindings() == null ? List.of() : payload.bindings().stream()
                             .map(b -> new BindingInfo(b.bindingId(), b.pathPattern(), b.documentId(), b.documentTitle(), b.blockId()))
                             .toList(),
-                    payload.isTruncated(),
+                    payload.truncated(),
                     payload.omittedBindingCount()
             );
         } catch (RuntimeException exception) {
@@ -286,7 +286,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             String reviewStatus,
             java.time.Instant updatedAt,
             List<BlockInfoPayload> blocks,
-            boolean isTruncated,
+            boolean truncated,
             int omittedBlockCount,
             int omittedCharacterCount
     ) {
@@ -299,7 +299,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             long version,
             String plainText,
             String content,
-            boolean isContentTruncated
+            boolean contentTruncated
     ) {
     }
 
@@ -309,7 +309,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             String filePath,
             boolean fileHasBindings,
             List<BindingInfoPayload> bindings,
-            boolean isTruncated,
+            boolean truncated,
             int omittedBindingCount
     ) {
     }

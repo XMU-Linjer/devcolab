@@ -20,7 +20,7 @@ public final class RepositoryPathValidator {
         if (normalized.startsWith("/")) {
             throw new IllegalArgumentException(errorMessage);
         }
-        if (normalized.matches("^[a-zA-Z]:[/\\\\].*")) {
+        if (normalized.matches("^[a-zA-Z]:.*")) {
             throw new IllegalArgumentException(errorMessage);
         }
         if (normalized.startsWith("//")) {

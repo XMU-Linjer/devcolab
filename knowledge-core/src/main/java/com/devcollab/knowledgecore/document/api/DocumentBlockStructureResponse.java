@@ -11,7 +11,7 @@ public record DocumentBlockStructureResponse(
         long version,
         String plainText,
         String content,
-        boolean isContentTruncated
+        boolean contentTruncated
 ) {
     public static DocumentBlockStructureResponse from(DocumentBlockStructureDto dto) {
         return new DocumentBlockStructureResponse(

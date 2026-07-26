@@ -32,6 +32,7 @@ class RepositoryPathValidatorTests {
             "\\absolute",
             "C:\\file",
             "C:/file",
+            "C:file",
             "\\\\server\\share"
     })
     void invalidPathsFail(String path) {

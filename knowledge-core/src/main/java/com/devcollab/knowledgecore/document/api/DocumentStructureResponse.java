@@ -15,7 +15,7 @@ public record DocumentStructureResponse(
         String reviewStatus,
         Instant updatedAt,
         List<DocumentBlockStructureResponse> blocks,
-        boolean isTruncated,
+        boolean truncated,
         int omittedBlockCount,
         int omittedCharacterCount
 ) {
