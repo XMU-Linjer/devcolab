@@ -79,6 +79,15 @@ public class JdbcDocumentRepository implements DocumentRepository {
     }
 
     @Override
+    public Optional<Document> findByIdForUpdate(UUID documentId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM documents WHERE id = ? FOR UPDATE",
+                DOCUMENT_ROW_MAPPER,
+                documentId
+        ).stream().findFirst();
+    }
+
+    @Override
     public List<Document> findAllByWorkspaceId(UUID workspaceId) {
         return jdbcTemplate.query("""
                         SELECT * FROM documents

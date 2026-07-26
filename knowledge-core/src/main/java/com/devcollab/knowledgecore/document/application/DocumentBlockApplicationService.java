@@ -44,7 +44,10 @@ public class DocumentBlockApplicationService {
             UUID currentUserId,
             CreateDocumentBlockCommand command
     ) {
-        Document document = documentService.get(documentId, currentUserId);
+        Document document = documentService.getForUpdate(
+                documentId,
+                currentUserId
+        );
         documentService.ensureEditable(document);
 
         int sortOrder = blockRepository
@@ -110,7 +113,10 @@ public class DocumentBlockApplicationService {
             UUID currentUserId,
             UpdateDocumentBlockCommand command
     ) {
-        Document document = documentService.get(documentId, currentUserId);
+        Document document = documentService.getForUpdate(
+                documentId,
+                currentUserId
+        );
         documentService.ensureEditable(document);
 
         DocumentBlock current = requireBlock(documentId, blockId);
@@ -164,7 +170,10 @@ public class DocumentBlockApplicationService {
             UUID blockId,
             UUID currentUserId
     ) {
-        Document document = documentService.get(documentId, currentUserId);
+        Document document = documentService.getForUpdate(
+                documentId,
+                currentUserId
+        );
         documentService.ensureEditable(document);
         DocumentBlock block = requireBlock(documentId, blockId);
 
@@ -179,7 +188,10 @@ public class DocumentBlockApplicationService {
             UUID currentUserId,
             long expectedVersion
     ) {
-        Document document = documentService.get(documentId, currentUserId);
+        Document document = documentService.getForUpdate(
+                documentId,
+                currentUserId
+        );
         documentService.ensureEditable(document);
         DocumentBlock block = requireBlock(documentId, blockId);
         if (!blockRepository.deleteIfVersionMatches(block.id(), expectedVersion)) {
@@ -229,7 +241,10 @@ public class DocumentBlockApplicationService {
             UUID currentUserId,
             MoveDocumentBlockCommand command
     ) {
-        Document document = documentService.get(documentId, currentUserId);
+        Document document = documentService.getForUpdate(
+                documentId,
+                currentUserId
+        );
         documentService.ensureEditable(document);
         DocumentBlock block = requireBlock(documentId, blockId);
         List<DocumentBlock> current = new ArrayList<>(

@@ -86,6 +86,15 @@ public class JdbcDocumentBlockRepository implements DocumentBlockRepository {
     }
 
     @Override
+    public Optional<DocumentBlock> findByIdForUpdate(UUID blockId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM document_blocks WHERE id = ? FOR UPDATE",
+                BLOCK_ROW_MAPPER,
+                blockId
+        ).stream().findFirst();
+    }
+
+    @Override
     public List<DocumentBlock> findAllByDocumentId(UUID documentId) {
         return jdbcTemplate.query("""
                         SELECT * FROM document_blocks

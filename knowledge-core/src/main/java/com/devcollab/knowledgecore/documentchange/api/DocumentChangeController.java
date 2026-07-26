@@ -100,6 +100,38 @@ public class DocumentChangeController {
         return service.detail(workspaceId, requestId, currentUser.userId());
     }
 
+    @PostMapping("/{requestId}/apply")
+    public ResponseEntity<DetailView> apply(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        DecisionResult result = service.apply(
+                workspaceId,
+                requestId,
+                currentUser.userId()
+        );
+        return ResponseEntity
+                .status(result.stale()
+                        ? HttpStatus.CONFLICT : HttpStatus.OK)
+                .body(result.detail());
+    }
+
+    @PostMapping("/{requestId}/reject")
+    public DetailView reject(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody RejectDocumentChangeRequest request
+    ) {
+        return service.reject(
+                workspaceId,
+                requestId,
+                currentUser.userId(),
+                request.reason()
+        );
+    }
+
     public record PendingCountResponse(long count) {
     }
 
@@ -191,6 +223,11 @@ public class DocumentChangeController {
             Status status,
             java.time.Instant createdAt,
             boolean idempotentReplay
+    ) {
+    }
+
+    public record RejectDocumentChangeRequest(
+            @NotBlank @Size(max = 2_000) String reason
     ) {
     }
 }

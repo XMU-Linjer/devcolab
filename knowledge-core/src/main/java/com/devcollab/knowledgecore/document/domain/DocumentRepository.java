@@ -10,6 +10,10 @@ public interface DocumentRepository {
 
     Optional<Document> findById(UUID documentId);
 
+    default Optional<Document> findByIdForUpdate(UUID documentId) {
+        return findById(documentId);
+    }
+
     List<Document> findAllByWorkspaceId(UUID workspaceId);
 
     void deleteById(UUID documentId);

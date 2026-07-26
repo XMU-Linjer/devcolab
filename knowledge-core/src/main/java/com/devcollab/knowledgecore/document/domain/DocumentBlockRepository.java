@@ -13,6 +13,10 @@ public interface DocumentBlockRepository {
 
     Optional<DocumentBlock> findById(UUID blockId);
 
+    default Optional<DocumentBlock> findByIdForUpdate(UUID blockId) {
+        return findById(blockId);
+    }
+
     List<DocumentBlock> findAllByDocumentId(UUID documentId);
 
     Optional<DocumentBlock> updateContentIfVersionMatches(

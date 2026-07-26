@@ -9,7 +9,15 @@ import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.application.CreateDocumentBlockCommand;
+import com.devcollab.knowledgecore.document.application.CreateDocumentCommand;
+import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
+import com.devcollab.knowledgecore.document.application.DocumentBlockApplicationService;
 import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
+import com.devcollab.knowledgecore.document.application.UpdateDocumentBlockCommand;
+import com.devcollab.knowledgecore.document.domain.DocumentOperationLog;
+import com.devcollab.knowledgecore.document.domain.DocumentOperationLogRepository;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.common.util.RepositoryPathValidator;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
@@ -36,6 +44,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Comparator;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -54,6 +63,10 @@ public class DocumentChangeApplicationService {
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final DocumentBlockContentCodec contentCodec;
+    private final DocumentApplicationService documentService;
+    private final DocumentBlockApplicationService blockService;
+    private final DocumentOperationLogRepository operationLogRepository;
+    private final OutboxEventPublisher outboxEventPublisher;
 
     public DocumentChangeApplicationService(
             DocumentChangeRepository repository,
@@ -63,7 +76,11 @@ public class DocumentChangeApplicationService {
             GitKnowledgeRepository gitRepository,
             UserRepository userRepository,
             ObjectMapper objectMapper,
-            DocumentBlockContentCodec contentCodec
+            DocumentBlockContentCodec contentCodec,
+            DocumentApplicationService documentService,
+            DocumentBlockApplicationService blockService,
+            DocumentOperationLogRepository operationLogRepository,
+            OutboxEventPublisher outboxEventPublisher
     ) {
         this.repository = repository;
         this.workspaceService = workspaceService;
@@ -73,6 +90,10 @@ public class DocumentChangeApplicationService {
         this.userRepository = userRepository;
         this.objectMapper = objectMapper;
         this.contentCodec = contentCodec;
+        this.documentService = documentService;
+        this.blockService = blockService;
+        this.operationLogRepository = operationLogRepository;
+        this.outboxEventPublisher = outboxEventPublisher;
     }
 
     public record CreateCommand(
@@ -118,6 +139,9 @@ public class DocumentChangeApplicationService {
             Instant createdAt,
             boolean idempotentReplay
     ) {
+    }
+
+    public record DecisionResult(DetailView detail, boolean stale) {
     }
 
     @Transactional
@@ -192,6 +216,134 @@ public class DocumentChangeApplicationService {
             ));
         }
         return new CreateResult(requestId, Status.PENDING, now, false);
+    }
+
+    @Transactional
+    public DecisionResult apply(
+            UUID workspaceId,
+            UUID requestId,
+            UUID currentUserId
+    ) {
+        requireAdmin(workspaceId, currentUserId);
+        ChangeRequest request = lockedRequest(workspaceId, requestId);
+        if (request.status() == Status.APPLIED) {
+            return new DecisionResult(replayedDetail(request), false);
+        }
+        if (request.status() == Status.STALE) {
+            return new DecisionResult(replayedDetail(request), true);
+        }
+        if (request.status() == Status.REJECTED) {
+            throw conflict(
+                    "REQUEST_REJECTED",
+                    "已拒绝的变更请求不能再次应用"
+            );
+        }
+
+        List<Operation> operations = repository.findOperations(request.id());
+        LockedTargets targets = lockAndValidateTargets(
+                workspaceId,
+                operations
+        );
+        if (targets.stale()) {
+            Instant reviewedAt = Instant.now();
+            ChangeRequest stale = repository.decide(
+                    request,
+                    Status.STALE,
+                    currentUserId,
+                    reviewedAt,
+                    null
+            );
+            recordDecision(
+                    stale,
+                    currentUserId,
+                    "DOCUMENT_CHANGE_STALE",
+                    "文档变更请求因目标已变化而失效",
+                    reviewedAt
+            );
+            return new DecisionResult(detail(stale), true);
+        }
+
+        Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
+        for (Operation operation : operations) {
+            applyOperation(
+                    workspaceId,
+                    currentUserId,
+                    operation,
+                    createdDocuments,
+                    targets.blocks()
+            );
+        }
+
+        Instant reviewedAt = Instant.now();
+        ChangeRequest applied = repository.decide(
+                request,
+                Status.APPLIED,
+                currentUserId,
+                reviewedAt,
+                null
+        );
+        recordDecision(
+                applied,
+                currentUserId,
+                "DOCUMENT_CHANGE_APPLIED",
+                "批准并原子应用文档变更请求",
+                reviewedAt
+        );
+        return new DecisionResult(detail(applied), false);
+    }
+
+    @Transactional
+    public DetailView reject(
+            UUID workspaceId,
+            UUID requestId,
+            UUID currentUserId,
+            String reason
+    ) {
+        requireAdmin(workspaceId, currentUserId);
+        String normalizedReason = reason == null ? "" : reason.trim();
+        if (normalizedReason.isEmpty() || normalizedReason.length() > 2_000) {
+            throw invalid("拒绝理由必须为 1 到 2000 个字符");
+        }
+
+        ChangeRequest request = lockedRequest(workspaceId, requestId);
+        if (request.status() == Status.REJECTED) {
+            if (Objects.equals(request.rejectionReason(), normalizedReason)) {
+                return replayedDetail(request);
+            }
+            throw conflict(
+                    "REJECTION_REASON_CONFLICT",
+                    "该请求已使用不同理由拒绝"
+            );
+        }
+        if (request.status() == Status.APPLIED) {
+            throw conflict(
+                    "REQUEST_ALREADY_APPLIED",
+                    "已应用的变更请求不能拒绝"
+            );
+        }
+        if (request.status() == Status.STALE) {
+            throw conflict(
+                    "REQUEST_STALE",
+                    "已失效的变更请求不能拒绝"
+            );
+        }
+
+        Instant reviewedAt = Instant.now();
+        ChangeRequest rejected = repository.decide(
+                request,
+                Status.REJECTED,
+                currentUserId,
+                reviewedAt,
+                normalizedReason
+        );
+        recordDecision(
+                rejected,
+                currentUserId,
+                "DOCUMENT_CHANGE_REJECTED",
+                "拒绝文档变更请求：" + normalizedReason,
+                reviewedAt
+        );
+        return detail(rejected);
     }
 
     public long pendingCount(UUID workspaceId, UUID currentUserId) {
@@ -274,7 +426,8 @@ public class DocumentChangeApplicationService {
                 .map(operation -> operationView(
                         operation,
                         byOperation.getOrDefault(operation.id(), List.of()),
-                        repositories
+                        repositories,
+                        request.status()
                 ))
                 .toList();
         return new DetailView(
@@ -289,7 +442,8 @@ public class DocumentChangeApplicationService {
     private OperationView operationView(
             Operation operation,
             List<Evidence> evidence,
-            Map<UUID, GitRepository> repositories
+            Map<UUID, GitRepository> repositories,
+            Status requestStatus
     ) {
         Document document = operation.documentId() == null
                 ? null
@@ -306,11 +460,33 @@ public class DocumentChangeApplicationService {
         Long actualVersion = block == null ? null : block.version();
         boolean requiresVersion = operation.operationType() == OperationType.UPDATE_BLOCK
                 || operation.operationType() == OperationType.DELETE_BLOCK;
-        boolean conflicted = requiresVersion
-                && (!Objects.equals(operation.baseBlockVersion(), actualVersion));
+        boolean conflictRelevant = requestStatus == Status.PENDING
+                || requestStatus == Status.STALE;
+        boolean missingDocument = operation.documentId() != null
+                && document == null;
+        boolean parentMissing = operation.operationType()
+                == OperationType.CREATE_DOCUMENT
+                && operation.proposedParentDocumentId() != null
+                && documentRepository.findById(
+                        operation.proposedParentDocumentId()
+                ).isEmpty();
+        boolean documentNotEditable = document != null
+                && document.reviewStatus() != DocumentReviewStatus.DRAFT;
+        boolean versionConflict = requiresVersion
+                && !Objects.equals(operation.baseBlockVersion(), actualVersion);
+        boolean conflicted = conflictRelevant && (
+                missingDocument
+                        || parentMissing
+                        || documentNotEditable
+                        || versionConflict
+        );
         String conflictReason = !conflicted
                 ? null
-                : block == null ? "BLOCK_NOT_FOUND" : "BLOCK_VERSION_CHANGED";
+                : missingDocument ? "DOCUMENT_NOT_FOUND"
+                : parentMissing ? "PARENT_DOCUMENT_NOT_FOUND"
+                : documentNotEditable ? "DOCUMENT_NOT_EDITABLE"
+                : block == null ? "BLOCK_NOT_FOUND"
+                : "BLOCK_VERSION_CHANGED";
         return new OperationView(
                 operation.id(),
                 operation.clientOperationId(),
@@ -424,6 +600,199 @@ public class DocumentChangeApplicationService {
                     exception
             );
         }
+    }
+
+    private ChangeRequest lockedRequest(UUID workspaceId, UUID requestId) {
+        return repository.findRequestForUpdate(workspaceId, requestId)
+                .orElseThrow(() -> notFound(
+                        "文档变更请求不存在"
+                ));
+    }
+
+    private record LockedTargets(
+            Map<UUID, Document> documents,
+            Map<UUID, DocumentBlock> blocks,
+            boolean stale
+    ) {
+    }
+
+    private LockedTargets lockAndValidateTargets(
+            UUID workspaceId,
+            List<Operation> operations
+    ) {
+        LinkedHashSet<UUID> documentIds = new LinkedHashSet<>();
+        for (Operation operation : operations) {
+            if (operation.documentId() != null) {
+                documentIds.add(operation.documentId());
+            }
+            if (operation.proposedParentDocumentId() != null) {
+                documentIds.add(operation.proposedParentDocumentId());
+            }
+        }
+
+        Map<UUID, Document> documents = new java.util.LinkedHashMap<>();
+        boolean stale = false;
+        for (UUID documentId : documentIds.stream().sorted().toList()) {
+            Document document = documentRepository
+                    .findByIdForUpdate(documentId)
+                    .orElse(null);
+            if (document == null
+                    || !document.workspaceId().equals(workspaceId)
+                    || document.reviewStatus() != DocumentReviewStatus.DRAFT) {
+                stale = true;
+            } else {
+                documents.put(documentId, document);
+            }
+        }
+
+        Map<UUID, DocumentBlock> blocks = new java.util.LinkedHashMap<>();
+        List<Operation> blockOperations = operations.stream()
+                .filter(operation -> operation.blockId() != null)
+                .sorted(Comparator.comparing(
+                        Operation::blockId
+                ))
+                .toList();
+        for (Operation operation : blockOperations) {
+            DocumentBlock block = blockRepository
+                    .findByIdForUpdate(operation.blockId())
+                    .orElse(null);
+            if (block == null
+                    || operation.documentId() == null
+                    || !block.documentId().equals(operation.documentId())
+                    || !Objects.equals(
+                            block.version(),
+                            operation.baseBlockVersion()
+                    )) {
+                stale = true;
+            } else {
+                blocks.put(block.id(), block);
+            }
+        }
+        return new LockedTargets(documents, blocks, stale);
+    }
+
+    private void applyOperation(
+            UUID workspaceId,
+            UUID currentUserId,
+            Operation operation,
+            Map<UUID, UUID> createdDocuments,
+            Map<UUID, DocumentBlock> lockedBlocks
+    ) {
+        switch (operation.operationType()) {
+            case CREATE_DOCUMENT -> {
+                Document created = documentService.create(
+                        workspaceId,
+                        currentUserId,
+                        new CreateDocumentCommand(
+                                operation.proposedParentDocumentId(),
+                                operation.proposedDocumentTitle(),
+                                operation.proposedDocumentType() == null
+                                        ? DocumentType.REQUIREMENT
+                                        : DocumentType.valueOf(
+                                                operation.proposedDocumentType()
+                                        )
+                        )
+                );
+                createdDocuments.put(operation.id(), created.id());
+            }
+            case ADD_BLOCK -> blockService.create(
+                    resolveDocumentId(operation, createdDocuments),
+                    currentUserId,
+                    new CreateDocumentBlockCommand(
+                            DocumentBlockType.valueOf(
+                                    operation.proposedBlockType()
+                            ),
+                            operation.proposedPlainText(),
+                            operation.proposedContentSchemaVersion(),
+                            readJson(operation.proposedContentJson())
+                    )
+            );
+            case UPDATE_BLOCK -> {
+                DocumentBlock block = lockedBlocks.get(operation.blockId());
+                if (block == null) {
+                    throw new IllegalStateException(
+                            "预检后的 Block 锁定状态丢失"
+                    );
+                }
+                blockService.updateContent(
+                        operation.documentId(),
+                        operation.blockId(),
+                        currentUserId,
+                        new UpdateDocumentBlockCommand(
+                                operation.proposedPlainText(),
+                                operation.proposedContentSchemaVersion(),
+                                readJson(operation.proposedContentJson()),
+                                operation.baseBlockVersion()
+                        )
+                );
+            }
+            case DELETE_BLOCK -> blockService.deleteWithVersion(
+                    operation.documentId(),
+                    operation.blockId(),
+                    currentUserId,
+                    operation.baseBlockVersion()
+            );
+        }
+    }
+
+    private UUID resolveDocumentId(
+            Operation operation,
+            Map<UUID, UUID> createdDocuments
+    ) {
+        if (operation.documentId() != null) {
+            return operation.documentId();
+        }
+        UUID documentId = createdDocuments.get(
+                operation.createdDocumentOperationId()
+        );
+        if (documentId == null) {
+            throw new IllegalStateException(
+                    "新建文档 Operation 尚未产生目标文档"
+            );
+        }
+        return documentId;
+    }
+
+    private void recordDecision(
+            ChangeRequest request,
+            UUID currentUserId,
+            String action,
+            String message,
+            Instant createdAt
+    ) {
+        operationLogRepository.save(new DocumentOperationLog(
+                UUID.randomUUID(),
+                request.workspaceId(),
+                null,
+                action,
+                message,
+                currentUserId,
+                "DOCUMENT_CHANGE_REQUEST",
+                request.id(),
+                createdAt
+        ));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("workspaceId", request.workspaceId());
+        payload.put("changeRequestId", request.id());
+        payload.put("status", request.status().name());
+        payload.put("reviewedBy", currentUserId);
+        payload.put("reviewedAt", createdAt);
+        outboxEventPublisher.publish(
+                "DOCUMENT_CHANGE_REQUEST",
+                request.id(),
+                action,
+                payload
+        );
+    }
+
+    private DetailView replayedDetail(ChangeRequest request) {
+        DetailView detail = detail(request);
+        return new DetailView(
+                detail.request(),
+                detail.operations(),
+                detail.requestEvidence(),
+                true
+        );
     }
 
     private void requireAdmin(UUID workspaceId, UUID currentUserId) {
@@ -802,6 +1171,17 @@ public class DocumentChangeApplicationService {
         return new DocumentChangeException(
                 HttpStatus.NOT_FOUND,
                 "DOCUMENT_CHANGE_REQUEST_NOT_FOUND",
+                message
+        );
+    }
+
+    protected DocumentChangeException conflict(
+            String code,
+            String message
+    ) {
+        return new DocumentChangeException(
+                HttpStatus.CONFLICT,
+                code,
                 message
         );
     }

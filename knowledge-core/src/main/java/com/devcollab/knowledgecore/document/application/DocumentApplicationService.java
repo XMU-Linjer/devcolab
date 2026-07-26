@@ -149,6 +149,17 @@ public class DocumentApplicationService {
         return document;
     }
 
+    @Transactional
+    public Document getForUpdate(UUID documentId, UUID currentUserId) {
+        Document document = documentRepository.findByIdForUpdate(documentId)
+                .orElseThrow(DocumentNotFoundException::new);
+        workspaceService.requireMembership(
+                document.workspaceId(),
+                currentUserId
+        );
+        return document;
+    }
+
     public DocumentStructureDto getDocumentStructure(
             UUID workspaceId,
             UUID documentId,

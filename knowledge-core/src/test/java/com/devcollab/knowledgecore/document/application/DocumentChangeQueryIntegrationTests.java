@@ -280,6 +280,220 @@ class DocumentChangeQueryIntegrationTests {
                 .hasMessageContaining("clientOperationId");
     }
 
+    @Test
+    void adminAppliesUpdateAtomicallyAndReplayDoesNotApplyTwice() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 3);
+        var created = service.create(
+                fixture.workspaceId(),
+                fixture.userId(),
+                updateCommand(document, block, "apply-update")
+        );
+
+        var applied = service.apply(
+                fixture.workspaceId(),
+                created.changeRequestId(),
+                fixture.userId()
+        );
+        var replay = service.apply(
+                fixture.workspaceId(),
+                created.changeRequestId(),
+                fixture.userId()
+        );
+
+        assertThat(applied.stale()).isFalse();
+        assertThat(applied.detail().request().status())
+                .isEqualTo(Status.APPLIED);
+        assertThat(replay.detail().replayed()).isTrue();
+        assertThat(blockRepository.findById(block.id()).orElseThrow().text())
+                .isEqualTo("after");
+        assertThat(blockRepository.findById(block.id()).orElseThrow().version())
+                .isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM operation_logs
+                 WHERE target_type = 'DOCUMENT_CHANGE_REQUEST'
+                   AND target_id = ?
+                   AND action = 'DOCUMENT_CHANGE_APPLIED'
+                """, Integer.class, created.changeRequestId())).isEqualTo(1);
+    }
+
+    @Test
+    void versionConflictMarksRequestStaleWithoutOverwritingHumanChange() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 0);
+        var created = service.create(
+                fixture.workspaceId(),
+                fixture.userId(),
+                updateCommand(document, block, "stale-update")
+        );
+        jdbcTemplate.update("""
+                UPDATE document_blocks
+                   SET text = 'human edit', version = version + 1
+                 WHERE id = ?
+                """, block.id());
+
+        var result = service.apply(
+                fixture.workspaceId(),
+                created.changeRequestId(),
+                fixture.userId()
+        );
+
+        assertThat(result.stale()).isTrue();
+        assertThat(result.detail().request().status()).isEqualTo(Status.STALE);
+        assertThat(result.detail().operations().getFirst()
+                .conflict().reason()).isEqualTo("BLOCK_VERSION_CHANGED");
+        assertThat(blockRepository.findById(block.id()).orElseThrow().text())
+                .isEqualTo("human edit");
+    }
+
+    @Test
+    void applySupportsCreateAddAndDeleteAcrossDocuments() {
+        Fixture fixture = fixture("ADMIN");
+        Document existing = document(fixture);
+        DocumentBlock deleted = block(existing, fixture.userId(), 2);
+        CreateCommand command = new CreateCommand(
+                "mixed-operations",
+                "Create guide and remove obsolete block",
+                "The implementation has moved",
+                java.util.List.of(
+                        new CreateOperationCommand(
+                                "create-guide", 1,
+                                OperationType.CREATE_DOCUMENT,
+                                null, null, null, null,
+                                "Generated guide", DocumentType.BACKEND,
+                                null, null, null, null, null
+                        ),
+                        new CreateOperationCommand(
+                                "add-intro", 2,
+                                OperationType.ADD_BLOCK,
+                                null, "create-guide", null, null,
+                                null, null, null,
+                                DocumentBlockType.HEADING,
+                                "Generated introduction", null, null
+                        ),
+                        new CreateOperationCommand(
+                                "delete-obsolete", 3,
+                                OperationType.DELETE_BLOCK,
+                                existing.id(), null, deleted.id(),
+                                deleted.version(), null, null, null,
+                                null, null, null, null
+                        )
+                ),
+                java.util.List.of()
+        );
+        var created = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+
+        var result = service.apply(
+                fixture.workspaceId(),
+                created.changeRequestId(),
+                fixture.userId()
+        );
+
+        assertThat(result.detail().request().status())
+                .isEqualTo(Status.APPLIED);
+        Document generated = documentRepository
+                .findAllByWorkspaceId(fixture.workspaceId())
+                .stream()
+                .filter(item -> item.title().equals("Generated guide"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(generated.documentType()).isEqualTo(DocumentType.BACKEND);
+        assertThat(blockRepository.findAllByDocumentId(generated.id()))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.type()).isEqualTo(DocumentBlockType.HEADING);
+                    assertThat(item.text())
+                            .isEqualTo("Generated introduction");
+                });
+        assertThat(blockRepository.findById(deleted.id())).isEmpty();
+    }
+
+    @Test
+    void rejectRequiresAdminAndSameReasonReplayIsIdempotent() {
+        Fixture member = fixture("MEMBER");
+        UUID adminId = addMember(member.workspaceId(), "ADMIN");
+        Document document = document(member);
+        DocumentBlock block = block(document, member.userId(), 0);
+        var created = service.create(
+                member.workspaceId(),
+                member.userId(),
+                updateCommand(document, block, "reject-update")
+        );
+
+        assertThatThrownBy(() -> service.reject(
+                member.workspaceId(),
+                created.changeRequestId(),
+                member.userId(),
+                "not acceptable"
+        )).isInstanceOf(WorkspaceAccessDeniedException.class);
+
+        var rejected = service.reject(
+                member.workspaceId(),
+                created.changeRequestId(),
+                adminId,
+                "  not acceptable  "
+        );
+        var replay = service.reject(
+                member.workspaceId(),
+                created.changeRequestId(),
+                adminId,
+                "not acceptable"
+        );
+
+        assertThat(rejected.request().status()).isEqualTo(Status.REJECTED);
+        assertThat(rejected.request().rejectionReason())
+                .isEqualTo("not acceptable");
+        assertThat(replay.replayed()).isTrue();
+        assertThat(blockRepository.findById(block.id()).orElseThrow().text())
+                .isEqualTo("before");
+        assertThatThrownBy(() -> service.reject(
+                member.workspaceId(),
+                created.changeRequestId(),
+                adminId,
+                "different reason"
+        )).isInstanceOf(DocumentChangeException.class);
+    }
+
+    @Test
+    void executionFailureRollsBackEarlierOperationsAndKeepsPending() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 0);
+        ChangeRequest request = saveRequest(
+                fixture, Status.PENDING, "rollback", Instant.now()
+        );
+        repository.saveOperation(new Operation(
+                UUID.randomUUID(), request.id(), "add", 1,
+                OperationType.ADD_BLOCK, document.id(), null, null, null,
+                null, null, null, null, null, null, null, null,
+                DocumentBlockType.PARAGRAPH.name(), "temporary",
+                null, null
+        ));
+        repository.saveOperation(new Operation(
+                UUID.randomUUID(), request.id(), "update", 2,
+                OperationType.UPDATE_BLOCK, document.id(), null, block.id(),
+                block.version(), block.type().name(), block.text(),
+                block.contentSchemaVersion(), block.contentJson(),
+                block.sortOrder(), null, null, null, block.type().name(),
+                "invalid", 1, "{not-json"
+        ));
+        int before = blockRepository.findAllByDocumentId(document.id()).size();
+
+        assertThatThrownBy(() -> service.apply(
+                fixture.workspaceId(), request.id(), fixture.userId()
+        )).isInstanceOf(IllegalStateException.class);
+
+        assertThat(blockRepository.findAllByDocumentId(document.id()))
+                .hasSize(before);
+        assertThat(repository.findRequest(
+                fixture.workspaceId(), request.id()
+        ).orElseThrow().status()).isEqualTo(Status.PENDING);
+    }
+
     private Fixture fixture(String role) {
         UUID userId = createUser();
         UUID workspaceId = UUID.randomUUID();
@@ -295,6 +509,16 @@ class DocumentChangeQueryIntegrationTests {
                 VALUES (?, ?, ?, ?)
                 """, workspaceId, userId, role, now);
         return new Fixture(workspaceId, userId);
+    }
+
+    private UUID addMember(UUID workspaceId, String role) {
+        UUID userId = createUser();
+        jdbcTemplate.update("""
+                INSERT INTO workspace_members
+                    (workspace_id, user_id, role, joined_at)
+                VALUES (?, ?, ?, ?)
+                """, workspaceId, userId, role, Instant.now());
+        return userId;
     }
 
     private UUID createUser() {
