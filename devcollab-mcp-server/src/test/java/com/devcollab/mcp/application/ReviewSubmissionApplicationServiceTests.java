@@ -85,6 +85,36 @@ class ReviewSubmissionApplicationServiceTests {
         )).isInstanceOf(McpToolException.class);
     }
 
+    @Test
+    void validatesEvidenceFilePathLength() {
+        UUID workspaceId = UUID.randomUUID();
+        
+        // 1000 characters should pass
+        Map<String, Object> exactLength = new java.util.LinkedHashMap<>(validArguments(workspaceId));
+        exactLength.put("evidence", List.of(Map.of(
+                "repositoryId", UUID.randomUUID().toString(),
+                "filePath", "a".repeat(1000),
+                "description", "Valid length"
+        )));
+        
+        when(gateway.submitDocumentChange(eq(workspaceId), any(), eq(identity)))
+                .thenReturn(Map.of("changeRequestId", UUID.randomUUID().toString(), "status", "PENDING"));
+        
+        service.submit(workspaceId, exactLength, identity);
+        
+        // 1001 characters should fail at MCP layer
+        Map<String, Object> overLength = new java.util.LinkedHashMap<>(validArguments(workspaceId));
+        overLength.put("evidence", List.of(Map.of(
+                "repositoryId", UUID.randomUUID().toString(),
+                "filePath", "a".repeat(1001),
+                "description", "Over length"
+        )));
+        
+        assertThatThrownBy(() -> service.submit(workspaceId, overLength, identity))
+                .isInstanceOf(McpToolException.class)
+                .hasMessageContaining("evidence.filePath");
+    }
+
     private Map<String, Object> validArguments(UUID workspaceId) {
         return Map.of(
                 "workspaceId", workspaceId.toString(),

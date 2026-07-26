@@ -77,6 +77,11 @@ public class ReviewSubmissionApplicationService {
         for (Object evidenceItem : evidence) {
             Map<?, ?> item = map(evidenceItem, "evidence item");
             validateText(
+                    item.get("filePath"),
+                    1000,
+                    "evidence.filePath"
+            );
+            validateText(
                     item.get("description"),
                     properties.maxDescriptionCharacters(),
                     "evidence.description"

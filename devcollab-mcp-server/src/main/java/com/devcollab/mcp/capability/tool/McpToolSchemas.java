@@ -148,7 +148,7 @@ final class McpToolSchemas {
         properties.put("filePath", Map.of(
                 "type", "string",
                 "minLength", 1,
-                "maxLength", 2048
+                "maxLength", 1000
         ));
         return objectSchema(properties, List.of("workspaceId", "repositoryId", "filePath"));
     }
@@ -353,7 +353,7 @@ final class McpToolSchemas {
                 "repositoryId",
                 uuidProperty("Evidence repository identifier")
         );
-        evidenceProperties.put("filePath", stringProperty(1, 2048));
+        evidenceProperties.put("filePath", stringProperty(1, 1000));
         evidenceProperties.put("startLine", Map.of(
                 "type", List.of("integer", "null"),
                 "minimum", 1
