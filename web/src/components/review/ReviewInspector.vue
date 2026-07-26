@@ -112,6 +112,20 @@
           <p v-if="detail.requestEvidence.length === 0" class="empty-copy">无请求级 Evidence</p>
         </section>
 
+        <section v-if="detail.bindingProposals.length" class="inspector-card evidence-index">
+          <div class="card-title"><span>Binding Proposals</span><small>{{ detail.bindingProposals.length }}</small></div>
+          <button
+            v-for="proposal in detail.bindingProposals"
+            :key="proposal.id"
+            type="button"
+            :class="{ 'is-active': proposal.id === activeEvidenceId }"
+            @click="emit('select-evidence', proposal.id)"
+          >
+            <strong>{{ proposal.filePath }}</strong>
+            <small>{{ proposal.action === 'UPSERT_BINDING' ? '新增或更新代码关联' : '移除代码关联' }} · {{ proposal.reason }}</small>
+          </button>
+        </section>
+
         <section v-if="detail.request.status !== 'PENDING'" class="inspector-card terminal-card">
           <div class="card-title"><span>决策结果</span></div>
           <p>

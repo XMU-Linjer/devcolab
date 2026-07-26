@@ -80,6 +80,24 @@ export interface DocumentChangeEvidence {
   excerptText: string;
 }
 
+export type BindingAction = 'UPSERT_BINDING' | 'REMOVE_BINDING';
+
+export interface DocumentChangeBindingProposal {
+  id: string;
+  clientBindingProposalId: string;
+  sequenceNumber: number;
+  action: BindingAction;
+  repository: {
+    id: string;
+    name: string;
+  };
+  filePath: string;
+  documentId: string | null;
+  createdDocumentClientOperationId: string | null;
+  bindingId: string | null;
+  reason: string;
+}
+
 export interface DocumentChangeOperation {
   operationId: string;
   clientOperationId: string;
@@ -96,6 +114,7 @@ export interface DocumentChangeOperation {
 export interface DocumentChangeDetail {
   request: DocumentChangeRequest;
   operations: DocumentChangeOperation[];
+  bindingProposals: DocumentChangeBindingProposal[];
   requestEvidence: DocumentChangeEvidence[];
   replayed: boolean;
 }
@@ -109,6 +128,7 @@ export interface DocumentChangeListItem {
   createdAt: string;
   reviewedAt: string | null;
   operationCount: number;
+  bindingProposalCount: number;
   evidenceCount: number;
   affectedDocumentTitles: string[];
 }

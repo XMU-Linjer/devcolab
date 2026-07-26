@@ -595,19 +595,35 @@ async function selectEvidence(evidenceId: string) {
     ...(detail.value?.requestEvidence ?? []),
   ];
   const evidence = allEvidence.find(item => item.id === evidenceId);
-  if (!evidence) return;
-  selectedRepositoryId.value = evidence.repository.id;
-  selectedFilePath.value = evidence.filePath;
-  manualSource.value = null;
-  await router.replace({
-    query: {
-      ...route.query,
-      evidenceId,
-      repositoryId: evidence.repository.id,
-      filePath: evidence.filePath,
-    },
-  });
-  await loadRepositoryFiles();
+  if (evidence) {
+    selectedRepositoryId.value = evidence.repository.id;
+    selectedFilePath.value = evidence.filePath;
+    manualSource.value = null;
+    await router.replace({
+      query: {
+        ...route.query,
+        evidenceId,
+        repositoryId: evidence.repository.id,
+        filePath: evidence.filePath,
+      },
+    });
+    await loadRepositoryFiles();
+    return;
+  }
+
+  const bindingProposal = detail.value?.bindingProposals?.find(item => item.id === evidenceId);
+  if (bindingProposal) {
+    if (selectedRepositoryId.value !== bindingProposal.repository.id) {
+      await selectRepository(bindingProposal.repository.id);
+    }
+    await selectRepositoryFile(bindingProposal.filePath);
+    await router.replace({
+      query: {
+        ...route.query,
+        evidenceId,
+      },
+    });
+  }
 }
 
 function openStatus(status: ReviewRouteStatus) {
