@@ -213,7 +213,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { listBlocks, type DocumentBlock } from '@/api/block';
@@ -298,6 +298,9 @@ const pageData = ref<DocumentChangePage>({
   totalPages: 0,
 });
 
+let detailRequestGeneration = 0;
+let operationDocumentGeneration = 0;
+
 const fileTree = computed(() => buildRepositoryTree(files.value));
 const activeRepository = computed(() =>
   repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
@@ -330,13 +333,38 @@ const shortCommit = computed(() => (
 
 onMounted(() => void loadInitialState());
 
+onUnmounted(() => {
+  detailRequestGeneration++;
+  operationDocumentGeneration++;
+});
+
 watch(
-  () => [route.params.status, route.params.requestId],
-  ([nextStatus, nextRequest], [previousStatus, previousRequest]) => {
-    if (nextStatus === previousStatus && nextRequest === previousRequest) return;
+  () => [route.params.workspaceId, route.params.status, route.params.requestId],
+  ([nextWorkspace, nextStatus, nextRequest], [prevWorkspace, prevStatus, prevRequest]) => {
+    const workspaceChanged = nextWorkspace !== prevWorkspace;
+    const statusChanged = nextStatus !== prevStatus;
+    const requestChanged = nextRequest !== prevRequest;
+
+    if (!workspaceChanged && !statusChanged && !requestChanged) return;
+
     errorMessage.value = '';
-    if (nextRequest) void loadDetail();
-    else {
+
+    if (workspaceChanged) {
+      detailRequestGeneration++;
+      operationDocumentGeneration++;
+      detail.value = null;
+      documentBlocks.value = [];
+      files.value = [];
+      selectedRepositoryId.value = '';
+      selectedFilePath.value = '';
+      manualSource.value = null;
+      void loadInitialState();
+      return;
+    }
+
+    if (nextRequest) {
+      if (requestChanged) void loadDetail();
+    } else {
       detail.value = null;
       void loadListAndCounts();
     }
@@ -419,16 +447,23 @@ async function loadListAndCounts() {
 
 async function loadDetail() {
   if (!requestId.value) return;
+  const currentGeneration = ++detailRequestGeneration;
+  
   detailLoading.value = true;
   errorMessage.value = '';
   try {
-    detail.value = await getDocumentChange(workspaceId.value, requestId.value);
+    const result = await getDocumentChange(workspaceId.value, requestId.value);
+    if (currentGeneration !== detailRequestGeneration) return;
+    detail.value = result;
     await normalizeDetailSelection();
   } catch (error) {
+    if (currentGeneration !== detailRequestGeneration) return;
     detail.value = null;
     errorMessage.value = readableError(error, '评审请求详情加载失败');
   } finally {
-    detailLoading.value = false;
+    if (currentGeneration === detailRequestGeneration) {
+      detailLoading.value = false;
+    }
   }
 }
 
@@ -440,15 +475,24 @@ async function normalizeDetailSelection() {
     detail.value?.requestEvidence ?? [],
     typeof route.query.evidenceId === 'string' ? route.query.evidenceId : null,
   );
-  await router.replace({
-    query: {
-      ...route.query,
-      operationId: operation.operationId,
-      evidenceId: evidence?.id,
-      repositoryId: evidence?.repository.id || route.query.repositoryId,
-      filePath: evidence?.filePath || route.query.filePath,
-    },
-  });
+  
+  const queryUpdates: Record<string, any> = {
+    ...route.query,
+    operationId: operation.operationId,
+  };
+  
+  if (evidence) {
+    queryUpdates.evidenceId = evidence.id;
+    queryUpdates.repositoryId = evidence.repository.id;
+    queryUpdates.filePath = evidence.filePath;
+  } else {
+    queryUpdates.evidenceId = undefined;
+    queryUpdates.repositoryId = undefined;
+    queryUpdates.filePath = undefined;
+  }
+  
+  await router.replace({ query: queryUpdates });
+  
   if (evidence) {
     manualSource.value = null;
     selectedRepositoryId.value = evidence.repository.id;
@@ -456,6 +500,10 @@ async function normalizeDetailSelection() {
     if (!files.value.some(file => file.path === evidence.filePath)) {
       await loadRepositoryFiles();
     }
+  } else {
+    manualSource.value = null;
+    selectedRepositoryId.value = '';
+    selectedFilePath.value = '';
   }
   await loadOperationDocument();
 }
@@ -467,13 +515,21 @@ async function loadOperationDocument() {
     documentBlocks.value = [];
     return;
   }
+  
+  const currentGeneration = ++operationDocumentGeneration;
+  
   documentLoading.value = true;
   try {
-    documentBlocks.value = await listBlocks(documentId);
+    const result = await listBlocks(documentId);
+    if (currentGeneration !== operationDocumentGeneration) return;
+    documentBlocks.value = result;
   } catch {
+    if (currentGeneration !== operationDocumentGeneration) return;
     documentBlocks.value = [];
   } finally {
-    documentLoading.value = false;
+    if (currentGeneration === operationDocumentGeneration) {
+      documentLoading.value = false;
+    }
   }
 }
 
@@ -503,20 +559,33 @@ async function selectRepositoryFile(path: string) {
 async function selectOperation(operationId: string) {
   const operation = detail.value?.operations.find(item => item.operationId === operationId);
   const evidence = selectedEvidence(operation ?? null, detail.value?.requestEvidence ?? []);
-  await router.replace({
-    query: {
-      ...route.query,
-      operationId,
-      evidenceId: evidence?.id,
-      repositoryId: evidence?.repository.id || route.query.repositoryId,
-      filePath: evidence?.filePath || route.query.filePath,
-    },
-  });
+  
+  const queryUpdates: Record<string, any> = {
+    ...route.query,
+    operationId,
+  };
+  
+  if (evidence) {
+    queryUpdates.evidenceId = evidence.id;
+    queryUpdates.repositoryId = evidence.repository.id;
+    queryUpdates.filePath = evidence.filePath;
+  } else {
+    queryUpdates.evidenceId = undefined;
+    queryUpdates.repositoryId = undefined;
+    queryUpdates.filePath = undefined;
+  }
+  
+  await router.replace({ query: queryUpdates });
+  
   if (evidence) {
     manualSource.value = null;
     selectedRepositoryId.value = evidence.repository.id;
     selectedFilePath.value = evidence.filePath;
     await loadRepositoryFiles();
+  } else {
+    manualSource.value = null;
+    selectedRepositoryId.value = '';
+    selectedFilePath.value = '';
   }
 }
 
