@@ -18,12 +18,14 @@
 | 13 | `13-devcollab-git-markdown-import-design-v0.1.md` | 定义仓库 Markdown 快照、幂等导入文档树及可伸缩工作区导航 | V0.1 | 应提交 |
 | 14 | `14-devcollab-code-document-authoring-design-v0.1.md` | 定义真实代码—文档关系、受控上下文、异步文档提案、Evidence 与人工审阅边界 | V0.1 | Slice 1 与 MCP 阶段一已批准实施；其余阶段仍为设计草案 |
 | 15 | `15-devcollab-mcp-context-server-implementation-plan-v0.1.md` | 定义 MCP Context Server 的正式技术选型、边界、可扩展能力模型、第一阶段施工和验收 | V0.1 | 应提交 |
+| 16 | `16-devcollab-document-change-review-design-v0.1.md` | 定义结构化文档变更请求、人工评审、Block 版本冲突、原子应用和第三阶段前端工作台 | V0.1 | 待评审，应提交 |
 
 ### 设计权威资产
 
 | 目录 | 内容 | 版本库状态 |
 |---|---|---|
 | `design/code-doc-linked-workbench/` | Code ↔ Doc Linked Workspace 的 HTML 原型、设计约束与应用验收截图 | 应提交 |
+| `design/document-change-review/` | 第三阶段文档变更待评审列表、详情、Diff、Evidence 和终态交互原型 | 应提交 |
 
 正式文档的评审顺序为需求、总体架构、验证、前端设计和专项设计。Agent 专项设计属于 V1.1 后置阶段，只有核心平台、Git、搜索与权限基础通过验证后才进入实施评审。
 

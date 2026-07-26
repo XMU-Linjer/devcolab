@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevCollab · Workspace Review Mode</title>
+  <style>
+    :root {
+      --blue:#2f63e9; --blue-50:#eef4ff; --blue-100:#dce8ff; --ink:#152238;
+      --text:#344563; --muted:#7d8aa2; --line:#dfe6f0; --panel:#fff; --soft:#f6f8fc;
+      --green:#189b62; --green-bg:#eaf8f1; --red:#d94a45; --red-bg:#fff0ef;
+      --amber:#b7791f; --amber-bg:#fff7df; --sidebar:252px; --inspector:310px; --code:.85fr;
+    }
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}
+    body{background:#eef2f8;color:var(--text);font:14px/1.45 Inter,"Segoe UI","PingFang SC",sans-serif}
+    button,input,select,textarea{font:inherit}.app{display:grid;width:100vw;height:100vh;grid-template-columns:var(--sidebar) minmax(0,1fr);background:#eef2f8}
+    button{cursor:pointer}.sidebar{display:flex;min-width:0;min-height:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}
+    .brand{display:flex;height:68px;flex:0 0 auto;align-items:center;gap:11px;border-bottom:1px solid var(--line);padding:0 18px}
+    .logo{display:grid;width:38px;height:38px;place-items:center;border-radius:11px;background:linear-gradient(140deg,#3972f4,#214bc8);color:#fff;font-size:17px;font-weight:800;box-shadow:0 6px 16px rgb(47 99 233 / 24%)}
+    .brand strong{font-size:20px;color:var(--ink)}.nav{display:grid;flex:0 0 auto;gap:3px;padding:12px 10px 10px}
+    .nav-button,.review-parent,.review-child{display:grid;width:100%;align-items:center;border:0;border-radius:8px;background:transparent;color:#506079;text-align:left}
+    .nav-button{grid-template-columns:24px minmax(0,1fr) auto;padding:9px 10px}.nav-button.active,.review-parent.active{background:var(--blue-50);color:#2457d4;font-weight:750}
+    .nav-icon{color:#6c7c94;font-size:16px}.badge{display:grid;min-width:20px;height:20px;place-items:center;border-radius:999px;background:#eef1f6;color:#647089;font-size:11px}
+    .review-group{display:grid;gap:2px}.review-parent{grid-template-columns:20px minmax(0,1fr) auto;padding:9px 10px}.caret{transition:transform .16s}.review-group.open .caret{transform:rotate(90deg)}
+    .review-children{display:none;padding-left:28px}.review-group.open .review-children{display:grid}.review-child{grid-template-columns:minmax(0,1fr) auto;padding:7px 9px}
+    .review-child.active{background:#f2f6ff;color:#2457d4;font-weight:700}.repo-section{display:flex;min-height:0;flex:1;flex-direction:column;border-top:1px solid var(--line);padding:12px 10px 8px}
+    .section-title{display:flex;align-items:center;justify-content:space-between;padding:0 8px 8px;color:#8c98aa;font-size:12px;font-weight:800;letter-spacing:.04em}
+    .repo-picker{display:flex;align-items:center;justify-content:space-between;border:1px solid #d9e1ec;border-radius:7px;padding:7px 9px;background:#fbfcfe;font-size:12px}
+    .repo-meta{padding:6px 9px;color:#8390a4;font-size:11px}.tree{min-height:0;overflow:auto;padding:2px 0 14px}.tree-row{display:flex;height:30px;align-items:center;gap:7px;border-radius:7px;padding-right:7px;white-space:nowrap}
+    .tree-row.selected{background:#eaf1ff;color:#2459d4;font-weight:700}.tree-row.related{color:#2459d4}.tree-row .grow{overflow:hidden;text-overflow:ellipsis}.tree-row .hint{margin-left:auto;color:#8d99aa;font-size:10px}
+    .tree-row[data-level="0"]{padding-left:8px}.tree-row[data-level="1"]{padding-left:24px}.tree-row[data-level="2"]{padding-left:40px}.tree-row[data-level="3"]{padding-left:56px}
+    .side-note{flex:0 0 auto;margin:8px 10px 12px;border:1px solid #d4e0fb;border-radius:9px;padding:10px 11px;background:#f5f8ff;font-size:11px}.side-note strong{display:block;margin-bottom:3px;color:#29456f}
+    .main{display:grid;min-width:0;min-height:0;grid-template-rows:68px minmax(0,1fr) 26px}.topbar{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line);padding:0 18px;background:#fff}
+    .heading{min-width:0}.eyebrow{margin:0;color:#78869d;font-size:10px;letter-spacing:.1em}.heading h1{overflow:hidden;margin:2px 0 0;color:var(--ink);font-size:20px;text-overflow:ellipsis;white-space:nowrap}
+    .heading h1 button{border:0;padding:0;background:transparent;color:#47617f;font-weight:600}.heading h1 span{color:#98a3b4;font-weight:400}.workspace-meta{display:flex;min-width:0;align-items:center;gap:8px;color:#6e7d94;font-size:12px}
+    .pill{border:1px solid #dbe3ee;border-radius:999px;padding:4px 9px;background:#fbfcfe}.top-icon{display:grid;width:34px;height:34px;place-items:center;border:1px solid #dbe3ee;border-radius:50%;background:#fff}
+    .content{min-width:0;min-height:0;overflow:hidden;padding:10px}.page{display:none;width:100%;height:100%;min-width:0;min-height:0}.page.active{display:block}
+    .list-page{overflow:hidden}.list-toolbar{display:flex;min-height:70px;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--line);border-radius:10px 10px 0 0;padding:12px 16px;background:#fff}
+    .list-toolbar h2{margin:0;color:var(--ink);font-size:19px}.list-toolbar p{margin:3px 0 0;color:var(--muted);font-size:12px}.tools{display:flex;align-items:center;gap:8px}
+    .input,.select,.button{height:34px;border:1px solid #d5dde9;border-radius:7px;padding:0 11px;background:#fff;color:#45546d}.input{width:250px}.button{font-weight:650}.button.primary{border-color:var(--blue);background:var(--blue);color:#fff}.button.danger{border-color:#efb1ae;color:var(--red)}
+    .list-card{display:grid;height:calc(100% - 70px);grid-template-rows:44px minmax(0,1fr) 44px;overflow:hidden;border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;background:#fff}
+    .table-head,.request-row{display:grid;grid-template-columns:minmax(340px,1.7fr) 105px 105px 155px 125px;align-items:center;gap:12px;padding:0 16px}
+    .table-head{border-bottom:1px solid var(--line);background:#fbfcfe;color:#7f8ba0;font-size:11px}.request-list{min-height:0;overflow:auto}
+    .request-row{min-height:82px;border-bottom:1px solid #e8edf4}.request-row:hover{background:#f9fbff}.request-title{border:0;padding:0;background:transparent;color:#234fbd;font-size:14px;font-weight:750;text-align:left}
+    .request-sub{margin-top:4px;color:#8995a7;font-size:11px}.number strong{display:block;color:var(--ink);font-size:15px}.number span{color:#8a96a9;font-size:10px}
+    .status{display:inline-flex;border-radius:5px;padding:3px 7px;font-size:10px;font-weight:800}.pending{background:#eaf1ff;color:#285bcf}.applied{background:var(--green-bg);color:var(--green)}.stale{background:var(--amber-bg);color:var(--amber)}.rejected{background:var(--red-bg);color:var(--red)}
+    .pagination{display:flex;align-items:center;justify-content:flex-end;gap:5px;border-top:1px solid var(--line);padding:0 14px}.empty{display:grid;height:100%;place-items:center;text-align:center}.empty-mark{display:grid;width:54px;height:54px;margin:auto;place-items:center;border-radius:50%;background:#eef4ff;color:var(--blue);font-size:25px}.empty h3{margin:12px 0 4px;color:var(--ink)}.empty p{margin:0;color:var(--muted)}
+    .review-page{height:100%}.review-workspace{display:grid;width:100%;height:100%;min-width:0;min-height:0;grid-template-columns:minmax(300px,var(--code)) 8px minmax(360px,1.15fr) var(--inspector);overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#fff}
+    .review-workspace.inspector-collapsed{grid-template-columns:minmax(300px,var(--code)) 8px minmax(360px,1.15fr) 42px}.pane{display:grid;min-width:0;min-height:0;grid-template-rows:auto minmax(0,1fr);background:#fff}
+    .pane-head{display:flex;min-height:58px;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:8px 12px}.pane-title{min-width:0}.pane-title strong{display:block;overflow:hidden;color:var(--ink);font-size:14px;text-overflow:ellipsis;white-space:nowrap}.pane-title span{display:block;overflow:hidden;margin-top:2px;color:#7e8ba0;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+    .code-pane{border-right:1px solid var(--line);background:#fbfcfe}.code-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}.tag{border-radius:999px;padding:2px 6px;background:#eef2f7;color:#647189;font-size:9px}.tag.range{background:#fff2cd;color:#9a6818}
+    .evidence-switch{display:flex;align-items:center;gap:5px}.mini{display:grid;width:27px;height:27px;place-items:center;border:1px solid #d7dfeb;border-radius:6px;background:#fff;color:#58677f}.code-view{min-height:0;overflow:auto;padding:8px 0 20px;background:#fbfcfe;color:#35425a;font:11px/1.75 Consolas,"Cascadia Code",monospace}
+    .code-line{display:grid;grid-template-columns:44px minmax(max-content,1fr);min-height:21px;padding-right:10px}.line-no{border-right:1px solid #e5eaf1;padding-right:9px;color:#9aa5b5;text-align:right;user-select:none}.line-code{padding-left:12px;white-space:pre}.code-line.highlight{border-left:3px solid #5b8def;background:#e6efff}.code-line.highlight .line-no{color:#526c98}.kw{color:#8a3eb0}.ann{color:#a56a18}.str{color:#2c7b64}.type{color:#295fba}.comment{color:#8b98a8}
+    .canvas-resizer{position:relative;background:#f3f6fa;cursor:col-resize}.canvas-resizer::after{position:absolute;top:46%;bottom:46%;left:4px;width:2px;border-radius:2px;background:#b8c5d8;content:""}
+    .document-pane{background:#fff}.view-tabs{display:flex;border:1px solid #d7dfeb;border-radius:7px;overflow:hidden}.view-tabs button{border:0;border-right:1px solid #d7dfeb;padding:5px 8px;background:#fff;color:#647089;font-size:10px}.view-tabs button:last-child{border-right:0}.view-tabs button.active{background:var(--blue);color:#fff}
+    .document-view{min-height:0;overflow:auto;padding:18px 20px 36px}.document-header{border-bottom:1px solid var(--line);padding-bottom:14px}.document-header h2{margin:4px 0;color:var(--ink);font-size:22px}.document-header p{margin:0;color:#7f8b9e;font-size:11px}
+    .doc-block{position:relative;margin:15px 0;border-left:3px solid transparent;padding:5px 10px 5px 14px;color:#42516a;line-height:1.7}.doc-block h3{margin:0 0 5px;color:#1d2a40}.doc-block.target{border:1px solid #bcd0fa;border-left:4px solid var(--blue);border-radius:7px;background:#f7faff;box-shadow:0 5px 18px rgb(47 99 233 / 7%)}.block-label{display:block;margin-bottom:6px;color:#3561c6;font-size:9px;font-weight:800;letter-spacing:.05em}
+    del{border-radius:2px;background:#ffe1df;color:#a53834;text-decoration:line-through}ins{border-radius:2px;background:#dff5e9;color:#16734b;text-decoration:none}.proposed-note{margin-top:8px;border:1px solid #b9dfca;border-radius:6px;padding:8px;background:#effaf4;color:#246846;font-size:11px}
+    .insert-marker{margin:13px 0;border:1px dashed #81a8f5;border-radius:7px;padding:10px 14px;background:#f1f6ff;color:#2e5cbf}.delete-marker{border-color:#efaaa6;background:#fff4f3}.create-preview{border:1px solid #b9cef8;border-radius:8px;padding:14px;background:#f8fbff}.create-preview h3{margin:0 0 8px}
+    .inspector{position:relative;display:grid;min-width:0;min-height:0;grid-template-rows:48px minmax(0,1fr) auto;border-left:1px solid var(--line);background:#fbfcfe}.inspector-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 11px}.inspector-head strong{color:var(--ink)}.inspector-body{min-height:0;overflow:auto;padding:10px}
+    .inspector-section{margin-bottom:9px;border:1px solid #e0e6ef;border-radius:8px;background:#fff}.inspector-section>header{display:flex;align-items:center;justify-content:space-between;padding:8px 9px;color:#4c5d76;font-size:10px;font-weight:800;letter-spacing:.04em}.inspector-content{border-top:1px solid #edf0f5;padding:9px}.summary{margin:0 0 7px;color:#1d2c43;font-size:13px;font-weight:750}.rationale{margin:0;color:#66748a;font-size:11px;line-height:1.55}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:9px}.stat{border-radius:6px;padding:6px;background:#f5f7fb;text-align:center}.stat strong{display:block;color:#17243a}.stat span{color:#8995a7;font-size:9px}
+    .operation-list{display:grid;gap:6px}.operation{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:7px;align-items:start;border:1px solid #e1e7f0;border-radius:7px;padding:7px;background:#fff;text-align:left}.operation.active{border-color:#afc6f7;background:#f0f5ff}.seq{display:grid;width:21px;height:21px;place-items:center;border-radius:50%;background:#e9edf4;color:#506079;font-size:9px;font-weight:800}.operation.active .seq{background:var(--blue);color:#fff}.op-name{display:block;color:#2457cc;font-size:10px;font-weight:800}.op-target{display:block;overflow:hidden;margin-top:2px;color:#77849a;font-size:9px;text-overflow:ellipsis;white-space:nowrap}.op-count{color:#718099;font-size:9px}
+    .suggestion-grid{display:grid;gap:6px}.field label{display:block;margin-bottom:2px;color:#8a96a9;font-size:9px}.field div{border-radius:5px;padding:6px;background:#f6f8fb;color:#40516a;font-size:10px;white-space:pre-wrap}.field .accent{background:#edf4ff;color:#244fae}.warning{border:1px solid #ecd28e;border-radius:7px;padding:8px;background:#fff8e5;color:#785620;font-size:10px}.warning.danger{border-color:#efb2ae;background:#fff1f0;color:#a83b37}
+    .evidence-list{display:grid;gap:5px}.evidence{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;border:1px solid #e0e6ef;border-radius:6px;padding:7px;background:#fff;text-align:left}.evidence.active{border-color:#98b7f6;background:#eef4ff}.evidence strong{display:block;overflow:hidden;color:#344b70;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.evidence span{color:#8190a7;font-size:9px}.scope-label{margin:7px 0 4px;color:#8b97a9;font-size:9px;font-weight:800}
+    .inspector-actions{display:flex;gap:7px;border-top:1px solid var(--line);padding:10px;background:#fff}.inspector-actions .button{flex:1}.inspector.collapsed{display:flex;align-items:flex-start;justify-content:center;padding-top:10px}.inspector.collapsed>*{display:none}.inspector.collapsed .expand-inspector{display:grid}.expand-inspector{display:none;width:30px;height:30px;place-items:center;border:1px solid #d6dfeb;border-radius:7px;background:#fff;color:#4f6078}.terminal-banner{padding:8px;border-radius:7px;font-size:10px}.terminal-banner.applied{background:var(--green-bg);color:#176c49}.terminal-banner.stale{background:var(--amber-bg);color:#7d5d24}
+    .statusbar{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:0 14px;background:#fff;color:#718096;font-size:10px}.statusbar b{color:var(--green)}
+    .dialog-backdrop{position:fixed;z-index:20;inset:0;display:none;place-items:center;background:rgb(18 27 43 / 50%)}.dialog-backdrop.open{display:grid}.dialog{width:480px;border-radius:11px;background:#fff;box-shadow:0 24px 70px rgb(16 24 40 / 30%)}.dialog header,.dialog footer{display:flex;align-items:center;justify-content:space-between;padding:13px 16px}.dialog header{border-bottom:1px solid var(--line)}.dialog footer{justify-content:flex-end;gap:8px;border-top:1px solid var(--line)}.dialog h3{margin:0;color:var(--ink)}.dialog-body{padding:16px}.dialog textarea{width:100%;height:92px;resize:none;border:1px solid #d7dfeb;border-radius:7px;padding:9px}.dialog-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}.dialog-summary div{border:1px solid #e0e6ef;border-radius:7px;padding:8px}.dialog-summary span{display:block;color:#8995a7;font-size:9px}.dialog-summary strong{color:var(--ink)}.safe{border-radius:7px;padding:9px;background:#ecf9f2;color:#176c49;font-size:10px}.counter{text-align:right;color:#8c98aa;font-size:10px}
+    @media(max-width:1100px){:root{--sidebar:232px;--inspector:292px}.review-workspace{grid-template-columns:minmax(280px,var(--code)) 8px minmax(330px,1fr) var(--inspector)}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <header class="brand"><span class="logo">DC</span><strong>DevCollab</strong></header>
+    <nav class="nav" aria-label="工程上下文导航">
+      <button class="nav-button"><span class="nav-icon">⌂</span><span>工作台</span></button>
+      <button class="nav-button" id="linkedNav"><span class="nav-icon">⌘</span><span>联动对照</span><span class="badge">2</span></button>
+      <div class="review-group open" id="reviewGroup">
+        <button class="review-parent active" id="reviewParent" aria-expanded="true"><span class="caret">›</span><span>待我评审</span><span class="badge">3</span></button>
+        <div class="review-children">
+          <button class="review-child active" data-status="pending"><span>待处理</span><span>3</span></button>
+          <button class="review-child" data-status="applied"><span>已应用</span><span>12</span></button>
+          <button class="review-child" data-status="rejected"><span>已拒绝</span><span>4</span></button>
+          <button class="review-child" data-status="stale"><span>已失效</span><span>2</span></button>
+        </div>
+      </div>
+      <button class="nav-button"><span class="nav-icon">ϟ</span><span>文档漂移</span><span class="badge">1</span></button>
+    </nav>
+    <section class="repo-section">
+      <div class="section-title"><span>仓库结构</span><span>395 个文件</span></div>
+      <div class="repo-picker"><strong>spring-petclinic</strong><span>⌄</span></div>
+      <div class="repo-meta">main · 9f6c12a4e8</div>
+      <div class="tree" id="repoTree">
+        <div class="tree-row" data-level="0"><span>⌄</span><span class="grow">src/main/java</span></div>
+        <div class="tree-row" data-level="1"><span>⌄</span><span class="grow">org/springframework/samples/petclinic</span></div>
+        <div class="tree-row" data-level="2"><span>⌄</span><span class="grow">owner</span></div>
+        <div class="tree-row selected related" data-level="3" data-file="PetController.java"><span>▤</span><span class="grow">PetController.java</span><span class="hint">3</span></div>
+        <div class="tree-row related" data-level="3" data-file="Pet.java"><span>▤</span><span class="grow">Pet.java</span><span class="hint">1</span></div>
+        <div class="tree-row" data-level="3" data-file="OwnerController.java"><span>▤</span><span class="grow">OwnerController.java</span></div>
+        <div class="tree-row" data-level="2"><span>›</span><span class="grow">system</span></div>
+        <div class="tree-row" data-level="0"><span>›</span><span class="grow">src/test/java</span></div>
+        <div class="tree-row" data-level="0"><span>›</span><span class="grow">docs</span></div>
+        <div class="tree-row" data-level="0"><span>▤</span><span class="grow">pom.xml</span></div>
+        <div class="tree-row" data-level="0"><span>▤</span><span class="grow">README.md</span></div>
+      </div>
+    </section>
+    <div class="side-note"><strong>工作区 Review 模式</strong>代码证据与当前正式文档始终同时可见；最终决策仍由管理员完成。</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="heading"><p class="eyebrow">CODE ↔ DOC LINKED WORKSPACE · 待我评审</p><h1 id="pageHeading"><button id="breadcrumbReview">待我评审</button><span id="breadcrumbSeparator"></span><span id="breadcrumbTitle"></span></h1></div>
+      <div class="workspace-meta"><span class="pill">PetClinic Engineering</span><span class="pill">spring-petclinic · main · 9f6c12a4e8</span><button class="top-icon" title="通知">♢</button><span class="pill">Admin Chen</span></div>
+    </header>
+
+    <div class="content">
+      <section class="page list-page active" id="listPage">
+        <header class="list-toolbar"><div><h2 id="listTitle">待处理评审 · 3</h2><p>依据真实代码、当前正式文档与证据决定是否应用 Agent 建议。</p></div><div class="tools"><input class="input" placeholder="搜索摘要或文档名称"><select class="select"><option>最新提交</option><option>涉及文档</option></select><button class="button">刷新</button></div></header>
+        <div class="list-card"><div class="table-head"><span>请求摘要</span><span>变更</span><span>证据</span><span>状态 / 来源</span><span>提交时间</span></div><div class="request-list" id="requestList"></div><div class="pagination"><button class="mini">‹</button><button class="mini" style="background:#2f63e9;color:#fff">1</button><button class="mini">2</button><button class="mini">›</button></div></div>
+      </section>
+
+      <section class="page review-page" id="reviewPage">
+        <div class="review-workspace" id="reviewWorkspace">
+          <section class="pane code-pane">
+            <header class="pane-head"><div class="pane-title"><strong id="codeFile">PetController.java</strong><span id="codePath">spring-petclinic · src/main/java/.../owner/PetController.java</span><div class="code-meta"><span class="tag">main</span><span class="tag" id="codeCommit">9f6c12a4e8</span><span class="tag">Java</span><span class="tag range" id="codeRange">L40–72</span></div></div><div class="evidence-switch"><button class="mini" id="previousEvidence">‹</button><span id="evidencePosition">1 / 2</span><button class="mini" id="nextEvidence">›</button></div></header>
+            <div class="code-view" id="codeView"></div>
+          </section>
+          <div class="canvas-resizer" id="canvasResizer" title="调整代码与文档宽度"></div>
+          <section class="pane document-pane">
+            <header class="pane-head"><div class="pane-title"><strong id="documentTitle">Pet API 设计</strong><span id="documentMeta">REQUIREMENT · 当前正式文档 · V7</span></div><div class="view-tabs"><button data-view="current">当前文档</button><button class="active" data-view="inline">内联差异</button><button data-view="preview">建议预览</button></div></header>
+            <div class="document-view" id="documentView"></div>
+          </section>
+          <aside class="inspector" id="inspector">
+            <button class="expand-inspector" id="expandInspector" title="展开 Review Inspector">‹</button>
+            <header class="inspector-head"><strong>Review Inspector</strong><button class="mini" id="collapseInspector" title="收起 Inspector">›</button></header>
+            <div class="inspector-body">
+              <section class="inspector-section"><header><span>请求概要</span><span class="status pending" id="requestStatus">PENDING</span></header><div class="inspector-content"><p class="summary" id="requestSummary">补充宠物类型校验与失败语义</p><p class="rationale" id="requestRationale"></p><div class="stats"><div class="stat"><strong id="statOps">1</strong><span>Operations</span></div><div class="stat"><strong id="statEvidence">3</strong><span>Evidence</span></div><div class="stat"><strong id="statDocs">1</strong><span>文档</span></div></div></div></section>
+              <section class="inspector-section"><header><span>OPERATIONS</span><span id="operationPosition">1 / 1</span></header><div class="inspector-content"><div class="operation-list" id="operationList"></div></div></section>
+              <section class="inspector-section"><header><span>修改建议</span><span id="operationType">UPDATE_BLOCK</span></header><div class="inspector-content"><div class="suggestion-grid" id="suggestion"></div></div></section>
+              <section class="inspector-section" id="warningSection"><header><span>警告与状态</span><span>!</span></header><div class="inspector-content" id="warningContent"></div></section>
+              <section class="inspector-section"><header><span>EVIDENCE 索引</span><span id="evidenceTotal">3</span></header><div class="inspector-content"><div class="scope-label">当前 Operation</div><div class="evidence-list" id="operationEvidence"></div><div class="scope-label">请求级 Evidence</div><div class="evidence-list" id="requestEvidence"></div></div></section>
+            </div>
+            <footer class="inspector-actions" id="inspectorActions"><button class="button danger" id="rejectButton">拒绝</button><button class="button primary" id="applyButton">批准并应用</button></footer>
+          </aside>
+        </div>
+      </section>
+    </div>
+    <footer class="statusbar"><span><b>● 协作在线</b> · Review 模式 · 代码与正式文档同步定位</span><span>决策权限：ADMIN · 正式文档尚未修改</span></footer>
+  </main>
+</div>
+
+<div class="dialog-backdrop" id="rejectDialog"><section class="dialog" role="dialog" aria-modal="true"><header><h3>拒绝文档变更</h3><button class="mini" data-close>×</button></header><div class="dialog-body"><p>拒绝后保留全部 Operation 与 Evidence 作为审计记录。</p><textarea maxlength="2000">证据未覆盖异常分支的回归测试，请补充后重新提交。</textarea><div class="counter">28 / 2000</div></div><footer><button class="button" data-close>取消</button><button class="button danger">确认拒绝</button></footer></section></div>
+<div class="dialog-backdrop" id="applyDialog"><section class="dialog" role="dialog" aria-modal="true"><header><h3>批准并应用文档变更</h3><button class="mini" data-close>×</button></header><div class="dialog-body"><p>Knowledge Core 将重新检查权限、目标和 Block version，并在一个事务内应用全部修改。</p><div class="dialog-summary"><div><span>Operations</span><strong id="applyOps">1</strong></div><div><span>涉及文档</span><strong id="applyDocs">1</strong></div><div><span>版本冲突</span><strong id="applyConflict">无</strong></div></div><div class="safe">✓ 全有或全无：任一 Operation 冲突都不会写入正式文档，也不提供强制覆盖。</div></div><footer><button class="button" data-close>取消</button><button class="button primary">确认批准并应用</button></footer></section></div>
+
+<script>
+const codeFiles={
+  pet:{name:"PetController.java",path:"src/main/java/org/springframework/samples/petclinic/owner/PetController.java",range:[40,72],lines:[
+    "package org.springframework.samples.petclinic.owner;","","@Controller","class PetController {","","  private final OwnerRepository owners;","","  @PostMapping(\"/owners/{ownerId}/pets/new\")","  public String processCreationForm(","      @Valid Pet pet, BindingResult result,","      @PathVariable(\"ownerId\") int ownerId) {","","    Owner owner = this.owners.findById(ownerId);","    if (pet.isNew() && owner.getPet(pet.getName(), true) != null) {","      result.rejectValue(\"name\", \"duplicate\", \"already exists\");","    }","    if (result.hasErrors()) {","      return VIEWS_PETS_CREATE_OR_UPDATE_FORM;","    }","","    owner.addPet(pet);","    this.owners.save(owner);","    return \"redirect:/owners/{ownerId}\";","  }","","  @GetMapping(\"/owners/{ownerId}/pets/{petId}/edit\")","  public String initUpdateForm(...) {","    return VIEWS_PETS_CREATE_OR_UPDATE_FORM;","  }","}"]},
+  petModel:{name:"Pet.java",path:"src/main/java/org/springframework/samples/petclinic/owner/Pet.java",range:[22,34],lines:[
+    "package org.springframework.samples.petclinic.owner;","","public class Pet extends NamedEntity {","","  @NotNull","  private LocalDate birthDate;","","  @ManyToOne","  @JoinColumn(name = \"type_id\")","  private PetType type;","","  public PetType getType() {","    return this.type;","  }","","  public void setType(PetType type) {","    this.type = type;","  }","}"]},
+  owner:{name:"OwnerController.java",path:"src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",range:[77,96],lines:[
+    "package org.springframework.samples.petclinic.owner;","","@Controller","class OwnerController {","","  @GetMapping(\"/owners\")","  public String processFindForm(Owner owner, BindingResult result, Model model) {","    if (owner.getLastName() == null) {","      owner.setLastName(\"\");","    }","","    Page<Owner> ownersResults = findPaginatedForOwnersLastName(1, owner.getLastName());","    if (ownersResults.isEmpty()) {","      result.rejectValue(\"lastName\", \"notFound\", \"not found\");","      return \"owners/findOwners\";","    }","    return addPaginationModel(1, model, ownersResults);","  }","}"]}
+};
+const evidenceCatalog={
+  petController:{scope:"operation",label:"PetController.java · 创建校验",file:"pet",description:"创建宠物时校验重名并在 BindingResult 中返回失败语义。"},
+  petModel:{scope:"operation",label:"Pet.java · 类型约束",file:"petModel",description:"Pet.type 是服务端持久化模型中的必填类型引用。"},
+  ownerFlow:{scope:"request",label:"OwnerController.java · 整体错误语义",file:"owner",description:"请求级证据：项目统一以校验错误返回原表单，不用异常覆盖人工流程。"}
+};
+const operations={
+  update:{id:"update-pet-api-block",type:"UPDATE_BLOCK",doc:"Pet API 设计",block:"Block 3",base:7,current:7,evidence:["petController","petModel"],proposed:"创建宠物时，客户端提交 PetType 枚举值作为宠物类型。不在白名单中的类型返回 HTTP 400；请求不得重试为另一种业务类型。",rationale:"代码已经约束 Pet 类型并通过 BindingResult 返回校验错误，正式 API 文档应同步说明失败语义。"},
+  create:{id:"create-visit-guide",type:"CREATE_DOCUMENT",doc:"宠物到诊流程",block:"新文档",base:null,current:null,evidence:["petController"],proposed:"新增《宠物到诊流程》操作指南，包含登记、类型确认、Owner 关联和失败回退。",rationale:"仓库已形成稳定到诊流程，但工作区尚无对应操作文档。"},
+  add:{id:"add-validation-block",type:"ADD_BLOCK",doc:"Pet API 设计",block:"Block 4（新增）",base:null,current:null,evidence:["petModel"],proposed:"新增“类型校验”段落，说明 PetType 必填、服务端白名单和错误返回。",rationale:"现有文档缺少模型字段约束，需要在错误语义前补充校验上下文。"},
+  delete:{id:"delete-retry-block",type:"DELETE_BLOCK",doc:"Pet API 设计",block:"Block 5",base:4,current:4,evidence:["ownerFlow"],proposed:"删除旧版“失败后自动更换类型重试”段落。",rationale:"当前实现不会自动改变业务类型，旧说明可能诱导客户端错误重试。"}
+};
+const requests={
+  update:{summary:"补充宠物类型校验与失败语义",status:"PENDING",ops:["update"],requestEvidence:["ownerFlow"],docs:1},
+  create:{summary:"新增宠物到诊流程说明",status:"PENDING",ops:["create"],requestEvidence:["ownerFlow"],docs:1},
+  add:{summary:"补充类型校验上下文",status:"PENDING",ops:["add"],requestEvidence:[],docs:1},
+  delete:{summary:"移除错误的自动重试说明",status:"PENDING",ops:["delete"],requestEvidence:["ownerFlow"],docs:1},
+  multi:{summary:"同步宠物创建、校验与重试约束",status:"PENDING",ops:["update","add","delete"],requestEvidence:["ownerFlow"],docs:1},
+  stale:{summary:"补充宠物类型校验与失败语义",status:"STALE",ops:["update"],requestEvidence:["ownerFlow"],docs:1},
+  applied:{summary:"补充宠物类型校验与失败语义",status:"APPLIED",ops:["update"],requestEvidence:["ownerFlow"],docs:1}
+};
+const listRows=[
+  {scenario:"update",title:"补充宠物类型校验与失败语义",impact:"Pet API 设计",ops:1,evidence:3,time:"8 分钟前",source:"MCP · Codex"},
+  {scenario:"create",title:"新增宠物到诊流程说明",impact:"新文档",ops:1,evidence:2,time:"26 分钟前",source:"MCP · Claude Code"},
+  {scenario:"multi",title:"同步宠物创建、校验与重试约束",impact:"Pet API 设计",ops:3,evidence:4,time:"1 小时前",source:"MCP · Codex"}
+];
+let activeRequest=requests.update,activeOperationIndex=0,activeEvidenceKey="petController",documentMode="inline",resizing=false;
+const $=id=>document.getElementById(id);
+function renderList(empty=false,status="pending"){
+  $("listPage").classList.add("active");$("reviewPage").classList.remove("active");$("breadcrumbSeparator").textContent="";$("breadcrumbTitle").textContent="";
+  const labels={pending:["待处理评审",3],applied:["已应用评审",12],rejected:["已拒绝评审",4],stale:["已失效评审",2]},[label,count]=labels[status]||labels.pending;
+  $("listTitle").textContent=`${label} · ${empty?0:count}`;document.querySelectorAll(".review-child").forEach(x=>x.classList.toggle("active",x.dataset.status===status));
+  const rows=empty?[]:listRows;$("requestList").innerHTML=rows.length?rows.map(row=>`<article class="request-row"><div><button class="request-title" data-open="${row.scenario}">${row.title}</button><div class="request-sub">影响：${row.impact}</div></div><div class="number"><strong>${row.ops}</strong><span>Operations</span></div><div class="number"><strong>${row.evidence}</strong><span>Evidence</span></div><div><span class="status ${status}">${status.toUpperCase()}</span><div class="request-sub">${row.source}</div></div><div><strong>${row.time}</strong><div class="request-sub">提交时间</div></div></article>`).join(""):`<div class="empty"><div><div class="empty-mark">✓</div><h3>当前没有${label}</h3><p>Agent 提交的新建议会出现在这里。</p></div></div>`;
+  document.querySelectorAll("[data-open]").forEach(x=>x.onclick=()=>{location.hash=x.dataset.open});
+}
+function totalEvidence(){return activeRequest.ops.reduce((n,key)=>n+operations[key].evidence.length,0)+activeRequest.requestEvidence.length}
+function showDetail(name){
+  activeRequest=JSON.parse(JSON.stringify(requests[name]||requests.update));activeOperationIndex=0;activeEvidenceKey=operations[activeRequest.ops[0]].evidence[0]||activeRequest.requestEvidence[0];documentMode=name==="create"?"preview":"inline";
+  $("listPage").classList.remove("active");$("reviewPage").classList.add("active");$("breadcrumbSeparator").textContent=" / ";$("breadcrumbTitle").textContent=activeRequest.summary;
+  $("requestSummary").textContent=activeRequest.summary;$("requestRationale").textContent=operations[activeRequest.ops[0]].rationale;$("requestStatus").textContent=activeRequest.status;$("requestStatus").className=`status ${activeRequest.status.toLowerCase()}`;
+  $("statOps").textContent=activeRequest.ops.length;$("statEvidence").textContent=totalEvidence();$("statDocs").textContent=activeRequest.docs;$("evidenceTotal").textContent=totalEvidence();
+  $("applyButton").disabled=activeRequest.status!=="PENDING";$("rejectButton").disabled=activeRequest.status!=="PENDING";renderOperations();renderContext();
+}
+function currentOperation(){return operations[activeRequest.ops[activeOperationIndex]]}
+function renderOperations(){
+  $("operationPosition").textContent=`${activeOperationIndex+1} / ${activeRequest.ops.length}`;$("operationList").innerHTML=activeRequest.ops.map((key,index)=>{const op=operations[key];return `<button class="operation ${index===activeOperationIndex?"active":""}" data-operation="${index}"><span class="seq">${index+1}</span><span><span class="op-name">${op.type}</span><span class="op-target">${op.doc} · ${op.block}</span></span><span class="op-count">${op.evidence.length} 证据</span></button>`}).join("");
+  document.querySelectorAll("[data-operation]").forEach(x=>x.onclick=()=>{activeOperationIndex=Number(x.dataset.operation);activeEvidenceKey=currentOperation().evidence[0]||activeRequest.requestEvidence[0];renderOperations();renderContext()});
+}
+function renderContext(){
+  const op=currentOperation();$("requestRationale").textContent=op.rationale;$("operationType").textContent=op.type;$("documentTitle").textContent=op.doc;$("documentMeta").textContent=op.type==="CREATE_DOCUMENT"?"建议新文档 · 尚未应用":"REQUIREMENT · 当前正式文档 · V7";
+  $("suggestion").innerHTML=`<div class="field"><label>clientOperationId</label><div>${op.id}</div></div><div class="field"><label>目标</label><div>${op.doc} · ${op.block}</div></div><div class="field"><label>建议内容</label><div class="accent">${op.proposed}</div></div><div class="field"><label>Agent rationale</label><div>${op.rationale}</div></div>`;
+  renderWarnings();renderEvidenceIndex();renderEvidence();renderDocument();
+}
+function renderWarnings(){
+  const op=currentOperation(),status=activeRequest.status;let html="";
+  if(status==="STALE"){op.current=9;html=`<div class="warning danger"><strong>请求已 STALE</strong><br>目标 Block 已被修改，本请求基于旧版本，不能覆盖人工修改。<br>baseBlockVersion=${op.base} · currentBlockVersion=${op.current}</div>`}
+  else if(status==="APPLIED"){html=`<div class="terminal-banner applied">✓ 已由 Admin Chen 于 2026-07-26 16:42 原子应用。页面只读。</div>`}
+  else if(op.type==="CREATE_DOCUMENT"){html=`<div class="warning">目标文档当前不存在；批准后将在工程文档树的“操作指南”下创建。</div>`}
+  else{html=`<div class="warning">未检测到版本冲突。baseBlockVersion=${op.base??"-"} · currentBlockVersion=${op.current??"-"}</div>`}
+  $("warningContent").innerHTML=html;
+}
+function renderEvidenceIndex(){
+  const op=currentOperation();$("operationEvidence").innerHTML=op.evidence.length?op.evidence.map(key=>evidenceButton(key)).join(""):`<div class="warning">当前 Operation 没有代码 Evidence。</div>`;
+  $("requestEvidence").innerHTML=activeRequest.requestEvidence.length?activeRequest.requestEvidence.map(key=>evidenceButton(key)).join(""):`<span style="color:#9aa5b4;font-size:10px">无请求级 Evidence</span>`;
+  document.querySelectorAll("[data-evidence]").forEach(x=>x.onclick=()=>{activeEvidenceKey=x.dataset.evidence;renderEvidence();renderEvidenceIndex()});
+}
+function evidenceButton(key){const e=evidenceCatalog[key],file=codeFiles[e.file];return `<button class="evidence ${key===activeEvidenceKey?"active":""}" data-evidence="${key}"><span><strong>${e.label}</strong><span>${e.description}</span></span><span>L${file.range[0]}–${file.range[1]}</span></button>`}
+function renderEvidence(){
+  const e=evidenceCatalog[activeEvidenceKey]||evidenceCatalog.petController,file=codeFiles[e.file];$("codeFile").textContent=file.name;$("codePath").textContent=`spring-petclinic · ${file.path}`;$("codeRange").textContent=`L${file.range[0]}–${file.range[1]}`;
+  const evidenceKeys=[...currentOperation().evidence,...activeRequest.requestEvidence],position=Math.max(0,evidenceKeys.indexOf(activeEvidenceKey));$("evidencePosition").textContent=`${position+1} / ${evidenceKeys.length}`;
+  document.querySelectorAll("[data-file]").forEach(x=>x.classList.toggle("selected",x.dataset.file===file.name));
+  const start=file.range[0]-7;$("codeView").innerHTML=file.lines.map((line,index)=>{const number=start+index,highlight=number>=file.range[0]&&number<=file.range[1];return `<div class="code-line ${highlight?"highlight":""}"><span class="line-no">${number}</span><span class="line-code">${colorize(line)}</span></div>`}).join("");
+}
+function colorize(line){return line.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/(@\\w+)/g,'<span class="ann">$1</span>').replace(/\\b(class|public|private|return|if|new)\\b/g,'<span class="kw">$1</span>').replace(/(\"[^\"]*\")/g,'<span class="str">$1</span>')}
+function renderDocument(){
+  document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===documentMode));const op=currentOperation(),inline=documentMode==="inline",preview=documentMode==="preview";
+  if(op.type==="CREATE_DOCUMENT"){$("documentView").innerHTML=`<div class="document-header"><span class="status pending">尚未应用</span><h2>当前不存在该文档</h2><p>预计位置：工程文档 / 操作指南 / 宠物到诊流程</p></div><div class="create-preview"><h3>宠物到诊流程</h3><span class="block-label">PROCEDURE · 建议结构</span><div class="doc-block"><h3>登记到诊</h3><p>确认 Owner、宠物身份与预约记录。</p></div><div class="doc-block target"><span class="block-label">新增 BLOCK</span><h3>类型确认与失败回退</h3><p>${op.proposed}</p></div><div class="doc-block"><h3>完成接诊</h3><p>保存接诊记录并通知相关成员。</p></div></div>`;return}
+  const updateText=preview?op.proposed:inline?`创建宠物时，客户端提交 <del>任意字符串</del> <ins>PetType 枚举值</ins>作为宠物类型。<ins>不在白名单中的类型返回 HTTP 400；请求不得重试为另一种业务类型。</ins>`:"创建宠物时，客户端提交任意字符串作为宠物类型。";
+  let middle=`<div class="doc-block target"><span class="block-label">BLOCK 3 · ${inline?"内联差异":"当前正式内容"}</span><h3>创建宠物</h3><p>${updateText}</p><p>服务端校验并保存后返回宠物详情。</p>${preview?'<div class="proposed-note">建议预览 · 尚未应用</div>':""}</div>`;
+  if(op.type==="ADD_BLOCK")middle=`<div class="doc-block"><h3>创建宠物</h3><p>创建请求包含 Owner 与宠物基本信息。</p></div><div class="insert-marker"><span class="block-label">BLOCK 4 · 建议新增位置 · 尚未应用</span><h3>类型校验</h3><p>${op.proposed}</p></div><div class="doc-block"><h3>错误语义</h3><p>校验失败时返回结构化错误。</p></div>`;
+  if(op.type==="DELETE_BLOCK")middle=`<div class="doc-block"><h3>错误语义</h3><p>校验失败时返回结构化错误。</p></div><div class="doc-block target delete-marker"><span class="block-label">BLOCK 5 · 建议删除 · 尚未应用</span><h3><del>自动重试</del></h3><p><del>失败后客户端应自动更换宠物类型并再次提交。</del></p></div><div class="doc-block"><h3>成功响应</h3><p>保存完成后返回宠物详情。</p></div>`;
+  $("documentView").innerHTML=`<div class="document-header"><span class="status pending">${documentMode==="current"?"当前正式文档":"尚未应用"}</span><h2>Pet API 设计</h2><p>API Contract · 当前生效 V7 · 目标 Block 已定位</p></div><div class="doc-block"><h3>接口概览</h3><p>宠物 API 用于创建、更新与查询 Owner 下的宠物记录。</p></div>${middle}<div class="doc-block"><h3>响应约定</h3><p>成功响应携带资源标识与最新状态；错误响应保持可审计。</p></div>`;
+}
+function cycleEvidence(delta){const keys=[...currentOperation().evidence,...activeRequest.requestEvidence];let index=keys.indexOf(activeEvidenceKey);activeEvidenceKey=keys[(index+delta+keys.length)%keys.length];renderEvidence();renderEvidenceIndex()}
+function applyHash(){
+  const raw=location.hash.replace("#","")||"list",parts=raw.split("/"),scenario=parts[0];$("inspector").classList.remove("collapsed");$("reviewWorkspace").classList.remove("inspector-collapsed");$("rejectDialog").classList.remove("open");$("applyDialog").classList.remove("open");
+  if(scenario==="list"){renderList(false,parts[1]||"pending");return}if(scenario==="empty"){renderList(true,"pending");return}
+  const base={update:"update",inline:"update",code:"update",suggestion:"update",switch:"multi",request:"update",create:"create",add:"add",delete:"delete",multi:"multi",stale:"stale",applied:"applied",reject:"update",apply:"update",collapsed:"update"}[scenario]||"update";
+  showDetail(base);if(scenario==="switch"){activeOperationIndex=1;activeEvidenceKey=currentOperation().evidence[0];renderOperations();renderContext()}if(scenario==="request"){activeEvidenceKey=activeRequest.requestEvidence[0];renderEvidence();renderEvidenceIndex()}if(scenario==="reject")$("rejectDialog").classList.add("open");if(scenario==="apply")$("applyDialog").classList.add("open");if(scenario==="collapsed")toggleInspector(false);
+}
+function toggleInspector(open){$("inspector").classList.toggle("collapsed",!open);$("reviewWorkspace").classList.toggle("inspector-collapsed",!open)}
+$("reviewParent").onclick=()=>{const group=$("reviewGroup");group.classList.toggle("open");$("reviewParent").setAttribute("aria-expanded",group.classList.contains("open"))};
+document.querySelectorAll(".review-child").forEach(x=>x.onclick=()=>{location.hash=`list/${x.dataset.status}`});$("breadcrumbReview").onclick=()=>{location.hash="list/pending"};
+document.querySelectorAll("[data-view]").forEach(x=>x.onclick=()=>{documentMode=x.dataset.view;renderDocument()});$("previousEvidence").onclick=()=>cycleEvidence(-1);$("nextEvidence").onclick=()=>cycleEvidence(1);
+$("collapseInspector").onclick=()=>toggleInspector(false);$("expandInspector").onclick=()=>toggleInspector(true);$("rejectButton").onclick=()=>$("rejectDialog").classList.add("open");$("applyButton").onclick=()=>{$("applyOps").textContent=activeRequest.ops.length;$("applyDocs").textContent=activeRequest.docs;$("applyConflict").textContent=activeRequest.status==="STALE"?"存在":"无";$("applyDialog").classList.add("open")};
+document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>x.closest(".dialog-backdrop").classList.remove("open"));
+$("canvasResizer").onpointerdown=e=>{resizing=true;e.target.setPointerCapture(e.pointerId)};window.onpointermove=e=>{if(!resizing)return;const box=$("reviewWorkspace").getBoundingClientRect(),inspector=$("inspector").classList.contains("collapsed")?44:354,available=box.width-inspector-10,width=Math.max(300,Math.min(available-380,e.clientX-box.left));document.documentElement.style.setProperty("--code",`${width}px`)};window.onpointerup=()=>resizing=false;
+window.addEventListener("hashchange",applyHash);window.reviewPrototype={showScenario:name=>{location.hash=name;applyHash()}};applyHash();
+</script>
+</body>
+</html>
