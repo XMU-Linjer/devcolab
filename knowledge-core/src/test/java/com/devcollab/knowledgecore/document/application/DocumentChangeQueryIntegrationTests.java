@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.*;
+import static com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -150,6 +151,135 @@ class DocumentChangeQueryIntegrationTests {
                 .hasMessageContaining("不存在");
     }
 
+    @Test
+    void createPersistsPendingRequestWithoutChangingFormalDocument() {
+        Fixture fixture = fixture("MEMBER");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 2);
+        String before = block.text();
+        CreateCommand command = updateCommand(document, block, "client-create");
+
+        var result = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+
+        assertThat(result.status()).isEqualTo(Status.PENDING);
+        assertThat(result.idempotentReplay()).isFalse();
+        assertThat(repository.findOperations(result.changeRequestId()))
+                .hasSize(1);
+        assertThat(blockRepository.findById(block.id()).orElseThrow().text())
+                .isEqualTo(before);
+    }
+
+    @Test
+    void createIsIdempotentAndRejectsDifferentPayloadForSameKey() {
+        Fixture fixture = fixture("MEMBER");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 0);
+        CreateCommand command = updateCommand(document, block, "same-key");
+
+        var first = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+        var replay = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+
+        assertThat(replay.changeRequestId()).isEqualTo(first.changeRequestId());
+        assertThat(replay.idempotentReplay()).isTrue();
+        CreateCommand changed = new CreateCommand(
+                command.clientRequestId(), "different", command.rationale(),
+                command.operations(), command.evidence()
+        );
+        assertThatThrownBy(() -> service.create(
+                fixture.workspaceId(), fixture.userId(), changed
+        )).isInstanceOf(DocumentChangeException.class)
+                .hasMessageContaining("clientRequestId");
+    }
+
+    @Test
+    void createMapsOperationAndRequestEvidenceFromTrustedRepositoryProjection() {
+        Fixture fixture = fixture("MEMBER");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 1);
+        GitRepository git = gitRepository.saveRepository(new GitRepository(
+                UUID.randomUUID(), fixture.workspaceId(), "evidence-repo",
+                GitProvider.GITHUB, "https://github.com/example/evidence",
+                "main", fixture.userId(), Instant.now(), Instant.now(),
+                GitRepositoryStatus.READY, "def456", Instant.now(), null
+        ));
+        jdbcTemplate.update("""
+                INSERT INTO git_repository_files
+                    (id, repository_id, path, blob_sha, size_bytes,
+                     language, content_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, UUID.randomUUID(), git.id(), "src/Example.java",
+                "blob-sha", 30L, "Java", "line one\nline two\nline three");
+        CreateCommand base = updateCommand(document, block, "evidence-key");
+        CreateCommand withEvidence = new CreateCommand(
+                base.clientRequestId(), base.summary(), base.rationale(),
+                base.operations(),
+                java.util.List.of(
+                        new CreateEvidenceCommand(
+                                null, git.id(), "src/Example.java",
+                                1, 1, "request evidence"
+                        ),
+                        new CreateEvidenceCommand(
+                                "update", git.id(), "src/Example.java",
+                                2, 3, "operation evidence"
+                        )
+                )
+        );
+
+        var result = service.create(
+                fixture.workspaceId(), fixture.userId(), withEvidence
+        );
+        var savedEvidence = repository.findEvidence(result.changeRequestId());
+
+        assertThat(savedEvidence).hasSize(2);
+        assertThat(savedEvidence).filteredOn(item -> item.operationId() == null)
+                .singleElement()
+                .extracting(item -> item.excerptText())
+                .isEqualTo("line one");
+        assertThat(savedEvidence).filteredOn(item -> item.operationId() != null)
+                .singleElement()
+                .extracting(item -> item.commitHash())
+                .isEqualTo("def456");
+    }
+
+    @Test
+    void createRejectsDuplicateOperationIdsUnknownEvidenceAndCrossWorkspaceTargets() {
+        Fixture fixture = fixture("MEMBER");
+        Fixture other = fixture("MEMBER");
+        Document otherDocument = document(other);
+        DocumentBlock otherBlock = block(otherDocument, other.userId(), 0);
+        CreateOperationCommand operation = new CreateOperationCommand(
+                "duplicate", 1, OperationType.UPDATE_BLOCK,
+                otherDocument.id(), null, otherBlock.id(), 0L,
+                null, null, null, null, "changed", null, null
+        );
+        CreateCommand crossWorkspace = new CreateCommand(
+                "cross", "summary", "rationale",
+                java.util.List.of(operation), java.util.List.of()
+        );
+        assertThatThrownBy(() -> service.create(
+                fixture.workspaceId(), fixture.userId(), crossWorkspace
+        )).isInstanceOf(DocumentChangeException.class);
+
+        CreateCommand duplicate = new CreateCommand(
+                "duplicate-key", "summary", "rationale",
+                java.util.List.of(
+                        operationWithText("same", 1),
+                        operationWithText("same", 2)
+                ),
+                java.util.List.of()
+        );
+        assertThatThrownBy(() -> service.create(
+                fixture.workspaceId(), fixture.userId(), duplicate
+        )).isInstanceOf(DocumentChangeException.class)
+                .hasMessageContaining("clientOperationId");
+    }
+
     private Fixture fixture(String role) {
         UUID userId = createUser();
         UUID workspaceId = UUID.randomUUID();
@@ -250,6 +380,43 @@ class DocumentChangeQueryIntegrationTests {
                 UUID.randomUUID(), request.id(), operationId, repositoryId,
                 "abc123", "src/Test.java", 1, 2, description, "blob",
                 "class Test {}", "b".repeat(64)
+        );
+    }
+
+    private CreateCommand updateCommand(
+            Document document,
+            DocumentBlock block,
+            String clientRequestId
+    ) {
+        return new CreateCommand(
+                clientRequestId,
+                "Update API block",
+                "Code behavior changed",
+                java.util.List.of(new CreateOperationCommand(
+                        "update",
+                        1,
+                        OperationType.UPDATE_BLOCK,
+                        document.id(),
+                        null,
+                        block.id(),
+                        block.version(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        "after",
+                        null,
+                        null
+                )),
+                java.util.List.of()
+        );
+    }
+
+    private CreateOperationCommand operationWithText(String id, int sequence) {
+        return new CreateOperationCommand(
+                id, sequence, OperationType.CREATE_DOCUMENT,
+                null, null, null, null, "Document " + sequence,
+                DocumentType.REQUIREMENT, null, null, null, null, null
         );
     }
 

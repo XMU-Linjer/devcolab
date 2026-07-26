@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Map;
 
 @Component
 public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
@@ -212,6 +213,43 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                 );
             }
             throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    @Override
+    public Map<String, Object> submitDocumentChange(
+            UUID workspaceId,
+            Map<String, Object> request,
+            McpUserIdentity identity
+    ) {
+        try {
+            Map<String, Object> response = restClient.post()
+                    .uri(
+                            "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                            workspaceId
+                    )
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .body(request)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+            if (response == null) {
+                throw new McpToolException(
+                        McpToolErrorCode.INTERNAL_ERROR,
+                        "Knowledge Core returned an empty review response"
+                );
+            }
+            return response;
+        } catch (RuntimeException exception) {
+            if (exception instanceof RestClientResponseException response
+                    && (response.getStatusCode().value() == 400
+                    || response.getStatusCode().value() == 409)) {
+                throw new McpToolException(
+                        McpToolErrorCode.INVALID_ARGUMENT,
+                        "Document change request was rejected"
+                );
+            }
+            throw map(exception, McpToolErrorCode.WORKSPACE_NOT_FOUND);
         }
     }
 

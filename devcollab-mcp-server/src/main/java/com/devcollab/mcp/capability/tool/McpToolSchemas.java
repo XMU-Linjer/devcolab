@@ -1,5 +1,6 @@
 package com.devcollab.mcp.capability.tool;
 
+import com.devcollab.mcp.config.ReviewSubmissionProperties;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -265,6 +266,172 @@ final class McpToolSchemas {
         );
     }
 
+    static Map<String, Object> submitDocumentChangeInput(
+            ReviewSubmissionProperties limits
+    ) {
+        Map<String, Object> content = objectSchema(
+                Map.of(
+                        "schemaVersion", Map.of(
+                                "type", "integer",
+                                "minimum", 1
+                        ),
+                        "document", Map.of("type", "object")
+                ),
+                List.of("document")
+        );
+        Map<String, Object> operationProperties = new LinkedHashMap<>();
+        operationProperties.put(
+                "clientOperationId",
+                stringProperty(1, 100)
+        );
+        operationProperties.put("sequenceNumber", Map.of(
+                "type", "integer",
+                "minimum", 1
+        ));
+        operationProperties.put("operationType", Map.of(
+                "type", "string",
+                "enum", List.of(
+                        "CREATE_DOCUMENT",
+                        "ADD_BLOCK",
+                        "UPDATE_BLOCK",
+                        "DELETE_BLOCK"
+                )
+        ));
+        operationProperties.put(
+                "documentId",
+                uuidProperty("Existing document identifier", true)
+        );
+        operationProperties.put(
+                "createdDocumentClientOperationId",
+                nullableStringProperty(1, 100)
+        );
+        operationProperties.put(
+                "blockId",
+                uuidProperty("Existing Block identifier", true)
+        );
+        operationProperties.put("baseBlockVersion", Map.of(
+                "type", List.of("integer", "null"),
+                "minimum", 0
+        ));
+        operationProperties.put(
+                "proposedDocumentTitle",
+                nullableStringProperty(1, 200)
+        );
+        operationProperties.put("proposedDocumentType", Map.of(
+                "type", List.of("string", "null")
+        ));
+        operationProperties.put(
+                "proposedParentDocumentId",
+                uuidProperty("Optional parent document identifier", true)
+        );
+        operationProperties.put("proposedBlockType", Map.of(
+                "type", "string",
+                "enum", List.of("PARAGRAPH", "HEADING", "CODE", "TODO")
+        ));
+        operationProperties.put(
+                "proposedPlainText",
+                nullableStringProperty(1, limits.maxProposedCharacters())
+        );
+        operationProperties.put("proposedContent", Map.of(
+                "oneOf", List.of(content, Map.of("type", "null"))
+        ));
+        Map<String, Object> operation = objectSchema(
+                operationProperties,
+                List.of(
+                        "clientOperationId",
+                        "sequenceNumber",
+                        "operationType"
+                )
+        );
+
+        Map<String, Object> evidenceProperties = new LinkedHashMap<>();
+        evidenceProperties.put(
+                "clientOperationId",
+                nullableStringProperty(1, 100)
+        );
+        evidenceProperties.put(
+                "repositoryId",
+                uuidProperty("Evidence repository identifier")
+        );
+        evidenceProperties.put("filePath", stringProperty(1, 2048));
+        evidenceProperties.put("startLine", Map.of(
+                "type", List.of("integer", "null"),
+                "minimum", 1
+        ));
+        evidenceProperties.put("endLine", Map.of(
+                "type", List.of("integer", "null"),
+                "minimum", 1
+        ));
+        evidenceProperties.put(
+                "description",
+                stringProperty(1, limits.maxDescriptionCharacters())
+        );
+        Map<String, Object> evidence = objectSchema(
+                evidenceProperties,
+                List.of("repositoryId", "filePath", "description")
+        );
+
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put(
+                "workspaceId",
+                uuidProperty("DevCollab workspace identifier")
+        );
+        properties.put(
+                "clientRequestId",
+                stringProperty(1, 100)
+        );
+        properties.put(
+                "summary",
+                stringProperty(1, limits.maxSummaryCharacters())
+        );
+        properties.put(
+                "rationale",
+                stringProperty(1, limits.maxRationaleCharacters())
+        );
+        properties.put("operations", Map.of(
+                "type", "array",
+                "minItems", 1,
+                "maxItems", limits.maxOperations(),
+                "items", operation
+        ));
+        properties.put("evidence", Map.of(
+                "type", "array",
+                "maxItems", limits.maxEvidence(),
+                "items", evidence
+        ));
+        return objectSchema(
+                properties,
+                List.of(
+                        "workspaceId",
+                        "clientRequestId",
+                        "summary",
+                        "rationale",
+                        "operations"
+                )
+        );
+    }
+
+    static Map<String, Object> submitDocumentChangeOutput() {
+        return toolOutputSchema(
+                Map.of(
+                        "changeRequestId",
+                        uuidProperty("Created change request identifier"),
+                        "status",
+                        Map.of("type", "string", "enum", List.of("PENDING")),
+                        "createdAt",
+                        Map.of("type", "string", "format", "date-time"),
+                        "idempotentReplay",
+                        Map.of("type", "boolean")
+                ),
+                List.of(
+                        "changeRequestId",
+                        "status",
+                        "createdAt",
+                        "idempotentReplay"
+                )
+        );
+    }
+
     private static Map<String, Object> toolOutputSchema(
             Map<String, Object> successProperties,
             List<String> successRequired
@@ -319,6 +486,22 @@ final class McpToolSchemas {
                 "type", "string",
                 "format", "uuid",
                 "description", description
+        );
+    }
+
+    private static Map<String, Object> stringProperty(int min, int max) {
+        return Map.of(
+                "type", "string",
+                "minLength", min,
+                "maxLength", max
+        );
+    }
+
+    private static Map<String, Object> nullableStringProperty(int min, int max) {
+        return Map.of(
+                "type", List.of("string", "null"),
+                "minLength", min,
+                "maxLength", max
         );
     }
 }

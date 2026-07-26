@@ -4,15 +4,31 @@ import com.devcollab.knowledgecore.documentchange.application.DocumentChangeAppl
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.DetailView;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.PageView;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.OperationType;
+import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.security.CurrentUser;
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
+
+import static com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.*;
 
 @RestController
 @RequestMapping("/api/v1/workspaces/{workspaceId}/document-change-requests")
@@ -32,6 +48,28 @@ public class DocumentChangeController {
         return new PendingCountResponse(
                 service.pendingCount(workspaceId, currentUser.userId())
         );
+    }
+
+    @PostMapping
+    public ResponseEntity<CreateDocumentChangeResponse> create(
+            @PathVariable UUID workspaceId,
+            @AuthenticationPrincipal CurrentUser currentUser,
+            @Valid @RequestBody CreateDocumentChangeRequest request
+    ) {
+        CreateResult result = service.create(
+                workspaceId,
+                currentUser.userId(),
+                request.toCommand()
+        );
+        return ResponseEntity
+                .status(result.idempotentReplay()
+                        ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(new CreateDocumentChangeResponse(
+                        result.changeRequestId(),
+                        result.status(),
+                        result.createdAt(),
+                        result.idempotentReplay()
+                ));
     }
 
     @GetMapping
@@ -63,5 +101,96 @@ public class DocumentChangeController {
     }
 
     public record PendingCountResponse(long count) {
+    }
+
+    public record CreateDocumentChangeRequest(
+            @NotBlank @Size(max = 100) String clientRequestId,
+            @NotBlank @Size(max = 300) String summary,
+            @NotBlank @Size(max = 10_000) String rationale,
+            @NotEmpty @Size(max = 50) List<@Valid OperationRequest> operations,
+            @Size(max = 50) List<@Valid EvidenceRequest> evidence
+    ) {
+        CreateCommand toCommand() {
+            return new CreateCommand(
+                    clientRequestId,
+                    summary,
+                    rationale,
+                    operations.stream().map(OperationRequest::toCommand).toList(),
+                    evidence == null ? List.of()
+                            : evidence.stream()
+                            .map(EvidenceRequest::toCommand)
+                            .toList()
+            );
+        }
+    }
+
+    public record OperationRequest(
+            @NotBlank @Size(max = 100) String clientOperationId,
+            int sequenceNumber,
+            @NotNull OperationType operationType,
+            UUID documentId,
+            String createdDocumentClientOperationId,
+            UUID blockId,
+            Long baseBlockVersion,
+            @Size(max = 200) String proposedDocumentTitle,
+            DocumentType proposedDocumentType,
+            UUID proposedParentDocumentId,
+            DocumentBlockType proposedBlockType,
+            @Size(max = 20_000) String proposedPlainText,
+            @Valid BlockContentRequest proposedContent
+    ) {
+        CreateOperationCommand toCommand() {
+            return new CreateOperationCommand(
+                    clientOperationId,
+                    sequenceNumber,
+                    operationType,
+                    documentId,
+                    createdDocumentClientOperationId,
+                    blockId,
+                    baseBlockVersion,
+                    proposedDocumentTitle,
+                    proposedDocumentType,
+                    proposedParentDocumentId,
+                    proposedBlockType,
+                    proposedPlainText,
+                    proposedContent == null ? null
+                            : proposedContent.schemaVersion(),
+                    proposedContent == null ? null : proposedContent.document()
+            );
+        }
+    }
+
+    public record BlockContentRequest(
+            Integer schemaVersion,
+            JsonNode document
+    ) {
+    }
+
+    public record EvidenceRequest(
+            String clientOperationId,
+            @NotNull UUID repositoryId,
+            @NotBlank @Size(max = 1000) String filePath,
+            Integer startLine,
+            Integer endLine,
+            @NotBlank @Size(max = 1000) String description
+    ) {
+        CreateEvidenceCommand toCommand() {
+            return new CreateEvidenceCommand(
+                    clientOperationId,
+                    repositoryId,
+                    filePath,
+                    startLine,
+                    endLine,
+                    description
+            );
+        }
+    }
+
+    public record CreateDocumentChangeResponse(
+            UUID changeRequestId,
+            Status status,
+            java.time.Instant createdAt,
+            boolean idempotentReplay
+    ) {
     }
 }

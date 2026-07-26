@@ -44,7 +44,7 @@ class McpServerProtocolTests {
     private KnowledgeCoreGateway coreGateway;
 
     @Test
-    void officialSdkCanInitializeAndListTwoTools() {
+    void officialSdkCanInitializeAndListSixTools() {
         try (McpSyncClient client = client()) {
             assertThat(client.initialize().serverInfo().name()).isEqualTo("devcollab-context-server");
             List<McpSchema.Tool> tools = client.listTools().tools();
@@ -55,13 +55,17 @@ class McpServerProtocolTests {
                             "devcollab.code.read",
                             "devcollab.document.get_structure",
                             "devcollab.binding.list",
-                            "devcollab.document.find_candidates"
+                            "devcollab.document.find_candidates",
+                            "devcollab.review.submit_document_change"
                     );
             for (McpSchema.Tool tool : tools) {
                 assertThat(tool.inputSchema())
                         .containsEntry("type", "object")
                         .containsEntry("additionalProperties", false);
-                assertThat(tool.annotations().readOnlyHint()).isTrue();
+                assertThat(tool.annotations().readOnlyHint())
+                        .isEqualTo(!tool.name().equals(
+                                "devcollab.review.submit_document_change"
+                        ));
                 assertThat(tool.annotations().destructiveHint()).isFalse();
                 assertThat(tool.annotations().idempotentHint()).isTrue();
                 assertThat(tool.annotations().openWorldHint()).isFalse();
@@ -112,6 +116,66 @@ class McpServerProtocolTests {
                     .isTrue();
             assertThat(((Map<?, ?>) codeTool.outputSchema().get("properties")).containsKey("error"))
                     .isTrue();
+            McpSchema.Tool submitTool = tools.stream()
+                    .filter(tool -> tool.name().equals(
+                            "devcollab.review.submit_document_change"
+                    ))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(submitTool.inputSchema().get("required")).isEqualTo(
+                    List.of(
+                            "workspaceId", "clientRequestId", "summary",
+                            "rationale", "operations"
+                    )
+            );
+            assertThat(submitTool.outputSchema())
+                    .containsKeys(
+                            "type", "properties", "oneOf",
+                            "additionalProperties"
+                    );
+        }
+    }
+
+    @Test
+    void officialClientCanSubmitPendingDocumentChange() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        when(coreGateway.submitDocumentChange(
+                eq(workspaceId), any(), any()
+        )).thenReturn(Map.of(
+                "changeRequestId", requestId.toString(),
+                "status", "PENDING",
+                "createdAt", "2026-07-26T10:00:00Z",
+                "idempotentReplay", false
+        ));
+
+        try (McpSyncClient client = client()) {
+            client.initialize();
+            McpSchema.CallToolResult result = client.callTool(
+                    new McpSchema.CallToolRequest(
+                            "devcollab.review.submit_document_change",
+                            Map.of(
+                                    "workspaceId", workspaceId.toString(),
+                                    "clientRequestId", "agent-run-1",
+                                    "summary", "Update API docs",
+                                    "rationale", "Code behavior changed",
+                                    "operations", List.of(Map.of(
+                                            "clientOperationId", "create-doc",
+                                            "sequenceNumber", 1,
+                                            "operationType", "CREATE_DOCUMENT",
+                                            "proposedDocumentTitle", "API Design"
+                                    ))
+                            )
+                    )
+            );
+
+            assertThat(result.isError()).isFalse();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> structuredContent = (Map<String, Object>) result.structuredContent();
+            assertThat(structuredContent)
+                    .containsEntry("changeRequestId", requestId.toString())
+                    .containsEntry("status", "PENDING")
+                    .containsEntry("idempotentReplay", false);
         }
     }
 

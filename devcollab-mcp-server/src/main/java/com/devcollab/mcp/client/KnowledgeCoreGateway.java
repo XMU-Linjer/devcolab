@@ -4,6 +4,7 @@ import com.devcollab.mcp.security.McpUserIdentity;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Map;
 
 public interface KnowledgeCoreGateway {
 
@@ -39,6 +40,12 @@ public interface KnowledgeCoreGateway {
             String filePath,
             String query,
             int limit,
+            McpUserIdentity identity
+    );
+
+    Map<String, Object> submitDocumentChange(
+            UUID workspaceId,
+            Map<String, Object> request,
             McpUserIdentity identity
     );
 
