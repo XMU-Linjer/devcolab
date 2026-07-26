@@ -81,7 +81,7 @@ public class BindingListApplicationService {
         if (normalized.startsWith("/")) {
             throw new McpToolException(McpToolErrorCode.INVALID_REPOSITORY_PATH, "File path must be a valid relative path");
         }
-        if (normalized.matches("^[a-zA-Z]:[/\\\\].*")) {
+        if (normalized.matches("^[a-zA-Z]:.*")) {
             throw new McpToolException(McpToolErrorCode.INVALID_REPOSITORY_PATH, "File path must not contain a drive letter");
         }
         if (normalized.startsWith("//")) {

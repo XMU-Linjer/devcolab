@@ -13,6 +13,21 @@ final class McpToolArguments {
 
     static UUID requiredUuid(Map<String, Object> arguments, String name) {
         String value = requiredString(arguments, name);
+        return parseUuid(value, name);
+    }
+
+    static UUID optionalUuid(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " must be a valid UUID");
+        }
+        return parseUuid(text, name);
+    }
+
+    private static UUID parseUuid(String value, String name) {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException exception) {

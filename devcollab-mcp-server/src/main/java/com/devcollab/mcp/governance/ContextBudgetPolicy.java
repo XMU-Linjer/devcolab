@@ -29,8 +29,10 @@ public class ContextBudgetPolicy {
         }
         String normalized = path.replace('\\', '/');
         if (normalized.startsWith("/")
-                || normalized.matches("^[A-Za-z]:/.*")
-                || List.of(normalized.split("/")).contains("..")) {
+                || normalized.matches("^[A-Za-z]:.*")
+                || normalized.startsWith("//")
+                || List.of(normalized.split("/")).contains("..")
+                || List.of(normalized.split("/")).contains("")) {
             throw new McpToolException(
                     McpToolErrorCode.INVALID_REPOSITORY_PATH,
                     "Repository path must be a safe relative path"

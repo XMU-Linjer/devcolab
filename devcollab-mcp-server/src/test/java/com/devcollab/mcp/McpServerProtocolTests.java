@@ -27,7 +27,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -80,6 +82,32 @@ class McpServerProtocolTests {
                     .containsKeys("type", "properties", "oneOf", "additionalProperties");
             assertThat(codeTool.outputSchema())
                     .containsKeys("type", "properties", "oneOf", "additionalProperties");
+            McpSchema.Tool candidateTool = tools.stream()
+                    .filter(tool -> tool.name().equals("devcollab.document.find_candidates"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(candidateTool.inputSchema().get("required"))
+                    .isEqualTo(List.of("workspaceId"));
+            assertThat(candidateTool.inputSchema()).containsKey("allOf");
+            Map<?, ?> candidateInputProperties =
+                    (Map<?, ?>) candidateTool.inputSchema().get("properties");
+            List<String> candidateInputKeys = candidateInputProperties.keySet().stream()
+                    .map(Object::toString)
+                    .toList();
+            assertThat(candidateInputKeys)
+                    .containsExactlyInAnyOrder(
+                            "workspaceId", "repositoryId", "filePath", "query", "limit"
+                    );
+            assertThat(candidateInputKeys).doesNotContain("scope", "maxResults");
+            Map<?, ?> candidateOutputProperties =
+                    (Map<?, ?>) candidateTool.outputSchema().get("properties");
+            List<String> candidateOutputKeys = candidateOutputProperties.keySet().stream()
+                    .map(Object::toString)
+                    .toList();
+            assertThat(candidateOutputKeys).contains(
+                    "workspaceId", "repositoryId", "filePath", "query", "candidates",
+                    "truncated", "omittedCandidateCount", "error"
+            );
             assertThat(((Map<?, ?>) workspaceTool.outputSchema().get("properties")).containsKey("error"))
                     .isTrue();
             assertThat(((Map<?, ?>) codeTool.outputSchema().get("properties")).containsKey("error"))
@@ -143,6 +171,86 @@ class McpServerProtocolTests {
                     .isEqualTo("line two\nline three");
             assertThat(((Map<?, ?>) code.structuredContent()).get("truncated"))
                     .isEqualTo(false);
+        }
+    }
+
+    @Test
+    void officialClientCanCallAllPhaseTwoTools() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID blockId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        when(coreGateway.getDocumentStructure(
+                eq(workspaceId), eq(documentId), eq(false), anyInt(), anyInt(), any()
+        )).thenReturn(new KnowledgeCoreGateway.DocumentStructure(
+                documentId, workspaceId, "Design", "REQUIREMENT", "DRAFT",
+                java.time.Instant.parse("2026-07-26T00:00:00Z"),
+                List.of(new KnowledgeCoreGateway.BlockInfo(
+                        blockId, "PARAGRAPH", 0, 1, null, null, false
+                )),
+                false, 0, 0
+        ));
+        when(coreGateway.getFileBindings(
+                eq(workspaceId), eq(repositoryId), eq("src/App.java"), anyInt(), any()
+        )).thenReturn(new KnowledgeCoreGateway.BindingQueryResult(
+                workspaceId, repositoryId, "src/App.java", true,
+                List.of(new KnowledgeCoreGateway.BindingInfo(
+                        bindingId, "src/App.java", documentId, "Design", blockId
+                )),
+                false, 0
+        ));
+        when(coreGateway.findDocumentCandidates(
+                eq(workspaceId), eq(repositoryId), eq("src/App.java"), isNull(), eq(5), any()
+        )).thenReturn(new KnowledgeCoreGateway.DocumentCandidateResult(
+                workspaceId, repositoryId, "src/App.java", null,
+                List.of(new KnowledgeCoreGateway.DocumentCandidate(
+                        documentId, "Design", 100,
+                        List.of(new KnowledgeCoreGateway.DocumentCandidateMatchReason(
+                                "DIRECT_BINDING", 100, "src/App.java", List.of(blockId)
+                        )),
+                        List.of(blockId), 1
+                )),
+                false, 0
+        ));
+
+        try (McpSyncClient client = client()) {
+            client.initialize();
+            McpSchema.CallToolResult structure = client.callTool(new McpSchema.CallToolRequest(
+                    "devcollab.document.get_structure",
+                    Map.of(
+                            "workspaceId", workspaceId.toString(),
+                            "documentId", documentId.toString()
+                    )
+            ));
+            McpSchema.CallToolResult bindings = client.callTool(new McpSchema.CallToolRequest(
+                    "devcollab.binding.list",
+                    Map.of(
+                            "workspaceId", workspaceId.toString(),
+                            "repositoryId", repositoryId.toString(),
+                            "filePath", "src/App.java"
+                    )
+            ));
+            McpSchema.CallToolResult candidates = client.callTool(new McpSchema.CallToolRequest(
+                    "devcollab.document.find_candidates",
+                    Map.of(
+                            "workspaceId", workspaceId.toString(),
+                            "repositoryId", repositoryId.toString(),
+                            "filePath", "src/App.java",
+                            "limit", 5
+                    )
+            ));
+
+            assertThat(structure.isError()).isFalse();
+            assertThat(((Map<?, ?>) structure.structuredContent()).get("documentId"))
+                    .isEqualTo(documentId.toString());
+            assertThat(bindings.isError()).isFalse();
+            assertThat(((List<?>) ((Map<?, ?>) bindings.structuredContent()).get("bindings")))
+                    .hasSize(1);
+            assertThat(candidates.isError()).isFalse();
+            Map<?, ?> candidateContent = (Map<?, ?>) candidates.structuredContent();
+            assertThat(candidateContent.get("omittedCandidateCount")).isEqualTo(0);
+            assertThat((List<?>) candidateContent.get("candidates")).hasSize(1);
         }
     }
 

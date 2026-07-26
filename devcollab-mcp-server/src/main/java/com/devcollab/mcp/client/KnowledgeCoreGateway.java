@@ -33,10 +33,11 @@ public interface KnowledgeCoreGateway {
             McpUserIdentity identity
     );
 
-    List<SearchCandidate> searchDocuments(
+    DocumentCandidateResult findDocumentCandidates(
             UUID workspaceId,
-            String keyword,
-            String scope,
+            UUID repositoryId,
+            String filePath,
+            String query,
             int limit,
             McpUserIdentity identity
     );
@@ -116,13 +117,32 @@ public interface KnowledgeCoreGateway {
     ) {
     }
 
-    record SearchCandidate(
-            String type,
+    record DocumentCandidateResult(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            String query,
+            List<DocumentCandidate> candidates,
+            boolean truncated,
+            int omittedCandidateCount
+    ) {
+    }
+
+    record DocumentCandidate(
             UUID documentId,
-            String documentTitle,
-            UUID blockId,
-            String snippet,
-            java.time.Instant updatedAt
+            String title,
+            int score,
+            List<DocumentCandidateMatchReason> matchReasons,
+            List<UUID> matchedBlockIds,
+            int existingBindingCount
+    ) {
+    }
+
+    record DocumentCandidateMatchReason(
+            String code,
+            int weight,
+            String matchedTerm,
+            List<UUID> matchedBlockIds
     ) {
     }
 }

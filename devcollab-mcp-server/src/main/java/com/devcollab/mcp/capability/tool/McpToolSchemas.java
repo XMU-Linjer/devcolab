@@ -177,52 +177,91 @@ final class McpToolSchemas {
         );
     }
 
-    static Map<String, Object> findCandidatesInput(int maxQueryCharacters) {
+    static Map<String, Object> findCandidatesInput(
+            int maxPathCharacters,
+            int maxQueryCharacters,
+            int maxCandidates
+    ) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("workspaceId", uuidProperty("DevCollab workspace identifier"));
+        properties.put("repositoryId", uuidProperty("Registered repository identifier"));
+        properties.put("filePath", Map.of(
+                "type", "string",
+                "minLength", 1,
+                "maxLength", maxPathCharacters,
+                "description", "Repository-relative file path"
+        ));
         properties.put("query", Map.of(
                 "type", "string",
                 "minLength", 1,
                 "maxLength", maxQueryCharacters,
-                "description", "Search query to find matching documents"
+                "description", "Optional deterministic document query"
         ));
-        properties.put("scope", Map.of(
-                "type", "string",
-                "enum", List.of("ALL", "TITLE", "CONTENT"),
-                "default", "ALL",
-                "description", "Search scope: ALL, TITLE, or CONTENT"
-        ));
-        properties.put("maxResults", Map.of(
+        properties.put("limit", Map.of(
                 "type", "integer",
                 "minimum", 1,
-                "maximum", 100
+                "maximum", maxCandidates
         ));
-        return objectSchema(properties, List.of("workspaceId", "query"));
+        Map<String, Object> schema = new LinkedHashMap<>(objectSchema(
+                properties, List.of("workspaceId")
+        ));
+        schema.put("allOf", List.of(
+                Map.of("anyOf", List.of(
+                        Map.of("required", List.of("filePath")),
+                        Map.of("required", List.of("query"))
+                )),
+                Map.of(
+                        "if", Map.of("required", List.of("filePath")),
+                        "then", Map.of("required", List.of("repositoryId"))
+                )
+        ));
+        return schema;
     }
 
     static Map<String, Object> findCandidatesOutput() {
+        Map<String, Object> reason = objectSchema(
+                Map.of(
+                        "code", Map.of("type", "string"),
+                        "weight", Map.of("type", "integer"),
+                        "matchedTerm", Map.of("type", List.of("string", "null")),
+                        "matchedBlockIds", Map.of(
+                                "type", "array",
+                                "items", uuidProperty("Matched Block identifier")
+                        )
+                ),
+                List.of("code", "weight", "matchedTerm", "matchedBlockIds")
+        );
         Map<String, Object> candidateProperties = new LinkedHashMap<>();
-        candidateProperties.put("type", Map.of("type", "string"));
         candidateProperties.put("documentId", uuidProperty("Document identifier"));
-        candidateProperties.put("documentTitle", Map.of("type", List.of("string", "null")));
-        candidateProperties.put("blockId", uuidProperty("Block identifier", true));
-        candidateProperties.put("snippet", Map.of("type", List.of("string", "null")));
-        candidateProperties.put("updatedAt", Map.of("type", List.of("string", "null"), "format", "date-time"));
+        candidateProperties.put("title", Map.of("type", "string"));
+        candidateProperties.put("score", Map.of("type", "integer", "minimum", 1));
+        candidateProperties.put("matchReasons", Map.of("type", "array", "items", reason));
+        candidateProperties.put("matchedBlockIds", Map.of(
+                "type", "array",
+                "items", uuidProperty("Matched Block identifier")
+        ));
+        candidateProperties.put("existingBindingCount", Map.of("type", "integer", "minimum", 0));
         Map<String, Object> candidate = objectSchema(
                 candidateProperties,
-                List.of("type", "documentId", "documentTitle")
+                List.of(
+                        "documentId", "title", "score", "matchReasons",
+                        "matchedBlockIds", "existingBindingCount"
+                )
         );
         return toolOutputSchema(
                 Map.of(
                         "workspaceId", uuidProperty("Workspace identifier"),
-                        "query", Map.of("type", "string"),
-                        "scope", Map.of("type", "string"),
+                        "repositoryId", uuidProperty("Repository identifier", true),
+                        "filePath", Map.of("type", List.of("string", "null")),
+                        "query", Map.of("type", List.of("string", "null")),
                         "candidates", Map.of("type", "array", "items", candidate),
-                        "totalResults", Map.of("type", "integer"),
                         "truncated", Map.of("type", "boolean"),
-                        "omittedCount", Map.of("type", "integer")
+                        "omittedCandidateCount", Map.of("type", "integer", "minimum", 0)
                 ),
-                List.of("workspaceId", "query", "scope", "candidates", "totalResults", "truncated", "omittedCount")
+                List.of(
+                        "workspaceId", "repositoryId", "filePath", "query",
+                        "candidates", "truncated", "omittedCandidateCount"
+                )
         );
     }
 

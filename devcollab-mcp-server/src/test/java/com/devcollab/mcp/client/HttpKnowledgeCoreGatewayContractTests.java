@@ -117,4 +117,56 @@ class HttpKnowledgeCoreGatewayContractTests {
         });
         server.verify();
     }
+
+    @Test
+    void candidateJsonDeserializesScoresReasonsAndCoreTruncation() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID blockId = UUID.randomUUID();
+        String json = """
+                {
+                  "workspaceId":"%s",
+                  "repositoryId":"%s",
+                  "filePath":"src/App.java",
+                  "query":null,
+                  "candidates":[{
+                    "documentId":"%s",
+                    "title":"App Design",
+                    "score":140,
+                    "matchReasons":[{
+                      "code":"DIRECT_BINDING",
+                      "weight":100,
+                      "matchedTerm":"src/App.java",
+                      "matchedBlockIds":["%s"]
+                    }],
+                    "matchedBlockIds":["%s"],
+                    "existingBindingCount":1
+                  }],
+                  "truncated":true,
+                  "omittedCandidateCount":4
+                }
+                """.formatted(workspaceId, repositoryId, documentId, blockId, blockId);
+        server.expect(requestTo(org.hamcrest.Matchers.containsString(
+                        "/api/v1/workspaces/" + workspaceId + "/document-candidates")))
+                .andExpect(header("Authorization", "Bearer access-token"))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        KnowledgeCoreGateway.DocumentCandidateResult result = gateway.findDocumentCandidates(
+                workspaceId, repositoryId, "src/App.java", null, 10, identity
+        );
+
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.omittedCandidateCount()).isEqualTo(4);
+        assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.documentId()).isEqualTo(documentId);
+            assertThat(candidate.score()).isEqualTo(140);
+            assertThat(candidate.existingBindingCount()).isOne();
+            assertThat(candidate.matchReasons()).singleElement().satisfies(reason -> {
+                assertThat(reason.code()).isEqualTo("DIRECT_BINDING");
+                assertThat(reason.weight()).isEqualTo(100);
+            });
+        });
+        server.verify();
+    }
 }

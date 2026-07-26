@@ -47,8 +47,12 @@ public class FindCandidatesToolContributor implements McpToolContributor {
         McpSchema.Tool tool = McpSchema.Tool.builder()
                 .name(TOOL_NAME)
                 .title("Find document candidates")
-                .description("Search for documents within a workspace by keyword query")
-                .inputSchema(McpToolSchemas.findCandidatesInput(mcpProperties.maxDocumentQueryCharacters()))
+                .description("Find explainable document candidates from code paths, bindings, titles, and Block text")
+                .inputSchema(McpToolSchemas.findCandidatesInput(
+                        mcpProperties.maxPathCharacters(),
+                        mcpProperties.maxDocumentQueryCharacters(),
+                        mcpProperties.maxCandidates()
+                ))
                 .outputSchema(McpToolSchemas.findCandidatesOutput())
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
@@ -58,13 +62,16 @@ public class FindCandidatesToolContributor implements McpToolContributor {
             Map<String, Object> arguments = request.arguments();
             
             UUID workspaceId = McpToolArguments.requiredUuid(arguments, "workspaceId");
-            String query = McpToolArguments.requiredString(arguments, "query");
-            String scope = arguments.get("scope") instanceof String s ? s : null;
-            Integer maxResults = McpToolArguments.optionalInteger(arguments, "maxResults");
+            UUID repositoryId = McpToolArguments.optionalUuid(arguments, "repositoryId");
+            String filePath = arguments.get("filePath") instanceof String s ? s : null;
+            String query = arguments.get("query") instanceof String s ? s : null;
+            Integer limit = McpToolArguments.optionalInteger(arguments, "limit");
 
             Map<String, Object> result = auditedToolExecutor.execute(
-                    TOOL_NAME, identity, workspaceId, null, arguments,
-                    () -> applicationService.findCandidates(workspaceId, query, scope, maxResults, identity)
+                    TOOL_NAME, identity, workspaceId, repositoryId, arguments,
+                    () -> applicationService.findCandidates(
+                            workspaceId, repositoryId, filePath, query, limit, identity
+                    )
             );
             return success(result);
         }));

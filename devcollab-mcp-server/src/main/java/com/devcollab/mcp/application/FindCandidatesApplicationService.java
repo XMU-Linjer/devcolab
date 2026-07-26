@@ -4,95 +4,113 @@ import com.devcollab.mcp.client.KnowledgeCoreGateway;
 import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.error.McpToolErrorCode;
 import com.devcollab.mcp.error.McpToolException;
+import com.devcollab.mcp.governance.ContextBudgetPolicy;
 import com.devcollab.mcp.security.McpUserIdentity;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Service
 public class FindCandidatesApplicationService {
 
     private final KnowledgeCoreGateway knowledgeCoreGateway;
-    private final McpProperties mcpProperties;
+    private final McpProperties properties;
+    private final ContextBudgetPolicy budgetPolicy;
 
-    public FindCandidatesApplicationService(KnowledgeCoreGateway knowledgeCoreGateway, McpProperties mcpProperties) {
+    public FindCandidatesApplicationService(
+            KnowledgeCoreGateway knowledgeCoreGateway,
+            McpProperties properties,
+            ContextBudgetPolicy budgetPolicy
+    ) {
         this.knowledgeCoreGateway = knowledgeCoreGateway;
-        this.mcpProperties = mcpProperties;
+        this.properties = properties;
+        this.budgetPolicy = budgetPolicy;
     }
 
     public Map<String, Object> findCandidates(
             UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
             String query,
-            String scope,
-            Integer maxResultsArg,
+            Integer requestedLimit,
             McpUserIdentity identity
     ) {
-        validateQuery(query);
+        Inputs inputs = validate(repositoryId, filePath, query, requestedLimit);
+        KnowledgeCoreGateway.DocumentCandidateResult coreResult =
+                knowledgeCoreGateway.findDocumentCandidates(
+                        workspaceId, inputs.repositoryId(), inputs.filePath(), inputs.query(),
+                        inputs.limit(), identity
+                );
 
-        String effectiveScope = scope != null ? scope : "ALL";
-        int maxResults = maxResultsArg != null
-                ? Math.min(maxResultsArg, mcpProperties.maxCandidates())
-                : mcpProperties.maxCandidates();
-
-        List<KnowledgeCoreGateway.SearchCandidate> candidates = knowledgeCoreGateway.searchDocuments(
-                workspaceId,
-                query.trim(),
-                effectiveScope,
-                maxResults,
-                identity
-        );
-
-        boolean truncated = candidates.size() > maxResults;
-        int omittedCount = 0;
-        if (truncated) {
-            omittedCount = candidates.size() - maxResults;
-            candidates = candidates.subList(0, maxResults);
-        }
-
-        List<Map<String, Object>> candidateList = candidates.stream()
-                .map(c -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("type", c.type());
-                    map.put("documentId", c.documentId());
-                    map.put("documentTitle", c.documentTitle());
-                    if (c.blockId() != null) {
-                        map.put("blockId", c.blockId());
-                    }
-                    if (c.snippet() != null) {
-                        map.put("snippet", c.snippet());
-                    }
-                    if (c.updatedAt() != null) {
-                        map.put("updatedAt", c.updatedAt().toString());
-                    }
-                    return map;
-                })
-                .collect(Collectors.toList());
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("workspaceId", workspaceId);
-        result.put("query", query.trim());
-        result.put("scope", effectiveScope);
-        result.put("candidates", candidateList);
-        result.put("totalResults", candidateList.size());
-        result.put("truncated", truncated);
-        result.put("omittedCount", omittedCount);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("workspaceId", coreResult.workspaceId());
+        result.put("repositoryId", coreResult.repositoryId());
+        result.put("filePath", coreResult.filePath());
+        result.put("query", coreResult.query());
+        result.put("candidates", coreResult.candidates().stream().map(this::candidateMap).toList());
+        result.put("truncated", coreResult.truncated());
+        result.put("omittedCandidateCount", coreResult.omittedCandidateCount());
         return result;
     }
 
-    private void validateQuery(String query) {
-        if (query == null || query.isBlank()) {
-            throw new McpToolException(McpToolErrorCode.INVALID_DOCUMENT_QUERY, "Query cannot be blank");
+    private Map<String, Object> candidateMap(KnowledgeCoreGateway.DocumentCandidate candidate) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("documentId", candidate.documentId());
+        item.put("title", candidate.title());
+        item.put("score", candidate.score());
+        item.put("matchReasons", candidate.matchReasons().stream().map(reason -> {
+            Map<String, Object> reasonMap = new LinkedHashMap<>();
+            reasonMap.put("code", reason.code());
+            reasonMap.put("weight", reason.weight());
+            reasonMap.put("matchedTerm", reason.matchedTerm());
+            reasonMap.put("matchedBlockIds", reason.matchedBlockIds());
+            return reasonMap;
+        }).toList());
+        item.put("matchedBlockIds", candidate.matchedBlockIds());
+        item.put("existingBindingCount", candidate.existingBindingCount());
+        return item;
+    }
+
+    private Inputs validate(
+            UUID repositoryId,
+            String filePath,
+            String query,
+            Integer requestedLimit
+    ) {
+        String normalizedPath = filePath == null ? null : filePath.trim();
+        String normalizedQuery = query == null ? null : query.trim();
+        if (filePath != null && normalizedPath.isEmpty()) {
+            throw invalidQuery("filePath must not be blank");
         }
-        int codePointCount = query.trim().codePointCount(0, query.trim().length());
-        if (codePointCount > mcpProperties.maxDocumentQueryCharacters()) {
-            throw new McpToolException(
-                    McpToolErrorCode.INVALID_DOCUMENT_QUERY,
-                    "Query exceeds maximum length of " + mcpProperties.maxDocumentQueryCharacters() + " characters"
-            );
+        if (query != null && normalizedQuery.isEmpty()) {
+            throw invalidQuery("query must not be blank");
         }
+        if (normalizedPath == null && normalizedQuery == null) {
+            throw invalidQuery("filePath or query is required");
+        }
+        if (normalizedPath != null && repositoryId == null) {
+            throw invalidQuery("repositoryId is required with filePath");
+        }
+        if (normalizedPath != null) {
+            budgetPolicy.validateRepositoryPath(normalizedPath);
+            normalizedPath = normalizedPath.replace('\\', '/');
+        }
+        if (normalizedQuery != null
+                && normalizedQuery.codePointCount(0, normalizedQuery.length())
+                > properties.maxDocumentQueryCharacters()) {
+            throw invalidQuery("query exceeds the configured context limit");
+        }
+        int limit = requestedLimit == null ? properties.maxCandidates() : requestedLimit;
+        if (limit < 1 || limit > properties.maxCandidates()) {
+            throw invalidQuery("limit must be between 1 and " + properties.maxCandidates());
+        }
+        return new Inputs(repositoryId, normalizedPath, normalizedQuery, limit);
+    }
+
+    private McpToolException invalidQuery(String message) {
+        return new McpToolException(McpToolErrorCode.INVALID_DOCUMENT_QUERY, message);
+    }
+
+    private record Inputs(UUID repositoryId, String filePath, String query, int limit) {
     }
 }

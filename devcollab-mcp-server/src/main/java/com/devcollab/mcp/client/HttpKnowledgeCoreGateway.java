@@ -158,34 +158,60 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
     }
 
     @Override
-    public List<SearchCandidate> searchDocuments(UUID workspaceId, String keyword, String scope, int limit, McpUserIdentity identity) {
+    public DocumentCandidateResult findDocumentCandidates(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            String query,
+            int limit,
+            McpUserIdentity identity
+    ) {
         try {
-            List<SearchHitPayload> hits = restClient.get()
+            DocumentCandidateResultPayload payload = restClient.get()
                     .uri(builder -> builder
-                            .path("/api/v1/workspaces/{workspaceId}/search")
-                            .queryParam("keyword", keyword)
-                            .queryParam("scope", scope)
+                            .path("/api/v1/workspaces/{workspaceId}/document-candidates")
+                            .queryParamIfPresent("repositoryId", java.util.Optional.ofNullable(repositoryId))
+                            .queryParamIfPresent("filePath", java.util.Optional.ofNullable(filePath))
+                            .queryParamIfPresent("query", java.util.Optional.ofNullable(query))
+                            .queryParam("limit", limit)
                             .build(workspaceId))
                     .header(HttpHeaders.AUTHORIZATION, bearer(identity))
                     .retrieve()
-                    .body(new ParameterizedTypeReference<>() {
-                    });
-            if (hits == null) {
-                return List.of();
+                    .body(DocumentCandidateResultPayload.class);
+            if (payload == null) {
+                throw new McpToolException(
+                        McpToolErrorCode.INTERNAL_ERROR,
+                        "Knowledge Core returned an empty candidate response"
+                );
             }
-            return hits.stream()
-                    .limit(limit)
-                    .map(h -> new SearchCandidate(
-                            h.type(),
-                            h.documentId(),
-                            h.documentTitle(),
-                            h.blockId(),
-                            h.snippet(),
-                            h.updatedAt()
-                    ))
-                    .toList();
+            return new DocumentCandidateResult(
+                    payload.workspaceId(), payload.repositoryId(), payload.filePath(), payload.query(),
+                    payload.candidates() == null ? List.of() : payload.candidates().stream()
+                            .map(candidate -> new DocumentCandidate(
+                                    candidate.documentId(), candidate.title(), candidate.score(),
+                                    candidate.matchReasons() == null ? List.of()
+                                            : candidate.matchReasons().stream()
+                                                    .map(reason -> new DocumentCandidateMatchReason(
+                                                            reason.code(), reason.weight(), reason.matchedTerm(),
+                                                            reason.matchedBlockIds() == null
+                                                                    ? List.of() : reason.matchedBlockIds()
+                                                    ))
+                                                    .toList(),
+                                    candidate.matchedBlockIds() == null ? List.of() : candidate.matchedBlockIds(),
+                                    candidate.existingBindingCount()
+                            ))
+                            .toList(),
+                    payload.truncated(), payload.omittedCandidateCount()
+            );
         } catch (RuntimeException exception) {
-            throw map(exception, McpToolErrorCode.INTERNAL_ERROR);
+            if (exception instanceof RestClientResponseException responseException
+                    && responseException.getStatusCode().value() == 400) {
+                throw new McpToolException(
+                        McpToolErrorCode.INVALID_DOCUMENT_QUERY,
+                        "Document candidate query was invalid"
+                );
+            }
+            throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
         }
     }
 
@@ -323,13 +349,32 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
     ) {
     }
 
-    private record SearchHitPayload(
-            String type,
+    private record DocumentCandidateResultPayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            String filePath,
+            String query,
+            List<DocumentCandidatePayload> candidates,
+            boolean truncated,
+            int omittedCandidateCount
+    ) {
+    }
+
+    private record DocumentCandidatePayload(
             UUID documentId,
-            String documentTitle,
-            UUID blockId,
-            String snippet,
-            java.time.Instant updatedAt
+            String title,
+            int score,
+            List<DocumentCandidateMatchReasonPayload> matchReasons,
+            List<UUID> matchedBlockIds,
+            int existingBindingCount
+    ) {
+    }
+
+    private record DocumentCandidateMatchReasonPayload(
+            String code,
+            int weight,
+            String matchedTerm,
+            List<UUID> matchedBlockIds
     ) {
     }
 }
