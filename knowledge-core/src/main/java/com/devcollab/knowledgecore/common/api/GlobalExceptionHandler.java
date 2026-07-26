@@ -27,6 +27,7 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemb
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceUserNotFoundException;
+import com.devcollab.knowledgecore.documentchange.application.DocumentChangeException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DocumentChangeException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentChange(
+            DocumentChangeException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                exception.status(),
+                exception.code(),
+                exception.getMessage(),
+                request
+        );
+    }
 
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(

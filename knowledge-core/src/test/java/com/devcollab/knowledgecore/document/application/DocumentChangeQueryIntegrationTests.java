@@ -1,0 +1,258 @@
+package com.devcollab.knowledgecore.document.application;
+
+import com.devcollab.knowledgecore.document.domain.Document;
+import com.devcollab.knowledgecore.document.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
+import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService;
+import com.devcollab.knowledgecore.documentchange.application.DocumentChangeException;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
+import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
+import com.devcollab.knowledgecore.git.domain.GitProvider;
+import com.devcollab.knowledgecore.git.domain.GitRepository;
+import com.devcollab.knowledgecore.git.domain.GitRepositoryStatus;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
+import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import static com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@SpringBootTest
+class DocumentChangeQueryIntegrationTests {
+
+    @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired DocumentChangeRepository repository;
+    @Autowired DocumentChangeApplicationService service;
+    @Autowired DocumentRepository documentRepository;
+    @Autowired DocumentBlockRepository blockRepository;
+    @Autowired GitKnowledgeRepository gitRepository;
+    @Autowired ObjectMapper objectMapper;
+
+    @Test
+    void migrationCreatesReviewTables() {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.tables
+                 WHERE table_name IN (
+                    'document_change_requests',
+                    'document_change_operations',
+                    'document_change_evidence'
+                 )
+                """, Integer.class);
+        assertThat(count).isEqualTo(3);
+    }
+
+    @Test
+    void adminCanCountFilterPageAndUseStableOrdering() {
+        Fixture fixture = fixture("ADMIN");
+        Instant base = Instant.parse("2026-07-26T10:00:00Z");
+        saveRequest(fixture, Status.PENDING, "older", base);
+        ChangeRequest newer = saveRequest(
+                fixture, Status.PENDING, "newer", base.plusSeconds(1)
+        );
+        saveRequest(
+                fixture, Status.REJECTED, "rejected", base.plusSeconds(2)
+        );
+
+        assertThat(service.pendingCount(fixture.workspaceId(), fixture.userId()))
+                .isEqualTo(2);
+        var page = service.list(
+                fixture.workspaceId(), fixture.userId(), Status.PENDING,
+                0, 1, "createdAt,desc"
+        );
+
+        assertThat(page.totalElements()).isEqualTo(2);
+        assertThat(page.totalPages()).isEqualTo(2);
+        assertThat(page.items()).extracting(item -> item.id())
+                .containsExactly(newer.id());
+    }
+
+    @Test
+    void detailReturnsOrderedOperationsAndTwoEvidenceLevels() throws Exception {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 4);
+        GitRepository git = gitRepository.saveRepository(new GitRepository(
+                UUID.randomUUID(), fixture.workspaceId(), "devcollab",
+                GitProvider.GITHUB, "https://github.com/example/devcollab",
+                "main", fixture.userId(), Instant.now(), Instant.now(),
+                GitRepositoryStatus.READY, "abc123", Instant.now(), null
+        ));
+        ChangeRequest request = saveRequest(
+                fixture, Status.PENDING, "review", Instant.now()
+        );
+        Operation second = operation(
+                request, 2, "delete", OperationType.DELETE_BLOCK, document, block
+        );
+        Operation first = operation(
+                request, 1, "update", OperationType.UPDATE_BLOCK, document, block
+        );
+        repository.saveOperation(second);
+        repository.saveOperation(first);
+        repository.saveEvidence(evidence(request, null, git.id(), "request"));
+        repository.saveEvidence(evidence(request, first.id(), git.id(), "operation"));
+
+        var detail = service.detail(
+                fixture.workspaceId(), request.id(), fixture.userId()
+        );
+        String json = objectMapper.writeValueAsString(detail);
+
+        assertThat(detail.operations()).extracting(item -> item.sequenceNumber())
+                .containsExactly(1, 2);
+        assertThat(detail.requestEvidence()).hasSize(1);
+        assertThat(detail.operations().getFirst().evidence()).hasSize(1);
+        assertThat(detail.operations().getFirst().baseSnapshot().blockVersion())
+                .isEqualTo(4);
+        assertThat(detail.operations().getFirst().currentBlockVersion())
+                .isEqualTo(4);
+        assertThat(detail.operations().getFirst().conflict().conflicted())
+                .isFalse();
+        assertThat(json).contains("\"reviewedBy\":null");
+        assertThat(json).contains("\"requestEvidence\"");
+    }
+
+    @Test
+    void memberCannotReviewAndOutsiderSeesNotFound() {
+        Fixture member = fixture("MEMBER");
+        Fixture admin = fixture("ADMIN");
+        UUID outsider = createUser();
+
+        assertThatThrownBy(() -> service.pendingCount(
+                member.workspaceId(), member.userId()
+        )).isInstanceOf(WorkspaceAccessDeniedException.class);
+        assertThatThrownBy(() -> service.pendingCount(
+                admin.workspaceId(), outsider
+        )).isInstanceOf(WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    void requestIsIsolatedByWorkspaceAndMissingDetailIsNotFound() {
+        Fixture first = fixture("ADMIN");
+        Fixture second = fixture("ADMIN");
+        ChangeRequest request = saveRequest(
+                first, Status.PENDING, "private", Instant.now()
+        );
+
+        assertThatThrownBy(() -> service.detail(
+                second.workspaceId(), request.id(), second.userId()
+        )).isInstanceOf(DocumentChangeException.class)
+                .hasMessageContaining("不存在");
+    }
+
+    private Fixture fixture(String role) {
+        UUID userId = createUser();
+        UUID workspaceId = UUID.randomUUID();
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                INSERT INTO workspaces
+                    (id, name, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, workspaceId, "workspace-" + workspaceId, userId, now, now);
+        jdbcTemplate.update("""
+                INSERT INTO workspace_members
+                    (workspace_id, user_id, role, joined_at)
+                VALUES (?, ?, ?, ?)
+                """, workspaceId, userId, role, now);
+        return new Fixture(workspaceId, userId);
+    }
+
+    private UUID createUser() {
+        UUID userId = UUID.randomUUID();
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                INSERT INTO user_accounts
+                    (id, username, normalized_username, display_name,
+                     password_hash, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                """,
+                userId, "user-" + userId, "user-" + userId,
+                "Reviewer " + userId, "test-hash", now, now);
+        return userId;
+    }
+
+    private ChangeRequest saveRequest(
+            Fixture fixture,
+            Status status,
+            String summary,
+            Instant createdAt
+    ) {
+        return repository.saveRequest(new ChangeRequest(
+                UUID.randomUUID(), fixture.workspaceId(),
+                "client-" + UUID.randomUUID(), "a".repeat(64), status,
+                summary, "rationale", SourceType.MCP, fixture.userId(),
+                createdAt, null, null, null
+        ));
+    }
+
+    private Document document(Fixture fixture) {
+        Instant now = Instant.now();
+        return documentRepository.save(new Document(
+                UUID.randomUUID(), fixture.workspaceId(), null, "API design",
+                DocumentType.REQUIREMENT, DocumentReviewStatus.DRAFT,
+                fixture.userId(), now, now
+        ));
+    }
+
+    private DocumentBlock block(
+            Document document,
+            UUID userId,
+            long version
+    ) {
+        Instant now = Instant.now();
+        return blockRepository.save(new DocumentBlock(
+                UUID.randomUUID(), document.id(), DocumentBlockType.PARAGRAPH,
+                "before", 1,
+                """
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"before"}]}]}
+                """,
+                0, version, userId, now, now
+        ));
+    }
+
+    private Operation operation(
+            ChangeRequest request,
+            int sequence,
+            String clientId,
+            OperationType type,
+            Document document,
+            DocumentBlock block
+    ) {
+        return new Operation(
+                UUID.randomUUID(), request.id(), clientId, sequence, type,
+                document.id(), null, block.id(), block.version(),
+                block.type().name(), block.text(), block.contentSchemaVersion(),
+                block.contentJson(), block.sortOrder(), null, null, null,
+                block.type().name(),
+                type == OperationType.UPDATE_BLOCK ? "after" : null,
+                type == OperationType.UPDATE_BLOCK ? 1 : null,
+                type == OperationType.UPDATE_BLOCK ? block.contentJson() : null
+        );
+    }
+
+    private Evidence evidence(
+            ChangeRequest request,
+            UUID operationId,
+            UUID repositoryId,
+            String description
+    ) {
+        return new Evidence(
+                UUID.randomUUID(), request.id(), operationId, repositoryId,
+                "abc123", "src/Test.java", 1, 2, description, "blob",
+                "class Test {}", "b".repeat(64)
+        );
+    }
+
+    private record Fixture(UUID workspaceId, UUID userId) {
+    }
+}
