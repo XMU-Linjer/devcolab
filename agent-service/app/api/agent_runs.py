@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -11,13 +11,64 @@ from app.config import Settings
 from app.graph.state import AgentState
 from app.graph.workflow import ContextWorkflow
 from app.schemas.runs import (
+    AgentRunRecord,
     AgentRunResponse,
+    CreateAgentRunRequest,
     CreateContextRunRequest,
+    QueuedAgentRunResponse,
     RunStatus,
     TraceSummary,
 )
 
 router = APIRouter(prefix="/api/v1/agent-runs", tags=["agent-runs"])
+
+
+@router.post(
+    "",
+    response_model=QueuedAgentRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_agent_run(
+    payload: CreateAgentRunRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> QueuedAgentRunResponse:
+    authorization = _require_bearer(authorization)
+    settings: Settings = request.app.state.settings
+    _validate_selected_path_limit(payload.selectedPaths, settings)
+    run_id = uuid4()
+    now = datetime.now(UTC)
+    queued = AgentRunRecord(
+        runId=run_id,
+        status="QUEUED",
+        workspaceId=payload.workspaceId,
+        repositoryId=payload.repositoryId,
+        selectedPaths=payload.selectedPaths,
+        currentNode="queued",
+        createdAt=now,
+        updatedAt=now,
+    )
+    try:
+        await request.app.state.run_store.save(
+            str(run_id),
+            queued.model_dump(mode="json"),
+            settings.agent_run_ttl_seconds,
+        )
+    except RunStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "REDIS_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+    request.app.state.run_executor.start(
+        run_id=str(run_id),
+        workspace_id=str(payload.workspaceId),
+        repository_id=str(payload.repositoryId),
+        selected_paths=payload.selectedPaths,
+        user_instruction=payload.userInstruction,
+        authorization=authorization,
+        created_at=now.isoformat(),
+    )
+    return QueuedAgentRunResponse(runId=run_id, status="QUEUED")
 
 
 @router.post("/context", response_model=AgentRunResponse)
@@ -28,14 +79,7 @@ async def create_context_run(
 ) -> AgentRunResponse:
     authorization = _require_bearer(authorization)
     settings: Settings = request.app.state.settings
-    if len(payload.selectedPaths) > settings.agent_max_selected_files:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "INVALID_REQUEST",
-                "message": "selectedPaths exceeds configured file limit",
-            },
-        )
+    _validate_selected_path_limit(payload.selectedPaths, settings)
 
     run_id = uuid4()
     now = datetime.now(UTC)
@@ -112,12 +156,12 @@ async def create_context_run(
     return response
 
 
-@router.get("/{run_id}", response_model=AgentRunResponse)
+@router.get("/{run_id}")
 async def get_run(
     run_id: UUID,
     request: Request,
     authorization: str | None = Header(default=None),
-) -> AgentRunResponse:
+) -> dict[str, object]:
     _require_bearer(authorization)
     try:
         payload = await request.app.state.run_store.get(str(run_id))
@@ -131,7 +175,7 @@ async def get_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "INVALID_REQUEST", "message": "Agent run not found"},
         )
-    return AgentRunResponse.model_validate(payload)
+    return cast(dict[str, object], payload)
 
 
 def _response(run_id: UUID, run_status: RunStatus, now: datetime) -> AgentRunResponse:
@@ -167,3 +211,17 @@ def _require_bearer(authorization: str | None) -> str:
             detail={"code": "AUTHENTICATION_REQUIRED", "message": "Bearer token required"},
         )
     return authorization
+
+
+def _validate_selected_path_limit(
+    selected_paths: list[str],
+    settings: Settings,
+) -> None:
+    if len(selected_paths) > settings.agent_max_selected_files:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_REQUEST",
+                "message": "selectedPaths exceeds configured file limit",
+            },
+        )

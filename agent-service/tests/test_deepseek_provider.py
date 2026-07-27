@@ -119,6 +119,7 @@ async def test_deepseek_repair_payload_contains_safe_validation_errors() -> None
         validation_errors=[{"path": "operations", "code": "BAD", "message": "fix"}],
     )
     user = json.loads(seen["messages"][1]["content"])
+    assert user["agentPlanSchema"]["title"] == "AgentPlan"
     assert user["repair"]["validationErrors"][0]["code"] == "BAD"
 
 

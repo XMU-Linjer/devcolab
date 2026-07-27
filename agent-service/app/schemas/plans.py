@@ -42,7 +42,7 @@ BlockType = Literal["PARAGRAPH", "HEADING", "CODE", "TODO"]
 
 class BlockContent(StrictModel):
     schemaVersion: int | None = Field(default=None, ge=1)
-    document: dict[str, Any] | None = None
+    document: dict[str, Any]
 
 
 class DocumentOperation(StrictModel):

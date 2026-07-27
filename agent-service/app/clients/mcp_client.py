@@ -4,6 +4,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from app.schemas.plans import AgentPlan
+
 
 class McpClientError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
@@ -29,6 +31,17 @@ class ReadOnlyMcpClient(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class ReviewMcpClient(ReadOnlyMcpClient, Protocol):
+    async def submit_document_change(
+        self,
+        plan: AgentPlan,
+        *,
+        workspace_id: str,
+        run_id: str,
+        authorization: str,
+    ) -> dict[str, Any]: ...
+
+
 class OfficialMcpClient:
     ALLOWED_TOOLS = frozenset(
         {
@@ -49,7 +62,28 @@ class OfficialMcpClient:
     ) -> dict[str, Any]:
         if name not in self.ALLOWED_TOOLS:
             raise McpClientError("INVALID_REQUEST", f"Tool is not allowed: {name}")
+        return await self._invoke_tool(name, arguments, authorization)
 
+    async def submit_document_change(
+        self,
+        plan: AgentPlan,
+        *,
+        workspace_id: str,
+        run_id: str,
+        authorization: str,
+    ) -> dict[str, Any]:
+        return await self._invoke_tool(
+            "devcollab.review.submit_document_change",
+            plan.mcp_payload(workspace_id, f"agent-{run_id}"),
+            authorization,
+        )
+
+    async def _invoke_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        authorization: str,
+    ) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(
                 headers={"Authorization": authorization},

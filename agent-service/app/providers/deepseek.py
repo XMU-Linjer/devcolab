@@ -40,7 +40,10 @@ class DeepSeekProvider:
         validation_errors: list[dict[str, str]] | None = None,
     ) -> AgentPlan:
         self._require_configuration()
-        user_payload: dict[str, Any] = {"context": context_bundle}
+        user_payload: dict[str, Any] = {
+            "agentPlanSchema": AgentPlan.model_json_schema(),
+            "context": context_bundle,
+        }
         if previous_plan is not None:
             user_payload["repair"] = {
                 "previousPlan": previous_plan,
@@ -80,15 +83,20 @@ class DeepSeekProvider:
             raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
         if response.status_code >= 400:
             raise ModelProviderError("MODEL_CONFIGURATION_ERROR", "Model request was rejected")
+        raw_plan: dict[str, Any] | None = None
         try:
             response_json = response.json()
             content = response_json["choices"][0]["message"]["content"]
-            raw_plan = json.loads(content)
+            decoded = json.loads(content)
+            if not isinstance(decoded, dict):
+                raise TypeError("AgentPlan must be an object")
+            raw_plan = decoded
             return AgentPlan.model_validate(raw_plan)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             raise ModelProviderError(
                 "MODEL_INVALID_RESPONSE",
                 "Model returned an invalid AgentPlan",
+                raw_plan=raw_plan,
             ) from exc
 
     def _require_configuration(self) -> None:

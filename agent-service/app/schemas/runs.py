@@ -7,6 +7,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.context import ContextBundle
 
 RunStatus = Literal["RUNNING", "CONTEXT_READY", "FAILED"]
+FormalRunStatus = Literal[
+    "QUEUED",
+    "BUILDING_CONTEXT",
+    "PLANNING",
+    "VALIDATING",
+    "REPAIRING_PLAN",
+    "SUBMITTING_REVIEW",
+    "REVIEW_SUBMITTED",
+    "NO_CHANGE",
+    "FAILED",
+]
 
 
 class CreateContextRunRequest(BaseModel):
@@ -26,6 +37,33 @@ class CreateContextRunRequest(BaseModel):
         if any(not path for path in normalized):
             raise ValueError("selectedPaths cannot contain blank paths")
         return list(dict.fromkeys(normalized))
+
+
+class CreateAgentRunRequest(CreateContextRunRequest):
+    pass
+
+
+class QueuedAgentRunResponse(BaseModel):
+    runId: UUID
+    status: Literal["QUEUED"]
+
+
+class AgentRunRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runId: UUID
+    status: FormalRunStatus
+    workspaceId: UUID
+    repositoryId: UUID
+    selectedPaths: list[str]
+    currentNode: str
+    decision: Literal["NO_CHANGE", "SUBMIT_REVIEW"] | None = None
+    summary: str | None = None
+    changeRequestId: UUID | None = None
+    errorCode: str | None = None
+    errorMessage: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
 
 
 class TraceSummary(BaseModel):

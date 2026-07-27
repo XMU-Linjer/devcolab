@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.schemas.plans import AgentPlan
 
 
 class MemoryRunStore:
@@ -30,6 +31,7 @@ class FakeMcpClient:
         self.bound = bound
         self.code_content = code_content
         self.calls: list[tuple[str, dict[str, Any], str]] = []
+        self.submissions: list[tuple[AgentPlan, str, str, str]] = []
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any], authorization: str
@@ -121,11 +123,64 @@ class FakeMcpClient:
                 "reviewStatus": "DRAFT",
                 "updatedAt": "2026-07-27T00:00:00Z",
                 "blocks": [],
+                "version": 1,
                 "truncated": False,
                 "omittedBlockCount": 0,
                 "omittedCharacterCount": 0,
             }
         raise AssertionError(f"Unexpected tool: {name}")
+
+    async def submit_document_change(
+        self,
+        plan: AgentPlan,
+        *,
+        workspace_id: str,
+        run_id: str,
+        authorization: str,
+    ) -> dict[str, Any]:
+        self.submissions.append((plan, workspace_id, run_id, authorization))
+        return {
+            "changeRequestId": "99999999-9999-9999-9999-999999999999",
+            "status": "PENDING",
+            "createdAt": "2026-07-27T00:00:00Z",
+            "idempotentReplay": False,
+        }
+
+
+class FakeModelProvider:
+    def __init__(self, plans: list[AgentPlan | Exception] | None = None) -> None:
+        self.plans = plans or [
+            AgentPlan.model_validate(
+                {
+                    "decision": "NO_CHANGE",
+                    "summary": "No synchronization is needed",
+                    "rationale": "The implementation and documentation agree.",
+                    "operations": [],
+                    "bindingProposals": [],
+                    "evidence": [],
+                }
+            )
+        ]
+        self.calls: list[dict[str, Any]] = []
+
+    async def plan_document_sync(
+        self,
+        context_bundle: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> AgentPlan:
+        self.calls.append(
+            {
+                "context": context_bundle,
+                "previousPlan": previous_plan,
+                "validationErrors": validation_errors,
+            }
+        )
+        item = self.plans[min(len(self.calls) - 1, len(self.plans) - 1)]
+        if isinstance(item, Exception):
+            raise item
+        return item
 
 
 @pytest.fixture
@@ -158,7 +213,12 @@ def client(
     run_store: MemoryRunStore,
 ) -> TestClient:
     with TestClient(
-        create_app(settings=settings, mcp_client=fake_mcp, run_store=run_store)
+        create_app(
+            settings=settings,
+            mcp_client=fake_mcp,
+            run_store=run_store,
+            model_provider=FakeModelProvider(),
+        )
     ) as test_client:
         yield test_client
 

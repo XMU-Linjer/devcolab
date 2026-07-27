@@ -21,3 +21,12 @@ class AgentState(TypedDict, total=False):
     trace_events: list[dict[str, Any]]
     errors: list[dict[str, Any]]
     context_bundle: dict[str, Any]
+    model_context: dict[str, Any]
+    plan: Any
+    previous_plan: dict[str, Any]
+    validation_errors: list[dict[str, str]]
+    validation_attempt: int
+    plan_outcome: str
+    decision: str
+    summary: str
+    change_request_id: str

@@ -1,7 +1,9 @@
 # DevCollab Agent Service
 
-This service builds a deterministic, read-only code/document context bundle. It is
-not a code-generation Agent and does not call DeepSeek in this phase.
+This service runs a deterministic, single-Agent code/document synchronization
+review workflow. DeepSeek produces a strictly validated plan; DevCollab either
+records `NO_CHANGE` or submits a `PENDING` change request through the dedicated
+MCP review tool. It never applies or approves the request.
 
 ## Local startup
 
@@ -19,6 +21,7 @@ Copy `.env.example` to `.env` for local values. No model key is required for
 
 - `GET /health`
 - `POST /api/v1/agent-runs/context`
+- `POST /api/v1/agent-runs` (returns `202 QUEUED`)
 - `GET /api/v1/agent-runs/{runId}`
 
 The context endpoint accepts `workspaceId`, `repositoryId`, `selectedPaths`, and
@@ -29,5 +32,9 @@ The fixed LangGraph workflow always reads explicitly selected code. It then uses
 formal bindings first, searches candidates only for unbound paths, deduplicates
 documents, and reads a bounded number of document structures.
 
-Current exclusions: no DeepSeek call, no document-change submission, no long-term
-chat memory, and no write tool.
+The formal workflow keeps credentials out of model input and Redis. It permits
+one initial model plan and at most one repair, then either finishes with
+`NO_CHANGE`, submits a human review, or fails safely.
+
+Current exclusions: no frontend integration, auto-approval, multi-Agent flow,
+vector database, long-term chat memory, or direct Core/database access.

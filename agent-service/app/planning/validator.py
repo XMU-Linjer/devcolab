@@ -32,13 +32,13 @@ class AgentPlanValidator:
         }
         repository_id = str(context.get("workspace", {}).get("repositoryId"))
         documents = {str(item.get("documentId")): item for item in context.get("documents", [])}
-        blocks: dict[str, tuple[str, int]] = {}
+        blocks: dict[str, tuple[str, int, str | None]] = {}
         for document_id, document in documents.items():
             for block in document.get("blocks", []):
                 block_id = block.get("blockId")
                 version = block.get("version")
                 if block_id is not None and isinstance(version, int):
-                    blocks[str(block_id)] = (document_id, version)
+                    blocks[str(block_id)] = (document_id, version, block.get("type"))
         bindings = context.get("existingBindings", [])
         bindings_by_id = {
             str(item.get("bindingId")): item for item in bindings if item.get("bindingId")
@@ -117,6 +117,17 @@ class AgentPlanValidator:
                         "BLOCK_VERSION_MISMATCH",
                         "baseBlockVersion must equal the observed block version",
                     )
+                if (
+                    actual is not None
+                    and operation.proposedBlockType is not None
+                    and operation.proposedBlockType != actual[2]
+                ):
+                    self._issue(
+                        issues,
+                        path,
+                        "BLOCK_TYPE_MISMATCH",
+                        "UPDATE_BLOCK cannot change the observed Block type",
+                    )
                 if operation.operationType == OperationType.DELETE_BLOCK:
                     if (
                         operation.proposedPlainText is not None
@@ -182,6 +193,22 @@ class AgentPlanValidator:
                     if known_path == proposal.filePath and str(binding.get("documentId")) == target:
                         self._issue(
                             issues, path, "BINDING_EXISTS", "the same binding already exists"
+                        )
+                if created_target:
+                    creator = next(
+                        (
+                            item
+                            for item in plan.operations
+                            if item.clientOperationId == created_target
+                        ),
+                        None,
+                    )
+                    if creator and creator.sequenceNumber >= proposal.sequenceNumber:
+                        self._issue(
+                            issues,
+                            path,
+                            "CREATE_REFERENCE_ORDER",
+                            "created document must appear before its binding",
                         )
             else:
                 existing_binding = bindings_by_id.get(str(proposal.bindingId))
@@ -287,6 +314,16 @@ class AgentPlanValidator:
                         path,
                         "LINE_OUT_OF_RANGE",
                         "evidence line range exceeds the read file",
+                    )
+                if (
+                    evidence.startLine is not None
+                    and evidence.endLine - evidence.startLine + 1 > 200
+                ):
+                    self._issue(
+                        issues,
+                        path,
+                        "LINE_RANGE_TOO_LARGE",
+                        "evidence cannot exceed 200 lines",
                     )
 
     @staticmethod
