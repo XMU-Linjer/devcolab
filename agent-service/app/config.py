@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = Field(12, ge=5, le=100)
     agent_run_ttl_seconds: int = Field(86_400, ge=60)
     agent_request_timeout_seconds: float = Field(30, gt=0, le=120)
+    agent_model_connect_timeout_seconds: float = Field(10, gt=0, le=60)
+    agent_model_total_timeout_seconds: float = Field(60, gt=0, le=180)
+    agent_model_max_input_characters: int = Field(120_000, ge=1)
+    agent_review_max_operations: int = Field(50, ge=1, le=50)
+    agent_review_max_evidence: int = Field(50, ge=1, le=50)
 
 
 @lru_cache
