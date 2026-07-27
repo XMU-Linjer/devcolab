@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -67,9 +68,20 @@ class RepositoryPathValidatorTests {
 
     @Test
     void normalizeReplacesBackslash() {
-        assertThatCode(() -> {
-            String result = RepositoryPathValidator.normalize("src\\main\\java");
-            assertThatCode(() -> RepositoryPathValidator.validate(result, "ok")).doesNotThrowAnyException();
-        });
+        assertThat(RepositoryPathValidator.normalize("src\\main\\java"))
+                .isEqualTo("src/main/java");
+    }
+
+    @Test
+    void normalizeRemovesCurrentDirectorySegments() {
+        assertThat(RepositoryPathValidator.normalize("./src/./main/App.java"))
+                .isEqualTo("src/main/App.java");
+    }
+
+    @Test
+    void currentDirectoryOnlyFails() {
+        assertThatThrownBy(() -> RepositoryPathValidator.validate("./.", "bad path"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bad path");
     }
 }

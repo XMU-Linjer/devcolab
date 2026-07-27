@@ -58,9 +58,18 @@ public interface GitKnowledgeRepository {
 
     Optional<CodeDocumentBinding> findBindingById(UUID bindingId);
 
+    Optional<CodeDocumentBinding> findBindingByIdForUpdate(UUID bindingId);
+
+    Optional<CodeDocumentBinding> findExactBinding(
+            UUID repositoryId,
+            UUID documentId,
+            UUID blockId,
+            String pathPattern
+    );
+
     List<CodeDocumentBinding> findBindingsByDocumentId(UUID documentId);
 
     List<CodeDocumentBinding> findBindingsByRepositoryId(UUID repositoryId);
 
-    void deleteBinding(UUID bindingId);
+    boolean deleteBinding(UUID bindingId);
 }

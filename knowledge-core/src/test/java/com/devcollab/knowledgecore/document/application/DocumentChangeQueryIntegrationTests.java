@@ -10,6 +10,7 @@ import com.devcollab.knowledgecore.document.domain.DocumentType;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeException;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
+import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitProvider;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
@@ -195,6 +196,72 @@ class DocumentChangeQueryIntegrationTests {
                 fixture.workspaceId(), fixture.userId(), changed
         )).isInstanceOf(DocumentChangeException.class)
                 .hasMessageContaining("clientRequestId");
+    }
+
+    @Test
+    void bindingProposalCanonicalizesPathBeforeFingerprintAndPersistence() {
+        Fixture fixture = fixture("MEMBER");
+        Document document = document(fixture);
+        GitRepository git = repository(fixture, "canonical-path");
+        String clientRequestId = "canonical-" + UUID.randomUUID();
+        CreateCommand backslash = bindingCommand(
+                clientRequestId,
+                git.id(),
+                document.id(),
+                "src\\main\\Example.java",
+                BindingAction.UPSERT_BINDING,
+                null
+        );
+        CreateCommand dotted = bindingCommand(
+                clientRequestId,
+                git.id(),
+                document.id(),
+                "./src/main/Example.java",
+                BindingAction.UPSERT_BINDING,
+                null
+        );
+
+        var created = service.create(
+                fixture.workspaceId(), fixture.userId(), backslash
+        );
+        var replay = service.create(
+                fixture.workspaceId(), fixture.userId(), dotted
+        );
+
+        assertThat(replay.changeRequestId()).isEqualTo(created.changeRequestId());
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(repository.findBindingProposals(created.changeRequestId()))
+                .singleElement()
+                .extracting(BindingProposal::filePath)
+                .isEqualTo("src/main/Example.java");
+    }
+
+    @Test
+    void bindingProposalRejectsUnsafeAndOversizedPaths() {
+        Fixture fixture = fixture("MEMBER");
+        Document document = document(fixture);
+        GitRepository git = repository(fixture, "invalid-path");
+
+        for (String path : java.util.List.of(
+                "../src/Main.java",
+                "src/../Main.java",
+                "C:\\src\\Main.java",
+                "/src/Main.java",
+                "a".repeat(1_001)
+        )) {
+            assertThatThrownBy(() -> service.create(
+                    fixture.workspaceId(),
+                    fixture.userId(),
+                    bindingCommand(
+                            "invalid-" + UUID.randomUUID(),
+                            git.id(),
+                            document.id(),
+                            path,
+                            BindingAction.UPSERT_BINDING,
+                            null
+                    )
+            )).isInstanceOf(DocumentChangeException.class);
+        }
     }
 
     @Test
@@ -466,6 +533,7 @@ class DocumentChangeQueryIntegrationTests {
         Fixture fixture = fixture("ADMIN");
         Document document = document(fixture);
         DocumentBlock block = block(document, fixture.userId(), 0);
+        GitRepository git = repository(fixture, "document-failure");
         ChangeRequest request = saveRequest(
                 fixture, Status.PENDING, "rollback", Instant.now()
         );
@@ -484,6 +552,12 @@ class DocumentChangeQueryIntegrationTests {
                 block.sortOrder(), null, null, null, block.type().name(),
                 "invalid", 1, "{not-json"
         ));
+        repository.saveBindingProposal(new BindingProposal(
+                UUID.randomUUID(), request.id(), "binding", 3,
+                BindingAction.UPSERT_BINDING, git.id(),
+                "src/ShouldNotExist.java", document.id(), null, null,
+                "document mutation must finish first", Instant.now()
+        ));
         int before = blockRepository.findAllByDocumentId(document.id()).size();
 
         assertThatThrownBy(() -> service.apply(
@@ -492,9 +566,301 @@ class DocumentChangeQueryIntegrationTests {
 
         assertThat(blockRepository.findAllByDocumentId(document.id()))
                 .hasSize(before);
+        assertThat(gitRepository.findBindingsByDocumentId(document.id()))
+                .isEmpty();
         assertThat(repository.findRequest(
                 fixture.workspaceId(), request.id()
         ).orElseThrow().status()).isEqualTo(Status.PENDING);
+    }
+
+    @Test
+    void bindingFailureRollsBackDocumentAndEarlierBinding() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 0);
+        GitRepository git = repository(fixture, "rollback-binding");
+        ChangeRequest request = saveRequest(
+                fixture, Status.PENDING, "binding rollback", Instant.now()
+        );
+        repository.saveOperation(operation(
+                request,
+                1,
+                "update",
+                OperationType.UPDATE_BLOCK,
+                document,
+                block
+        ));
+        repository.saveBindingProposal(new BindingProposal(
+                UUID.randomUUID(), request.id(), "valid", 2,
+                BindingAction.UPSERT_BINDING, git.id(),
+                "src/Valid.java", document.id(), null, null,
+                "valid before failure", Instant.now()
+        ));
+        repository.saveBindingProposal(new BindingProposal(
+                UUID.randomUUID(), request.id(), "invalid", 3,
+                BindingAction.UPSERT_BINDING, UUID.randomUUID(),
+                "src/Invalid.java", document.id(), null, null,
+                "repository does not exist", Instant.now()
+        ));
+
+        assertThatThrownBy(() -> service.apply(
+                fixture.workspaceId(), request.id(), fixture.userId()
+        )).isInstanceOf(RuntimeException.class);
+
+        DocumentBlock current = blockRepository.findById(block.id()).orElseThrow();
+        assertThat(current.text()).isEqualTo("before");
+        assertThat(current.version()).isZero();
+        assertThat(gitRepository.findBindingsByDocumentId(document.id()))
+                .isEmpty();
+        assertThat(repository.findRequest(
+                fixture.workspaceId(), request.id()
+        ).orElseThrow().status()).isEqualTo(Status.PENDING);
+    }
+
+    @Test
+    void unexpectedDeleteFailureRollsBackDocumentAndKeepsRequestPending() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        DocumentBlock block = block(document, fixture.userId(), 0);
+        GitRepository git = repository(fixture, "delete-failure");
+        CodeDocumentBinding binding = saveBinding(
+                fixture, git, document, "src/Guarded.java"
+        );
+        ChangeRequest request = saveRequest(
+                fixture, Status.PENDING, "delete rollback", Instant.now()
+        );
+        repository.saveOperation(operation(
+                request,
+                1,
+                "update",
+                OperationType.UPDATE_BLOCK,
+                document,
+                block
+        ));
+        repository.saveBindingProposal(new BindingProposal(
+                UUID.randomUUID(), request.id(), "remove", 2,
+                BindingAction.REMOVE_BINDING, git.id(),
+                binding.pathPattern(), document.id(), null, binding.id(),
+                "test delete failure", Instant.now()
+        ));
+        jdbcTemplate.execute("DROP TABLE IF EXISTS binding_delete_guard");
+        jdbcTemplate.execute("""
+                CREATE TABLE binding_delete_guard (
+                    binding_id UUID PRIMARY KEY,
+                    CONSTRAINT fk_binding_delete_guard
+                        FOREIGN KEY (binding_id)
+                        REFERENCES code_document_bindings(id)
+                )
+                """);
+        jdbcTemplate.update(
+                "INSERT INTO binding_delete_guard (binding_id) VALUES (?)",
+                binding.id()
+        );
+        try {
+            assertThatThrownBy(() -> service.apply(
+                    fixture.workspaceId(), request.id(), fixture.userId()
+            )).isInstanceOf(RuntimeException.class);
+
+            DocumentBlock current =
+                    blockRepository.findById(block.id()).orElseThrow();
+            assertThat(current.text()).isEqualTo("before");
+            assertThat(current.version()).isZero();
+            assertThat(gitRepository.findBindingById(binding.id())).isPresent();
+            assertThat(repository.findRequest(
+                    fixture.workspaceId(), request.id()
+            ).orElseThrow().status()).isEqualTo(Status.PENDING);
+        } finally {
+            jdbcTemplate.execute("DROP TABLE binding_delete_guard");
+        }
+    }
+
+    @Test
+    void exactUpsertIsNoOpAndMatchingRemoveDeletesBinding() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        GitRepository git = repository(fixture, "binding-lifecycle");
+        CodeDocumentBinding binding = saveBinding(
+                fixture, git, document, "src/Bound.java"
+        );
+        var upsert = service.create(
+                fixture.workspaceId(),
+                fixture.userId(),
+                bindingCommand(
+                        "exact-upsert-" + UUID.randomUUID(),
+                        git.id(),
+                        document.id(),
+                        "./src\\Bound.java",
+                        BindingAction.UPSERT_BINDING,
+                        null
+                )
+        );
+
+        service.apply(
+                fixture.workspaceId(),
+                upsert.changeRequestId(),
+                fixture.userId()
+        );
+        assertThat(gitRepository.findBindingsByDocumentId(document.id()))
+                .extracting(CodeDocumentBinding::id)
+                .containsExactly(binding.id());
+
+        var remove = service.create(
+                fixture.workspaceId(),
+                fixture.userId(),
+                bindingCommand(
+                        "remove-" + UUID.randomUUID(),
+                        git.id(),
+                        document.id(),
+                        "src/Bound.java",
+                        BindingAction.REMOVE_BINDING,
+                        binding.id()
+                )
+        );
+        var result = service.apply(
+                fixture.workspaceId(),
+                remove.changeRequestId(),
+                fixture.userId()
+        );
+
+        assertThat(result.detail().request().status()).isEqualTo(Status.APPLIED);
+        assertThat(gitRepository.findBindingById(binding.id())).isEmpty();
+    }
+
+    @Test
+    void missingOrMismatchedRemoveBecomesStaleBeforeMutation() {
+        Fixture fixture = fixture("ADMIN");
+        Document document = document(fixture);
+        Document otherDocument = document(fixture);
+        GitRepository git = repository(fixture, "remove-primary");
+        GitRepository otherGit = repository(fixture, "remove-other");
+        CodeDocumentBinding binding = saveBinding(
+                fixture, git, document, "src/Bound.java"
+        );
+        Fixture otherWorkspace = fixture("ADMIN");
+        Document foreignDocument = document(otherWorkspace);
+        GitRepository foreignGit = repository(otherWorkspace, "remove-foreign");
+        CodeDocumentBinding foreignBinding = saveBinding(
+                otherWorkspace, foreignGit, foreignDocument, "src/Foreign.java"
+        );
+
+        assertRemoveStale(
+                fixture, document.id(), git.id(), "src/Bound.java",
+                UUID.randomUUID()
+        );
+        assertRemoveStale(
+                fixture, document.id(), otherGit.id(), "src/Bound.java",
+                binding.id()
+        );
+        assertRemoveStale(
+                fixture, otherDocument.id(), git.id(), "src/Bound.java",
+                binding.id()
+        );
+        assertRemoveStale(
+                fixture, document.id(), git.id(), "src/Other.java",
+                binding.id()
+        );
+        assertRemoveStale(
+                fixture, document.id(), git.id(), "src/Bound.java",
+                foreignBinding.id()
+        );
+
+        assertThat(gitRepository.findBindingById(binding.id())).isPresent();
+        assertThat(gitRepository.findBindingById(foreignBinding.id())).isPresent();
+    }
+
+    private GitRepository repository(Fixture fixture, String name) {
+        Instant now = Instant.now();
+        return gitRepository.saveRepository(new GitRepository(
+                UUID.randomUUID(),
+                fixture.workspaceId(),
+                name,
+                GitProvider.GITHUB,
+                "https://github.com/example/" + name,
+                "main",
+                fixture.userId(),
+                now,
+                now,
+                GitRepositoryStatus.READY,
+                "abc123",
+                now,
+                null
+        ));
+    }
+
+    private CreateCommand bindingCommand(
+            String clientRequestId,
+            UUID repositoryId,
+            UUID documentId,
+            String path,
+            BindingAction action,
+            UUID bindingId
+    ) {
+        return new CreateCommand(
+                clientRequestId,
+                "Binding proposal",
+                "Keep code and document association consistent",
+                java.util.List.of(),
+                java.util.List.of(new CreateBindingProposalCommand(
+                        "binding",
+                        1,
+                        action,
+                        repositoryId,
+                        path,
+                        documentId,
+                        null,
+                        bindingId,
+                        "review binding"
+                )),
+                java.util.List.of()
+        );
+    }
+
+    private CodeDocumentBinding saveBinding(
+            Fixture fixture,
+            GitRepository git,
+            Document document,
+            String path
+    ) {
+        return gitRepository.saveBinding(new CodeDocumentBinding(
+                UUID.randomUUID(),
+                fixture.workspaceId(),
+                git.id(),
+                document.id(),
+                null,
+                path,
+                fixture.userId(),
+                Instant.now()
+        ));
+    }
+
+    private void assertRemoveStale(
+            Fixture fixture,
+            UUID documentId,
+            UUID repositoryId,
+            String path,
+            UUID bindingId
+    ) {
+        var created = service.create(
+                fixture.workspaceId(),
+                fixture.userId(),
+                bindingCommand(
+                        "stale-remove-" + UUID.randomUUID(),
+                        repositoryId,
+                        documentId,
+                        path,
+                        BindingAction.REMOVE_BINDING,
+                        bindingId
+                )
+        );
+
+        var result = service.apply(
+                fixture.workspaceId(),
+                created.changeRequestId(),
+                fixture.userId()
+        );
+
+        assertThat(result.stale()).isTrue();
+        assertThat(result.detail().request().status()).isEqualTo(Status.STALE);
     }
 
     private Fixture fixture(String role) {

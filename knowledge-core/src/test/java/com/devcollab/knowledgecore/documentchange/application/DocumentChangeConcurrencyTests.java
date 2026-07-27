@@ -5,16 +5,23 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepositor
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateCommand;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateResult;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateBindingProposalCommand;
+import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateOperationCommand;
+import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.DecisionResult;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
+import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.OperationType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
-public class DocumentChangeConcurrencyTests {
+class DocumentChangeConcurrencyTests {
 
     @Autowired
     private DocumentChangeApplicationService service;
@@ -37,7 +44,13 @@ public class DocumentChangeConcurrencyTests {
     // Helper for generating UUID
     private UUID randomUUID() { return UUID.randomUUID(); }
 
-    private record TestContext(UUID workspaceId, UUID userId, UUID documentId, UUID repositoryId) {}
+    private record TestContext(
+            UUID workspaceId,
+            UUID userId,
+            UUID documentId,
+            UUID blockId,
+            UUID repositoryId
+    ) {}
 
     private TestContext setupMemberAndDocument(UUID workspaceId, UUID userId) {
         java.time.Instant now = java.time.Instant.now();
@@ -51,19 +64,30 @@ public class DocumentChangeConcurrencyTests {
                 """, workspaceId, userId, now, now);
         jdbcTemplate.update("""
                 INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
-                VALUES (?, ?, 'MEMBER', ?)
+                VALUES (?, ?, 'ADMIN', ?)
                 """, workspaceId, userId, now);
         UUID documentId = randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO documents (id, workspace_id, title, document_type, review_status, created_by, created_at, updated_at)
                 VALUES (?, ?, 'Doc', 'REQUIREMENT', 'DRAFT', ?, ?, ?)
                 """, documentId, workspaceId, userId, now, now);
+        UUID blockId = randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO document_blocks
+                    (id, document_id, type, text, content_schema_version,
+                     content_json, sort_order, version, created_by,
+                     created_at, updated_at)
+                VALUES (?, ?, 'PARAGRAPH', 'before', 1,
+                        '{"type":"doc","content":[]}', 0, 0, ?, ?, ?)
+                """, blockId, documentId, userId, now, now);
         UUID repositoryId = randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO git_repositories (id, workspace_id, name, provider, remote_url, default_branch, sync_status, created_by, created_at, updated_at)
                 VALUES (?, ?, 'Repo', 'GITHUB', 'http', 'main', 'READY', ?, ?, ?)
                 """, repositoryId, workspaceId, userId, now, now);
-        return new TestContext(workspaceId, userId, documentId, repositoryId);
+        return new TestContext(
+                workspaceId, userId, documentId, blockId, repositoryId
+        );
     }
 
     @Test
@@ -78,7 +102,7 @@ public class DocumentChangeConcurrencyTests {
                 List.of(),
                 List.of(new CreateBindingProposalCommand(
                         "bp-1", 1, BindingAction.UPSERT_BINDING,
-                        ctx.repositoryId(), "/test/path.txt", ctx.documentId(), null, null, "Reason"
+                        ctx.repositoryId(), "test/path.txt", ctx.documentId(), null, null, "Reason"
                 )),
                 List.of()
         );
@@ -110,8 +134,8 @@ public class DocumentChangeConcurrencyTests {
         }
 
         latch.countDown();
-        doneLatch.await();
-        executor.shutdown();
+        assertThat(doneLatch.await(20, TimeUnit.SECONDS)).isTrue();
+        executor.shutdownNow();
 
         assertThat(error.get()).isNull();
         assertThat(successCount.get()).isEqualTo(1);
@@ -123,7 +147,7 @@ public class DocumentChangeConcurrencyTests {
                 List.of(),
                 List.of(new CreateBindingProposalCommand(
                         "bp-1", 1, BindingAction.UPSERT_BINDING,
-                        ctx.repositoryId(), "/test/path.txt", ctx.documentId(), null, null, "Reason"
+                        ctx.repositoryId(), "test/path.txt", ctx.documentId(), null, null, "Reason"
                 )),
                 List.of()
         );
@@ -133,9 +157,223 @@ public class DocumentChangeConcurrencyTests {
     }
 
     @Test
-    public void testConcurrentApplyApply() throws InterruptedException {
-        // Assume workspace and admin user
-        // We need real DB setup to test apply concurrency, which requires member/admin setup and document setup.
-        // It's often complex to set up in raw integration tests without fixtures.
+    void concurrentApplyApplyMutatesDocumentAndBindingOnlyOnce() throws Exception {
+        TestContext context = setupMemberAndDocument(randomUUID(), randomUUID());
+        CreateResult created = service.create(
+                context.workspaceId(),
+                context.userId(),
+                updateAndBindCommand(context, "apply-apply-" + randomUUID())
+        );
+
+        List<Outcome> outcomes = race(
+                () -> service.apply(
+                        context.workspaceId(),
+                        created.changeRequestId(),
+                        context.userId()
+                ),
+                () -> service.apply(
+                        context.workspaceId(),
+                        created.changeRequestId(),
+                        context.userId()
+                )
+        );
+
+        assertNoInfrastructureFailure(outcomes);
+        assertThat(outcomes.stream().filter(Outcome::succeeded).count())
+                .isGreaterThanOrEqualTo(1);
+        assertThat(repository.findRequest(
+                context.workspaceId(),
+                created.changeRequestId()
+        ).orElseThrow().status()).isEqualTo(Status.APPLIED);
+        assertThat(blockText(context.blockId())).isEqualTo("after");
+        assertThat(blockVersion(context.blockId())).isEqualTo(1L);
+        assertThat(bindingCount(context)).isEqualTo(1);
+        assertThat(appliedLogCount(created.changeRequestId())).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentApplyRejectHasOneDurableDecisionAndNoMixedState()
+            throws Exception {
+        TestContext context = setupMemberAndDocument(randomUUID(), randomUUID());
+        CreateResult created = service.create(
+                context.workspaceId(),
+                context.userId(),
+                updateAndBindCommand(context, "apply-reject-" + randomUUID())
+        );
+
+        List<Outcome> outcomes = race(
+                () -> service.apply(
+                        context.workspaceId(),
+                        created.changeRequestId(),
+                        context.userId()
+                ),
+                () -> {
+                    service.reject(
+                            context.workspaceId(),
+                            created.changeRequestId(),
+                            context.userId(),
+                            "concurrent rejection"
+                    );
+                    return null;
+                }
+        );
+
+        assertNoInfrastructureFailure(outcomes);
+        assertThat(outcomes.stream().filter(Outcome::succeeded).count())
+                .isEqualTo(1);
+        var request = repository.findRequest(
+                context.workspaceId(),
+                created.changeRequestId()
+        ).orElseThrow();
+        assertThat(request.status()).isIn(Status.APPLIED, Status.REJECTED);
+        assertThat(request.reviewedBy()).isEqualTo(context.userId());
+        assertThat(request.reviewedAt()).isNotNull();
+
+        if (request.status() == Status.APPLIED) {
+            assertThat(blockText(context.blockId())).isEqualTo("after");
+            assertThat(blockVersion(context.blockId())).isEqualTo(1L);
+            assertThat(bindingCount(context)).isEqualTo(1);
+            assertThat(request.rejectionReason()).isNull();
+        } else {
+            assertThat(blockText(context.blockId())).isEqualTo("before");
+            assertThat(blockVersion(context.blockId())).isZero();
+            assertThat(bindingCount(context)).isZero();
+            assertThat(request.rejectionReason())
+                    .isEqualTo("concurrent rejection");
+        }
+    }
+
+    private List<Outcome> race(
+            Callable<DecisionResult> first,
+            Callable<DecisionResult> second
+    ) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        try {
+            Future<Outcome> firstFuture = executor.submit(
+                    () -> invokeAfterBarrier(barrier, first)
+            );
+            Future<Outcome> secondFuture = executor.submit(
+                    () -> invokeAfterBarrier(barrier, second)
+            );
+            return List.of(
+                    firstFuture.get(20, TimeUnit.SECONDS),
+                    secondFuture.get(20, TimeUnit.SECONDS)
+            );
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Outcome invokeAfterBarrier(
+            CyclicBarrier barrier,
+            Callable<DecisionResult> action
+    ) {
+        try {
+            barrier.await(10, TimeUnit.SECONDS);
+            return new Outcome(action.call(), null);
+        } catch (Throwable throwable) {
+            return new Outcome(null, throwable);
+        }
+    }
+
+    private void assertNoInfrastructureFailure(List<Outcome> outcomes) {
+        assertThat(outcomes)
+                .filteredOn(outcome -> outcome.error() != null)
+                .allSatisfy(outcome -> {
+                    assertThat(outcome.error())
+                            .isInstanceOf(DocumentChangeException.class);
+                    assertThat(rootCause(outcome.error()))
+                            .isNotInstanceOf(
+                                    org.springframework.dao.DataAccessException.class
+                            );
+                });
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private CreateCommand updateAndBindCommand(
+            TestContext context,
+            String clientRequestId
+    ) {
+        return new CreateCommand(
+                clientRequestId,
+                "Update and bind",
+                "Code behavior changed",
+                List.of(new CreateOperationCommand(
+                        "update",
+                        1,
+                        OperationType.UPDATE_BLOCK,
+                        context.documentId(),
+                        null,
+                        context.blockId(),
+                        0L,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "after",
+                        null,
+                        null
+                )),
+                List.of(new CreateBindingProposalCommand(
+                        "binding",
+                        2,
+                        BindingAction.UPSERT_BINDING,
+                        context.repositoryId(),
+                        "./src\\main/Example.java",
+                        context.documentId(),
+                        null,
+                        null,
+                        "Keep code and document linked"
+                )),
+                List.of()
+        );
+    }
+
+    private String blockText(UUID blockId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT text FROM document_blocks WHERE id = ?",
+                String.class,
+                blockId
+        );
+    }
+
+    private long blockVersion(UUID blockId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT version FROM document_blocks WHERE id = ?",
+                Long.class,
+                blockId
+        );
+    }
+
+    private int bindingCount(TestContext context) {
+        return jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM code_document_bindings
+                 WHERE repository_id = ?
+                   AND document_id = ?
+                   AND path_pattern = 'src/main/Example.java'
+                """, Integer.class, context.repositoryId(), context.documentId());
+    }
+
+    private int appliedLogCount(UUID requestId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM operation_logs
+                 WHERE target_type = 'DOCUMENT_CHANGE_REQUEST'
+                   AND target_id = ?
+                   AND action = 'DOCUMENT_CHANGE_APPLIED'
+                """, Integer.class, requestId);
+    }
+
+    private record Outcome(DecisionResult result, Throwable error) {
+        boolean succeeded() {
+            return error == null;
+        }
     }
 }

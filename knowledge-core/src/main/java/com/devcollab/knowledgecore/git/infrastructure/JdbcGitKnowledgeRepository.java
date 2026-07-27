@@ -391,6 +391,38 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
     }
 
     @Override
+    public Optional<CodeDocumentBinding> findBindingByIdForUpdate(UUID bindingId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM code_document_bindings WHERE id = ? FOR UPDATE",
+                BINDING_MAPPER,
+                bindingId
+        ).stream().findFirst();
+    }
+
+    @Override
+    public Optional<CodeDocumentBinding> findExactBinding(
+            UUID repositoryId,
+            UUID documentId,
+            UUID blockId,
+            String pathPattern
+    ) {
+        String targetKey = blockId == null ? "DOCUMENT" : blockId.toString();
+        return jdbcTemplate.query("""
+                        SELECT * FROM code_document_bindings
+                         WHERE repository_id = ?
+                           AND document_id = ?
+                           AND target_key = ?
+                           AND path_pattern = ?
+                        """,
+                BINDING_MAPPER,
+                repositoryId,
+                documentId,
+                targetKey,
+                pathPattern
+        ).stream().findFirst();
+    }
+
+    @Override
     public List<CodeDocumentBinding> findBindingsByDocumentId(UUID documentId) {
         return jdbcTemplate.query("""
                         SELECT * FROM code_document_bindings
@@ -407,10 +439,10 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
     }
 
     @Override
-    public void deleteBinding(UUID bindingId) {
-        jdbcTemplate.update(
+    public boolean deleteBinding(UUID bindingId) {
+        return jdbcTemplate.update(
                 "DELETE FROM code_document_bindings WHERE id = ?",
                 bindingId
-        );
+        ) == 1;
     }
 }

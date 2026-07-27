@@ -23,6 +23,10 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
 import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
+import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
+import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
+import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
+import com.devcollab.knowledgecore.git.application.exception.DuplicateCodeBindingException;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
@@ -60,6 +64,7 @@ public class DocumentChangeApplicationService {
     private final DocumentRepository documentRepository;
     private final DocumentBlockRepository blockRepository;
     private final GitKnowledgeRepository gitRepository;
+    private final GitKnowledgeApplicationService gitKnowledgeService;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final DocumentBlockContentCodec contentCodec;
@@ -74,6 +79,7 @@ public class DocumentChangeApplicationService {
             DocumentRepository documentRepository,
             DocumentBlockRepository blockRepository,
             GitKnowledgeRepository gitRepository,
+            GitKnowledgeApplicationService gitKnowledgeService,
             UserRepository userRepository,
             ObjectMapper objectMapper,
             DocumentBlockContentCodec contentCodec,
@@ -87,6 +93,7 @@ public class DocumentChangeApplicationService {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.gitRepository = gitRepository;
+        this.gitKnowledgeService = gitKnowledgeService;
         this.userRepository = userRepository;
         this.objectMapper = objectMapper;
         this.contentCodec = contentCodec;
@@ -166,11 +173,12 @@ public class DocumentChangeApplicationService {
     ) {
         requireMember(workspaceId, currentUserId);
         validateCreateCommand(command);
-        String fingerprint = fingerprint(command);
+        CreateCommand normalizedCommand = normalizeCreateCommand(command);
+        String fingerprint = fingerprint(normalizedCommand);
         var existing = repository.findByClientRequestId(
                 workspaceId,
                 currentUserId,
-                command.clientRequestId().trim()
+                normalizedCommand.clientRequestId().trim()
         );
         if (existing.isPresent()) {
             return replay(existing.get(), fingerprint);
@@ -181,11 +189,11 @@ public class DocumentChangeApplicationService {
         ChangeRequest request = new ChangeRequest(
                 requestId,
                 workspaceId,
-                command.clientRequestId().trim(),
+                normalizedCommand.clientRequestId().trim(),
                 fingerprint,
                 Status.PENDING,
-                command.summary().trim(),
-                command.rationale().trim(),
+                normalizedCommand.summary().trim(),
+                normalizedCommand.rationale().trim(),
                 SourceType.MCP,
                 currentUserId,
                 now,
@@ -207,7 +215,7 @@ public class DocumentChangeApplicationService {
 
         Map<String, Operation> savedByClientId =
                 new java.util.LinkedHashMap<>();
-        for (CreateOperationCommand input : command.operations().stream()
+        for (CreateOperationCommand input : normalizedCommand.operations().stream()
                 .sorted(java.util.Comparator.comparingInt(
                         CreateOperationCommand::sequenceNumber
                 ))
@@ -221,7 +229,8 @@ public class DocumentChangeApplicationService {
             repository.saveOperation(operation);
             savedByClientId.put(operation.clientOperationId(), operation);
         }
-        for (CreateBindingProposalCommand input : safeList(command.bindingProposals())) {
+        for (CreateBindingProposalCommand input :
+                safeList(normalizedCommand.bindingProposals())) {
             repository.saveBindingProposal(buildBindingProposal(
                     workspaceId,
                     requestId,
@@ -229,7 +238,7 @@ public class DocumentChangeApplicationService {
                     savedByClientId
             ));
         }
-        for (CreateEvidenceCommand input : safeList(command.evidence())) {
+        for (CreateEvidenceCommand input : safeList(normalizedCommand.evidence())) {
             repository.saveEvidence(buildEvidence(
                     workspaceId,
                     requestId,
@@ -262,11 +271,18 @@ public class DocumentChangeApplicationService {
         }
 
         List<Operation> operations = repository.findOperations(request.id());
+        List<BindingProposal> bindingProposals =
+                repository.findBindingProposals(request.id());
         LockedTargets targets = lockAndValidateTargets(
                 workspaceId,
                 operations
         );
-        if (targets.stale()) {
+        boolean bindingTargetsStale = lockAndValidateBindingTargets(
+                workspaceId,
+                currentUserId,
+                bindingProposals
+        );
+        if (targets.stale() || bindingTargetsStale) {
             Instant reviewedAt = Instant.now();
             ChangeRequest stale = repository.decide(
                     request,
@@ -296,9 +312,8 @@ public class DocumentChangeApplicationService {
             );
         }
 
-        for (BindingProposal proposal : repository.findBindingProposals(request.id())) {
+        for (BindingProposal proposal : bindingProposals) {
             applyBindingProposal(
-                    workspaceId,
                     currentUserId,
                     proposal,
                     createdDocuments
@@ -743,6 +758,43 @@ public class DocumentChangeApplicationService {
         return new LockedTargets(documents, blocks, stale);
     }
 
+    private boolean lockAndValidateBindingTargets(
+            UUID workspaceId,
+            UUID currentUserId,
+            List<BindingProposal> proposals
+    ) {
+        List<BindingProposal> removals = proposals.stream()
+                .filter(item -> item.action() == BindingAction.REMOVE_BINDING)
+                .sorted(Comparator.comparing(
+                        BindingProposal::bindingId,
+                        Comparator.nullsFirst(Comparator.naturalOrder())
+                ))
+                .toList();
+        for (BindingProposal proposal : removals) {
+            if (proposal.bindingId() == null
+                    || proposal.documentId() == null
+                    || proposal.createdDocumentOperationId() != null) {
+                return true;
+            }
+            CodeDocumentBinding binding = gitKnowledgeService
+                    .findBindingForUpdate(
+                            workspaceId,
+                            proposal.bindingId(),
+                            currentUserId
+                    )
+                    .orElse(null);
+            if (binding == null
+                    || !binding.workspaceId().equals(workspaceId)
+                    || !binding.repositoryId().equals(proposal.repositoryId())
+                    || !binding.documentId().equals(proposal.documentId())
+                    || binding.blockId() != null
+                    || !binding.pathPattern().equals(proposal.filePath())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void applyOperation(
             UUID workspaceId,
             UUID currentUserId,
@@ -844,35 +896,45 @@ public class DocumentChangeApplicationService {
     }
 
     private void applyBindingProposal(
-            UUID workspaceId,
             UUID currentUserId,
             BindingProposal proposal,
             Map<UUID, UUID> createdDocuments
     ) {
         if (proposal.action() == BindingAction.UPSERT_BINDING) {
             UUID documentId = resolveDocumentId(proposal, createdDocuments);
-            try {
-                gitRepository.saveBinding(new com.devcollab.knowledgecore.git.domain.CodeDocumentBinding(
-                        UUID.randomUUID(),
-                        workspaceId,
-                        proposal.repositoryId(),
-                        documentId,
-                        null,
-                        proposal.filePath(),
-                        currentUserId,
-                        Instant.now()
-                ));
-            } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                // Ignore duplicates if they already exist
+            CreateCodeBindingCommand command = new CreateCodeBindingCommand(
+                    proposal.repositoryId(),
+                    null,
+                    proposal.filePath()
+            );
+            if (gitKnowledgeService.findExactBinding(
+                    documentId,
+                    currentUserId,
+                    command
+            ).isPresent()) {
+                return;
             }
-        } else if (proposal.action() == BindingAction.REMOVE_BINDING) {
-            if (proposal.bindingId() != null) {
-                try {
-                    gitRepository.deleteBinding(proposal.bindingId());
-                } catch (Exception e) {
-                    // Ignore if not found
+            try {
+                gitKnowledgeService.createBinding(
+                        documentId,
+                        currentUserId,
+                        command
+                );
+            } catch (DuplicateCodeBindingException
+                     | DataIntegrityViolationException exception) {
+                if (gitKnowledgeService.findExactBinding(
+                        documentId,
+                        currentUserId,
+                        command
+                ).isEmpty()) {
+                    throw exception;
                 }
             }
+        } else if (proposal.action() == BindingAction.REMOVE_BINDING) {
+            gitKnowledgeService.deleteBinding(
+                    proposal.bindingId(),
+                    currentUserId
+            );
         }
     }
 
@@ -1113,9 +1175,10 @@ public class DocumentChangeApplicationService {
             requireDocument(workspaceId, input.documentId());
         }
 
-        GitRepository repo = gitRepository.findRepositoryById(input.repositoryId())
+        gitRepository.findRepositoryById(input.repositoryId())
                 .filter(item -> item.workspaceId().equals(workspaceId))
                 .orElseThrow(() -> evidenceInvalid("目标代码仓库不存在或不属于工作区"));
+        String filePath = normalizeBindingPath(input.filePath());
 
         return new BindingProposal(
                 UUID.randomUUID(),
@@ -1124,7 +1187,7 @@ public class DocumentChangeApplicationService {
                 input.sequenceNumber(),
                 input.action(),
                 input.repositoryId(),
-                input.filePath(),
+                filePath,
                 input.documentId(),
                 createdDocumentOperationId,
                 input.bindingId(),
@@ -1140,8 +1203,7 @@ public class DocumentChangeApplicationService {
             Map<String, Operation> savedByClientId
     ) {
         requireText(input.description(), 1000, "Evidence description");
-        RepositoryPathValidator.validate(input.filePath(), "Evidence 文件路径不合法");
-        String filePath = RepositoryPathValidator.normalize(input.filePath());
+        String filePath = normalizeEvidencePath(input.filePath());
         if ((input.startLine() == null) != (input.endLine() == null)
                 || input.startLine() != null
                 && (input.startLine() < 1
@@ -1289,6 +1351,76 @@ public class DocumentChangeApplicationService {
                 existing.createdAt(),
                 true
         );
+    }
+
+    private CreateCommand normalizeCreateCommand(CreateCommand command) {
+        List<CreateBindingProposalCommand> bindingProposals =
+                safeList(command.bindingProposals()).stream()
+                        .map(proposal -> new CreateBindingProposalCommand(
+                                proposal.clientBindingProposalId(),
+                                proposal.sequenceNumber(),
+                                proposal.action(),
+                                proposal.repositoryId(),
+                                normalizeBindingPath(proposal.filePath()),
+                                proposal.documentId(),
+                                proposal.createdDocumentClientOperationId(),
+                                proposal.bindingId(),
+                                proposal.reason()
+                        ))
+                        .toList();
+        List<CreateEvidenceCommand> evidence = safeList(command.evidence()).stream()
+                .map(item -> new CreateEvidenceCommand(
+                        item.clientOperationId(),
+                        item.repositoryId(),
+                        normalizeEvidencePath(item.filePath()),
+                        item.startLine(),
+                        item.endLine(),
+                        item.description()
+                ))
+                .toList();
+        return new CreateCommand(
+                command.clientRequestId(),
+                command.summary(),
+                command.rationale(),
+                command.operations(),
+                bindingProposals,
+                evidence
+        );
+    }
+
+    private String normalizeBindingPath(String path) {
+        try {
+            RepositoryPathValidator.validate(
+                    path,
+                    "Binding 文件路径不合法"
+            );
+            String normalized = RepositoryPathValidator.normalize(path);
+            RepositoryPathValidator.validate(
+                    normalized,
+                    "Binding 文件路径不合法"
+            );
+            requireText(normalized, 1_000, "Binding filePath");
+            return normalized;
+        } catch (IllegalArgumentException exception) {
+            throw operationInvalid("Binding 文件路径不合法");
+        }
+    }
+
+    private String normalizeEvidencePath(String path) {
+        try {
+            RepositoryPathValidator.validate(
+                    path,
+                    "Evidence 文件路径不合法"
+            );
+            String normalized = RepositoryPathValidator.normalize(path);
+            RepositoryPathValidator.validate(
+                    normalized,
+                    "Evidence 文件路径不合法"
+            );
+            return normalized;
+        } catch (IllegalArgumentException exception) {
+            throw evidenceInvalid("Evidence 文件路径不合法");
+        }
     }
 
     private String fingerprint(CreateCommand command) {

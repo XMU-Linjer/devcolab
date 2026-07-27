@@ -35,10 +35,19 @@ public final class RepositoryPathValidator {
                 throw new IllegalArgumentException(errorMessage);
             }
         }
+        if (normalize(normalized).isEmpty()) {
+            throw new IllegalArgumentException(errorMessage);
+        }
     }
 
     public static String normalize(String path) {
         String trimmed = path.trim();
-        return trimmed.replace('\\', '/');
+        String normalized = trimmed.replace('\\', '/');
+        return String.join(
+                "/",
+                java.util.Arrays.stream(normalized.split("/"))
+                        .filter(segment -> !".".equals(segment))
+                        .toList()
+        );
     }
 }

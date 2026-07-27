@@ -13,6 +13,8 @@ import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlread
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryFileNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
+import com.devcollab.knowledgecore.git.application.exception.CodeBindingNotFoundException;
+import com.devcollab.knowledgecore.git.application.exception.DuplicateCodeBindingException;
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.GitChange;
 import com.devcollab.knowledgecore.git.domain.GitFileDiff;
@@ -25,6 +27,7 @@ import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPoli
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
@@ -271,7 +274,7 @@ public class GitKnowledgeApplicationService {
                 .toList();
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NESTED)
     public CodeDocumentBinding createBinding(
             UUID documentId,
             UUID currentUserId,
@@ -294,7 +297,7 @@ public class GitKnowledgeApplicationService {
                         && java.util.Objects.equals(binding.blockId(), command.blockId())
                         && binding.pathPattern().equals(pattern));
         if (duplicate) {
-            throw new InvalidCodeBindingException("该代码路径关联已存在");
+            throw new DuplicateCodeBindingException();
         }
         return gitRepository.saveBinding(new CodeDocumentBinding(
                 UUID.randomUUID(), document.workspaceId(), command.repositoryId(),
@@ -309,6 +312,33 @@ public class GitKnowledgeApplicationService {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(document.workspaceId(), currentUserId);
         return gitRepository.findBindingsByDocumentId(documentId);
+    }
+
+    public java.util.Optional<CodeDocumentBinding> findExactBinding(
+            UUID documentId,
+            UUID currentUserId,
+            CreateCodeBindingCommand command
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(document.workspaceId(), currentUserId);
+        requireRepository(command.repositoryId(), document.workspaceId());
+        String pattern = normalizePattern(command.pathPattern());
+        return gitRepository.findExactBinding(
+                command.repositoryId(),
+                documentId,
+                command.blockId(),
+                pattern
+        );
+    }
+
+    @Transactional
+    public java.util.Optional<CodeDocumentBinding> findBindingForUpdate(
+            UUID workspaceId,
+            UUID bindingId,
+            UUID currentUserId
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        return gitRepository.findBindingByIdForUpdate(bindingId);
     }
 
     public CodeBindingQueryResult queryBindings(
@@ -380,9 +410,11 @@ public class GitKnowledgeApplicationService {
     @Transactional
     public void deleteBinding(UUID bindingId, UUID currentUserId) {
         CodeDocumentBinding binding = gitRepository.findBindingById(bindingId)
-                .orElseThrow(() -> new InvalidCodeBindingException("代码路径关联不存在"));
+                .orElseThrow(CodeBindingNotFoundException::new);
         workspaceService.requireMembership(binding.workspaceId(), currentUserId);
-        gitRepository.deleteBinding(bindingId);
+        if (!gitRepository.deleteBinding(bindingId)) {
+            throw new CodeBindingNotFoundException();
+        }
     }
 
     public List<AffectedCodeDocument> findAffectedDocuments(
