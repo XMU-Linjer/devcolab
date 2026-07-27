@@ -12,7 +12,6 @@ import com.devcollab.knowledgecore.security.CurrentUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -140,7 +139,7 @@ public class DocumentChangeController {
             @NotBlank @Size(max = 100) String clientRequestId,
             @NotBlank @Size(max = 300) String summary,
             @NotBlank @Size(max = 10_000) String rationale,
-            @Size(max = 50) List<@Valid OperationRequest> operations,
+            @NotNull @Size(max = 50) List<@Valid OperationRequest> operations,
             @Size(max = 50) List<@Valid BindingProposalRequest> bindingProposals,
             @Size(max = 50) List<@Valid EvidenceRequest> evidence
     ) {
