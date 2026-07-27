@@ -122,6 +122,36 @@ services:
     networks:
       - devcollab-local
 
+  agent-service:
+    build:
+      context: ./agent-service
+    container_name: devcollab-agent-service
+    restart: unless-stopped
+    env_file:
+      - path: ./agent-service/.env
+        required: false
+    environment:
+      MCP_BASE_URL: ${AGENT_MCP_BASE_URL:-http://host.docker.internal:8091/mcp}
+      REDIS_URL: ${AGENT_REDIS_URL:-redis://redis:6379/0}
+    ports:
+      - "${AGENT_SERVICE_HOST_PORT:-8092}:8092"
+    depends_on:
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8092/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devcollab-local
+
   nginx:
     image: nginx:1.27-alpine
     container_name: devcollab-nginx
