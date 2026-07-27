@@ -10,7 +10,7 @@ const links = [{ id: 'l1', codeAnchorId: 'a1', blockId: 'b1', relationType: 'IMP
 
 describe('linked workbench interactions', () => {
   it('emits the linked id when a code range is clicked', async () => {
-    const wrapper = mount(LinkedCodePane, { props: { content: 'one\ntwo\nthree', path: 'A.java', anchors, links, issues: [], activeLinkId: null }, global: { stubs: { ElTag: true, ElSkeleton: true, ElEmpty: true } } });
+    const wrapper = mount(LinkedCodePane, { props: { workspaceId: 'w', repositoryId: 'r', content: 'one\ntwo\nthree', path: 'A.java', anchors, links, issues: [], activeLinkId: null }, global: { stubs: { ElTag: true, ElSkeleton: true, ElEmpty: true } } });
     await wrapper.findAll('.code-line')[1].trigger('click');
     expect(wrapper.emitted('activate')?.[0]).toEqual(['l1']);
   });
@@ -30,6 +30,7 @@ describe('linked workbench interactions', () => {
   it('removes inspector width when closed', () => {
     const wrapper = mount(LinkedWorkbenchContent, {
       props: {
+        workspaceId: 'w', repositoryId: 'r',
         mode: 'LINKED', inspectorOpen: false, sourceContent: '', sourcePath: '', anchors, links,
         issues: [], activeLinkId: null, document: null, activeBlockId: null, readonly: false,
         activeLink: null, activeAnchor: null, activeBlock: null, activeIssue: null, activeEvidence: [], versions: [],

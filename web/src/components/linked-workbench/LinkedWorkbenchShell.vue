@@ -20,6 +20,7 @@
       @blocks-loaded="emit('blocks-loaded', $event)"
       @editing-start="emit('editing-start', $event)"
       @editing-stop="emit('editing-stop', $event)"
+      @open-agent-review="emit('open-agent-review', $event)"
       @close-inspector="emit('toggle-inspector')"
     />
     <LinkedWorkbenchStatusBar v-bind="statusProps" />
@@ -37,8 +38,9 @@ import type { EditingState } from '@/composables/useDocumentCollaboration';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue, LinkedEvidence, WorkbenchMode } from '@/types/linkedWorkbench';
 
 const props = defineProps<{
+  workspaceId: string; repositoryId: string;
   workspaceName?: string; repositoryName?: string; branch?: string; commitSha?: string | null;
-  mode: WorkbenchMode; inspectorOpen: boolean; sourceContent: string; sourcePath: string;
+  mode: WorkbenchMode; inspectorOpen: boolean; sourceContent: string; sourcePath: string; sourceLoaded?: boolean;
   sourceLanguage?: string | null; sourceLoading?: boolean; anchors: CodeAnchor[]; links: CodeDocumentLink[];
   issues: EngineeringIssue[]; activeLinkId: string | null; document: DocumentSummary | null;
   activeBlockId: string | null; readonly: boolean; documentLoading?: boolean;
@@ -52,6 +54,7 @@ const emit = defineEmits<{
   'set-mode': [mode: WorkbenchMode]; 'toggle-inspector': []; 'activate-code': [linkId: string];
   'activate-rail': [linkId: string]; 'activate-inspector': [linkId: string]; 'select-block': [blockId: string];
   'blocks-loaded': [blocks: DocumentBlock[]]; 'editing-start': [blockId: string]; 'editing-stop': [blockId: string];
+  'open-agent-review': [changeRequestId: string | null];
 }>();
 const contentRef = ref<InstanceType<typeof LinkedWorkbenchContent> | null>(null);
 const contentProps = computed(() => ({ ...props }));

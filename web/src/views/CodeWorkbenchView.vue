@@ -47,6 +47,8 @@
       <LinkedWorkbenchShell
         v-if="workspace"
         ref="workbenchShellRef"
+        :workspace-id="workspaceId"
+        :repository-id="selectedRepositoryId"
         :workspace-name="workspace.name"
         :repository-name="activeRepository?.name"
         :branch="activeRepository?.defaultBranch"
@@ -57,6 +59,7 @@
         :source-path="selectedSource?.path || selectedFilePath"
         :source-language="selectedSource?.language"
         :source-loading="sourceLoading"
+        :source-loaded="Boolean(selectedSource?.readable && selectedSource.content !== null)"
         :anchors="codeAnchors"
         :links="links"
         :issues="issues"
@@ -85,6 +88,7 @@
         @blocks-loaded="handleBlocksLoaded"
         @editing-start="startEditing"
         @editing-stop="stopEditing"
+        @open-agent-review="handleAgentReviewNavigation"
       >
         <template #header-actions>
           <NotificationCenter />
@@ -363,6 +367,29 @@ async function handleWorkspaceNavigation() {
 
 async function handleReviewNavigation() {
   await router.push({
+    name: 'workspace-reviews',
+    params: {
+      workspaceId: workspaceId.value,
+      status: 'pending',
+    },
+    query: {
+      repositoryId: selectedRepositoryId.value || undefined,
+    },
+  });
+}
+
+async function handleAgentReviewNavigation(changeRequestId: string | null) {
+  await router.push(changeRequestId ? {
+    name: 'workspace-review-detail',
+    params: {
+      workspaceId: workspaceId.value,
+      status: 'pending',
+      requestId: changeRequestId,
+    },
+    query: {
+      repositoryId: selectedRepositoryId.value || undefined,
+    },
+  } : {
     name: 'workspace-reviews',
     params: {
       workspaceId: workspaceId.value,

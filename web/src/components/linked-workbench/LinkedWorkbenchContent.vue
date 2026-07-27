@@ -9,6 +9,7 @@
       @blocks-loaded="emit('blocks-loaded', $event)"
       @editing-start="emit('editing-start', $event)"
       @editing-stop="emit('editing-stop', $event)"
+      @open-agent-review="emit('open-agent-review', $event)"
     />
     <LinkedInspector
       v-show="inspectorOpen"
@@ -35,12 +36,15 @@ import type { EditingState } from '@/composables/useDocumentCollaboration';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue, LinkedEvidence, WorkbenchMode } from '@/types/linkedWorkbench';
 
 const props = defineProps<{
+  workspaceId: string;
+  repositoryId: string;
   mode: WorkbenchMode;
   inspectorOpen: boolean;
   sourceContent: string;
   sourcePath: string;
   sourceLanguage?: string | null;
   sourceLoading?: boolean;
+  sourceLoaded?: boolean;
   anchors: CodeAnchor[];
   links: CodeDocumentLink[];
   issues: EngineeringIssue[];
@@ -63,11 +67,14 @@ const emit = defineEmits<{
   'activate-code': [linkId: string]; 'activate-rail': [linkId: string]; 'activate-inspector': [linkId: string];
   'select-block': [blockId: string]; 'blocks-loaded': [blocks: DocumentBlock[]];
   'editing-start': [blockId: string]; 'editing-stop': [blockId: string]; 'close-inspector': [];
+  'open-agent-review': [changeRequestId: string | null];
 }>();
 const canvasRef = ref<InstanceType<typeof LinkedWorkbenchCanvas> | null>(null);
 const canvasProps = computed(() => ({
+  workspaceId: props.workspaceId, repositoryId: props.repositoryId,
   mode: props.mode, sourceContent: props.sourceContent, sourcePath: props.sourcePath,
   sourceLanguage: props.sourceLanguage, sourceLoading: props.sourceLoading,
+  sourceLoaded: props.sourceLoaded,
   anchors: props.anchors, links: props.links, issues: props.issues,
   activeLinkId: props.activeLinkId, document: props.document,
   activeBlockId: props.activeBlockId, readonly: props.readonly,

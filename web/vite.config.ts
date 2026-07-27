@@ -46,6 +46,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port,
       proxy: {
+        '/agent-api': {
+          target: env.VITE_AGENT_API_PROXY_TARGET || 'http://localhost:8092',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/agent-api/, ''),
+        },
         '/api': {
           target: env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
           changeOrigin: true,

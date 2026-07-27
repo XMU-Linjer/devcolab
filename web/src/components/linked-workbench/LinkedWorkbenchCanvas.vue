@@ -3,6 +3,8 @@
     <LinkedCodePane
       v-show="mode !== 'DOCUMENT_FOCUS'"
       ref="codePaneRef"
+      :workspace-id="workspaceId"
+      :repository-id="repositoryId"
       :content="sourceContent"
       :path="sourcePath"
       :language="sourceLanguage"
@@ -11,7 +13,9 @@
       :issues="issues"
       :active-link-id="activeLinkId"
       :loading="sourceLoading"
+      :source-loaded="sourceLoaded"
       @activate="emit('activate-code', $event)"
+      @open-agent-review="emit('open-agent-review', $event)"
     />
     <CodeAnchorRail
       v-show="mode === 'LINKED' || mode === 'DRIFT_REVIEW'"
@@ -50,11 +54,14 @@ import type { EditingState } from '@/composables/useDocumentCollaboration';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue, WorkbenchMode } from '@/types/linkedWorkbench';
 
 defineProps<{
+  workspaceId: string;
+  repositoryId: string;
   mode: WorkbenchMode;
   sourceContent: string;
   sourcePath: string;
   sourceLanguage?: string | null;
   sourceLoading?: boolean;
+  sourceLoaded?: boolean;
   anchors: CodeAnchor[];
   links: CodeDocumentLink[];
   issues: EngineeringIssue[];
@@ -74,6 +81,7 @@ const emit = defineEmits<{
   'blocks-loaded': [blocks: DocumentBlock[]];
   'editing-start': [blockId: string];
   'editing-stop': [blockId: string];
+  'open-agent-review': [changeRequestId: string | null];
 }>();
 const codePaneRef = ref<InstanceType<typeof LinkedCodePane> | null>(null);
 const documentPaneRef = ref<InstanceType<typeof LinkedDocumentPane> | null>(null);
