@@ -65,14 +65,100 @@ function Get-EnvOrDefault {
     return $DefaultValue
 }
 
+function Invoke-ContainerInspect {
+    param(
+        [string] $ContainerName,
+        [string] $Format
+    )
+
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        # A missing container is an expected local bootstrap state. Capture the
+        # native error locally so PowerShell does not abort before Compose can
+        # create it, while preserving all other Docker failures for the caller.
+        $ErrorActionPreference = "Continue"
+        $output = @(& docker inspect --type container --format $Format $ContainerName 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+
+    return [pscustomobject]@{
+        exitCode = $exitCode
+        output = (($output | ForEach-Object { "$_".Trim() }) -join [Environment]::NewLine).Trim()
+    }
+}
+
+function Get-ContainerState {
+    param([string] $ContainerName)
+
+    $inspect = Invoke-ContainerInspect -ContainerName $ContainerName -Format "{{.State.Status}}"
+    if ($inspect.exitCode -eq 0) {
+        if ($inspect.output -eq "running") {
+            return "RUNNING"
+        }
+        return "STOPPED"
+    }
+    if ($inspect.output -match "(?i)no such (object|container)") {
+        return "NOT_FOUND"
+    }
+    throw "Unable to inspect container ${ContainerName}: $($inspect.output)"
+}
+
+function Get-ContainerHealth {
+    param([string] $ContainerName)
+
+    $inspect = Invoke-ContainerInspect `
+        -ContainerName $ContainerName `
+        -Format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}"
+    if ($inspect.exitCode -eq 0) {
+        return $inspect.output.ToUpperInvariant()
+    }
+    if ($inspect.output -match "(?i)no such (object|container)") {
+        return "NOT_FOUND"
+    }
+    throw "Unable to inspect container health ${ContainerName}: $($inspect.output)"
+}
+
 function Test-ContainerRunning {
     param([string] $ContainerName)
-    $state = & docker inspect --format "{{.State.Running}}" $ContainerName 2>$null
-    return $LASTEXITCODE -eq 0 -and $state -eq "true"
+    return (Get-ContainerState -ContainerName $ContainerName) -eq "RUNNING"
+}
+
+function Wait-ContainerHealthy {
+    param(
+        [string] $Name,
+        [string] $ContainerName
+    )
+
+    $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $state = Get-ContainerState -ContainerName $ContainerName
+        if ($state -eq "RUNNING") {
+            $health = Get-ContainerHealth -ContainerName $ContainerName
+            if ($health -eq "HEALTHY" -or $health -eq "RUNNING") {
+                Write-Step "$Name container is healthy"
+                return
+            }
+            if ($health -eq "UNHEALTHY") {
+                throw "$Name container is unhealthy"
+            }
+        }
+        elseif ($state -eq "STOPPED") {
+            throw "$Name container stopped before becoming healthy"
+        }
+        Start-Sleep -Milliseconds 1000
+    }
+    throw "$Name container did not become healthy within $StartupTimeoutSeconds seconds"
 }
 
 function Resolve-RedisHostPort {
-    $configuredPort = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379")
+    # The local demo owns a stable non-default host port so it does not collide
+    # with a developer's standalone Redis on 6379. Containers still use
+    # redis:6379 on the Compose network.
+    $configuredPort = 16379
+    [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "$configuredPort", "Process")
     if (Test-ContainerRunning -ContainerName "devcollab-redis") {
         $previousErrorPreference = $ErrorActionPreference
         try {
@@ -89,11 +175,10 @@ function Resolve-RedisHostPort {
         $binding = $bindings | Select-Object -First 1
         if ($dockerPortExitCode -eq 0 -and $binding -match ":(?<port>\d+)$") {
             $runningPort = [int] $Matches.port
-            [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "$runningPort", "Process")
-            if ($runningPort -ne $configuredPort) {
-                Write-Step "using running DevCollab Redis host port $runningPort"
+            if ($runningPort -eq $configuredPort) {
+                return
             }
-            return
+            Write-Step "DevCollab Redis currently uses host port $runningPort; Compose will recreate it on configured port $configuredPort"
         }
     }
     if (-not (Test-TcpPort -HostName "localhost" -Port $configuredPort)) {
@@ -254,7 +339,7 @@ function Read-State {
 
 function Test-ManagedStateHealthy {
     $processes = Read-State
-    if ($processes.Count -ne 3) {
+    if ($processes.Count -ne 4) {
         return $false
     }
     foreach ($entry in $processes) {
@@ -267,6 +352,12 @@ function Test-ManagedStateHealthy {
     }
     $nginxPort = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088")
     if (-not (Test-HttpEndpoint -Port $nginxPort)) {
+        return $false
+    }
+    if (-not (Test-ContainerRunning -ContainerName "devcollab-agent-service")) {
+        return $false
+    }
+    if ((Get-ContainerHealth -ContainerName "devcollab-agent-service") -ne "HEALTHY") {
         return $false
     }
     return $true
@@ -368,7 +459,7 @@ function Set-SharedServiceEnvironment {
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_DB_USERNAME", (Get-EnvOrDefault "DEVCOLLAB_DB_USERNAME" "devcollab"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_DB_PASSWORD", (Get-EnvOrDefault "DEVCOLLAB_DB_PASSWORD" "devcollab"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_HOST", "localhost", "Process")
-    [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_PORT", (Get-EnvOrDefault "REDIS_HOST_PORT" "6379"), "Process")
+    [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_PORT", (Get-EnvOrDefault "REDIS_HOST_PORT" "16379"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_URL", "http://localhost:9200", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_ENABLED", "true", "Process")
@@ -428,7 +519,7 @@ function Start-LocalDemo {
     }
 
     Wait-TcpPort -Name "PostgreSQL" -Port ([int](Get-EnvOrDefault "POSTGRES_HOST_PORT" "5432"))
-    Wait-TcpPort -Name "Redis" -Port ([int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379"))
+    Wait-TcpPort -Name "Redis" -Port ([int](Get-EnvOrDefault "REDIS_HOST_PORT" "16379"))
     Wait-TcpPort -Name "Kafka" -Port 9092
     Wait-TcpPort -Name "Elasticsearch" -Port 9200
     Ensure-KafkaTopics
@@ -475,6 +566,47 @@ function Start-LocalDemo {
         Write-State -Processes $managed
         Wait-ManagedService -Entry $managed[-1]
 
+        [Environment]::SetEnvironmentVariable("DEVCOLLAB_MCP_PORT", "8091", "Process")
+        [Environment]::SetEnvironmentVariable(
+            "DEVCOLLAB_MCP_ALLOWED_HOST_LOOPBACK",
+            "host.docker.internal:*",
+            "Process"
+        )
+        $managed += Start-MavenService -Name "devcollab-mcp-server" -Module "devcollab-mcp-server" -Port 8091
+        Write-State -Processes $managed
+        Wait-ManagedService -Entry $managed[-1]
+
+        $agentState = Get-ContainerState -ContainerName "devcollab-agent-service"
+        if ($agentState -eq "RUNNING") {
+            Write-Step "Agent Service container is already running"
+        }
+        else {
+            Write-Step "starting Agent Service container (previous state: $agentState)"
+            Push-Location $RepoRoot
+            try {
+                Invoke-Checked -FilePath "docker" -Arguments @(
+                    "compose", "up", "-d", "--no-deps", "--build", "agent-service"
+                )
+            }
+            finally {
+                Pop-Location
+            }
+        }
+        try {
+            Wait-ContainerHealthy -Name "Agent Service" -ContainerName "devcollab-agent-service"
+        }
+        catch {
+            Write-Step "Agent Service failed; recent logs follow"
+            Push-Location $RepoRoot
+            try {
+                & docker compose logs --tail 80 agent-service
+            }
+            finally {
+                Pop-Location
+            }
+            throw
+        }
+
         Write-Step "starting Nginx unified entry"
         Push-Location $RepoRoot
         try {
@@ -503,7 +635,7 @@ function Stop-LocalDemo {
     Stop-ManagedProcesses
     Push-Location $RepoRoot
     try {
-        Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "nginx")
+        Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "nginx", "agent-service")
         if (-not $KeepInfrastructure) {
             Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "postgres", "redis", "kafka", "elasticsearch")
             Invoke-Checked -FilePath "docker" -Arguments @(
@@ -520,11 +652,14 @@ function Stop-LocalDemo {
 
 function Show-LocalDemoStatus {
     Import-DotEnv
+    [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "16379", "Process")
     $checks = @(
         @{ name = "Knowledge Core"; port = 8080 },
         @{ name = "Worker"; port = 8082 },
         @{ name = "Gateway"; port = 8090 },
+        @{ name = "MCP Server"; port = 8091 },
         @{ name = "Nginx"; port = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088") },
+        @{ name = "Redis"; port = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "16379") },
         @{ name = "Prometheus"; port = [int](Get-EnvOrDefault "PROMETHEUS_HOST_PORT" "9091") },
         @{ name = "Loki"; port = [int](Get-EnvOrDefault "LOKI_HOST_PORT" "3100") },
         @{ name = "Tempo"; port = [int](Get-EnvOrDefault "TEMPO_HOST_PORT" "3200") },
@@ -535,6 +670,15 @@ function Show-LocalDemoStatus {
         $state = if (Test-TcpPort -HostName "localhost" -Port $check.port) { "UP" } else { "DOWN" }
         Write-Step "$($check.name) port=$($check.port) state=$state"
     }
+    $agentContainerState = Get-ContainerState -ContainerName "devcollab-agent-service"
+    $agentHealth = if ($agentContainerState -eq "RUNNING") {
+        Get-ContainerHealth -ContainerName "devcollab-agent-service"
+    }
+    else {
+        $agentContainerState
+    }
+    $agentState = if ($agentContainerState -eq "RUNNING" -and $agentHealth -eq "HEALTHY") { "UP" } else { "DOWN" }
+    Write-Step "Agent Service container state=$agentState dockerState=$agentContainerState health=$agentHealth"
 }
 
 function Invoke-LocalDemoVerification {
