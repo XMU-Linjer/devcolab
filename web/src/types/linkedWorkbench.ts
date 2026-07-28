@@ -23,8 +23,9 @@ export interface CodeAnchor {
   language: string;
   symbolName?: string;
   qualifiedSymbol?: string;
-  startLine: number;
-  endLine: number;
+  anchorKind?: 'FILE' | 'RANGE';
+  startLine: number | null;
+  endLine: number | null;
   contentHash?: string;
   status: 'VALID' | 'DRIFTED' | 'BROKEN';
 }
@@ -32,7 +33,8 @@ export interface CodeAnchor {
 export interface CodeDocumentLink {
   id: string;
   codeAnchorId: string;
-  blockId: string;
+  documentId: string;
+  blockId: string | null;
   relationType:
     | 'IMPLEMENTS'
     | 'DESCRIBES'

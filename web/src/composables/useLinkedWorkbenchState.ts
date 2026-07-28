@@ -32,7 +32,7 @@ export function useLinkedWorkbenchState() {
     anchor => anchor.id === activeLink.value?.codeAnchorId,
   ) ?? null);
   const activeDocumentBlock = computed(() => documentBlocks.value.find(
-    block => block.id === activeLink.value?.blockId,
+    block => activeLink.value?.blockId != null && block.id === activeLink.value.blockId,
   ) ?? null);
   const activeIssue = computed(() => issues.value.find(issue => issue.linkId === activeLinkId.value) ?? null);
   const activeEvidence = computed(() => evidence.value.filter(item => item.linkId === activeLinkId.value));

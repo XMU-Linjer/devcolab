@@ -7,8 +7,8 @@ const fixture = {
     { id: 'a2', repositoryId: 'r', branch: 'main', commitSha: 'abc', filePath: 'A.java', language: 'Java', startLine: 6, endLine: 8, status: 'DRIFTED' as const },
   ],
   links: [
-    { id: 'l1', codeAnchorId: 'a1', blockId: 'b1', relationType: 'IMPLEMENTS' as const },
-    { id: 'l2', codeAnchorId: 'a2', blockId: 'b2', relationType: 'CONFLICTS_WITH' as const },
+    { id: 'l1', codeAnchorId: 'a1', documentId: 'd', blockId: 'b1', relationType: 'IMPLEMENTS' as const },
+    { id: 'l2', codeAnchorId: 'a2', documentId: 'd', blockId: 'b2', relationType: 'CONFLICTS_WITH' as const },
   ],
   issues: [{ id: 'i2', linkId: 'l2', title: '漂移', description: '待复核', severity: 'HIGH' as const, status: 'OPEN' as const, sourceType: 'RULE' as const }],
   evidence: [{ id: 'e1', linkId: 'l1', title: '提交', summary: '证据', kind: 'COMMIT' as const }],

@@ -27,7 +27,9 @@
         >
           {{ isAgentRunning ? agentStatusLabel : 'Agent 检查' }}
         </el-button>
-        <el-tag v-if="activeAnchor" size="small" effect="plain">L{{ activeAnchor.startLine }}–{{ activeAnchor.endLine }}</el-tag>
+        <el-tag v-if="activeAnchor" size="small" effect="plain">
+          {{ hasLineRange(activeAnchor) ? `L${activeAnchor.startLine}–${activeAnchor.endLine}` : '文件级关联' }}
+        </el-tag>
       </div>
     </header>
     <el-skeleton v-if="loading" :rows="12" animated />
@@ -185,7 +187,12 @@ onBeforeUnmount(() => stopPolling());
 onMounted(() => restoreAgentJob());
 
 function anchorForLine(line: number) {
-  return props.anchors.find(anchor => line >= anchor.startLine && line <= anchor.endLine);
+  return props.anchors.find(anchor => (
+    anchor.startLine !== null
+    && anchor.endLine !== null
+    && line >= anchor.startLine
+    && line <= anchor.endLine
+  ));
 }
 
 function linkForLine(line: number) {
@@ -328,8 +335,12 @@ function clearActiveJob() {
 
 function focusAnchor(anchorId: string) {
   const anchor = props.anchors.find(item => item.id === anchorId);
-  if (!anchor) return;
+  if (!anchor || anchor.startLine === null) return;
   lineElements.get(anchor.startLine)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function hasLineRange(anchor: CodeAnchor) {
+  return anchor.startLine !== null && anchor.endLine !== null;
 }
 
 defineExpose({ focusAnchor });

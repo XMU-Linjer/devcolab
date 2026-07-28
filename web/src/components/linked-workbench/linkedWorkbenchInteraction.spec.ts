@@ -6,7 +6,13 @@ import LinkedWorkbenchContent from './LinkedWorkbenchContent.vue';
 import { focusPlan, linkIdForBlock } from '@/utils/linkedWorkbenchInteraction';
 
 const anchors = [{ id: 'a1', repositoryId: 'r', branch: 'main', commitSha: 'abc', filePath: 'A.java', language: 'Java', startLine: 2, endLine: 3, status: 'VALID' as const }];
-const links = [{ id: 'l1', codeAnchorId: 'a1', blockId: 'b1', relationType: 'IMPLEMENTS' as const }];
+const links = [{
+  id: 'l1',
+  codeAnchorId: 'a1',
+  documentId: 'd1',
+  blockId: 'b1',
+  relationType: 'IMPLEMENTS' as const,
+}];
 
 describe('linked workbench interactions', () => {
   it('emits the linked id when a code range is clicked', async () => {

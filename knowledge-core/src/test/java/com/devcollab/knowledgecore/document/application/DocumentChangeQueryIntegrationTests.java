@@ -483,6 +483,162 @@ class DocumentChangeQueryIntegrationTests {
     }
 
     @Test
+    void applyKeepsEveryFilePathWhenOneCreatedDocumentHasMultipleBindings() {
+        Fixture fixture = fixture("ADMIN");
+        GitRepository git = repository(fixture, "multi-file-one-document");
+        CreateCommand command = new CreateCommand(
+                "multi-file-one-document-" + UUID.randomUUID(),
+                "Create one document for two related files",
+                "Both files implement the same responsibility",
+                java.util.List.of(
+                        new CreateOperationCommand(
+                                "create-shared", 1,
+                                OperationType.CREATE_DOCUMENT,
+                                null, null, null, null,
+                                "Shared component guide", DocumentType.BACKEND,
+                                null, null, null, null, null
+                        ),
+                        new CreateOperationCommand(
+                                "add-shared-body", 2,
+                                OperationType.ADD_BLOCK,
+                                null, "create-shared", null, null,
+                                null, null, null,
+                                DocumentBlockType.PARAGRAPH,
+                                "The controller delegates the same responsibility to the service.",
+                                null, null
+                        )
+                ),
+                java.util.List.of(
+                        new CreateBindingProposalCommand(
+                                "bind-controller", 3,
+                                BindingAction.UPSERT_BINDING,
+                                git.id(), "src/Controller.java",
+                                null, "create-shared", null,
+                                "Controller entry point"
+                        ),
+                        new CreateBindingProposalCommand(
+                                "bind-service", 4,
+                                BindingAction.UPSERT_BINDING,
+                                git.id(), "src/Service.java",
+                                null, "create-shared", null,
+                                "Service implementation"
+                        )
+                ),
+                java.util.List.of()
+        );
+
+        var created = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+        service.apply(
+                fixture.workspaceId(), created.changeRequestId(), fixture.userId()
+        );
+
+        Document generated = documentRepository
+                .findAllByWorkspaceId(fixture.workspaceId())
+                .stream()
+                .filter(item -> item.title().equals("Shared component guide"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(gitRepository.findBindingsByDocumentId(generated.id()))
+                .extracting(CodeDocumentBinding::repositoryId)
+                .containsOnly(git.id());
+        assertThat(gitRepository.findBindingsByDocumentId(generated.id()))
+                .extracting(CodeDocumentBinding::pathPattern)
+                .containsExactlyInAnyOrder(
+                        "src/Controller.java",
+                        "src/Service.java"
+                );
+    }
+
+    @Test
+    void applyMapsBindingsToTheirOwnCreatedDocumentsWithoutCrossContamination() {
+        Fixture fixture = fixture("ADMIN");
+        GitRepository git = repository(fixture, "two-created-documents");
+        CreateCommand command = new CreateCommand(
+                "two-created-documents-" + UUID.randomUUID(),
+                "Create two independent documents",
+                "Each semantic responsibility needs its own document",
+                java.util.List.of(
+                        new CreateOperationCommand(
+                                "create-api", 1,
+                                OperationType.CREATE_DOCUMENT,
+                                null, null, null, null,
+                                "API guide", DocumentType.API,
+                                null, null, null, null, null
+                        ),
+                        new CreateOperationCommand(
+                                "add-api-body", 2,
+                                OperationType.ADD_BLOCK,
+                                null, "create-api", null, null,
+                                null, null, null,
+                                DocumentBlockType.PARAGRAPH,
+                                "The API controller exposes the external request contract.",
+                                null, null
+                        ),
+                        new CreateOperationCommand(
+                                "create-storage", 3,
+                                OperationType.CREATE_DOCUMENT,
+                                null, null, null, null,
+                                "Storage guide", DocumentType.DATABASE,
+                                null, null, null, null, null
+                        ),
+                        new CreateOperationCommand(
+                                "add-storage-body", 4,
+                                OperationType.ADD_BLOCK,
+                                null, "create-storage", null, null,
+                                null, null, null,
+                                DocumentBlockType.PARAGRAPH,
+                                "The repository persists and retrieves the aggregate state.",
+                                null, null
+                        )
+                ),
+                java.util.List.of(
+                        new CreateBindingProposalCommand(
+                                "bind-api", 5,
+                                BindingAction.UPSERT_BINDING,
+                                git.id(), "src/ApiController.java",
+                                null, "create-api", null,
+                                "API entry point"
+                        ),
+                        new CreateBindingProposalCommand(
+                                "bind-storage", 6,
+                                BindingAction.UPSERT_BINDING,
+                                git.id(), "src/StorageRepository.java",
+                                null, "create-storage", null,
+                                "Storage implementation"
+                        )
+                ),
+                java.util.List.of()
+        );
+
+        var created = service.create(
+                fixture.workspaceId(), fixture.userId(), command
+        );
+        service.apply(
+                fixture.workspaceId(), created.changeRequestId(), fixture.userId()
+        );
+
+        var documentsByTitle = documentRepository
+                .findAllByWorkspaceId(fixture.workspaceId())
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Document::title,
+                        item -> item
+                ));
+        Document api = documentsByTitle.get("API guide");
+        Document storage = documentsByTitle.get("Storage guide");
+        assertThat(api).isNotNull();
+        assertThat(storage).isNotNull();
+        assertThat(gitRepository.findBindingsByDocumentId(api.id()))
+                .extracting(CodeDocumentBinding::pathPattern)
+                .containsExactly("src/ApiController.java");
+        assertThat(gitRepository.findBindingsByDocumentId(storage.id()))
+                .extracting(CodeDocumentBinding::pathPattern)
+                .containsExactly("src/StorageRepository.java");
+    }
+
+    @Test
     void rejectRequiresAdminAndSameReasonReplayIsIdempotent() {
         Fixture member = fixture("MEMBER");
         UUID adminId = addMember(member.workspaceId(), "ADMIN");

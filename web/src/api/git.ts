@@ -94,6 +94,24 @@ export interface CodeDocumentBinding {
   createdAt: string;
 }
 
+export interface CodeBindingQueryItem {
+  bindingId: string;
+  documentId: string;
+  blockId: string | null;
+  pathPattern: string;
+  documentTitle: string | null;
+}
+
+export interface CodeBindingQueryResult {
+  workspaceId: string;
+  repositoryId: string;
+  filePath: string;
+  fileHasBindings: boolean;
+  bindings: CodeBindingQueryItem[];
+  truncated: boolean;
+  omittedBindingCount: number;
+}
+
 export async function listGitRepositories(workspaceId: string) {
   const { data } = await http.get<GitRepository[]>(
     `/workspaces/${workspaceId}/git/repositories`,
@@ -226,4 +244,17 @@ export async function createCodeBinding(
 
 export async function deleteCodeBinding(bindingId: string) {
   await http.delete(`/code-bindings/${bindingId}`);
+}
+
+export async function queryCodeBindings(
+  workspaceId: string,
+  repositoryId: string,
+  revision: string,
+  filePath: string,
+) {
+  const { data } = await http.get<CodeBindingQueryResult>(
+    `/workspaces/${workspaceId}/repositories/${repositoryId}/code-bindings`,
+    { params: { revision, filePath } },
+  );
+  return data;
 }

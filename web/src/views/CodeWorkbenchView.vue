@@ -199,7 +199,9 @@ import {
   listGitChanges,
   listGitRepositories,
   listGitRepositoryFiles,
+  queryCodeBindings,
   syncGitRepository,
+  type CodeBindingQueryItem,
   type GitRepository,
   type GitChange,
   type GitRepositoryFile,
@@ -212,9 +214,9 @@ import LinkedWorkbenchShell from '@/components/linked-workbench/LinkedWorkbenchS
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
 import { useLinkedWorkbenchState } from '@/composables/useLinkedWorkbenchState';
-import { buildLinkedWorkbenchFixture } from '@/fixtures/linkedWorkbenchMock';
 import type { LinkedDocumentChoice, LinkActivationSource, WorkbenchMode } from '@/types/linkedWorkbench';
 import { readableError } from '@/utils/error';
+import { bindingDocumentChoices, buildBindingFixture } from '@/utils/linkedWorkbenchBindings';
 import { focusPlan, linkIdForBlock } from '@/utils/linkedWorkbenchInteraction';
 import { buildRepositoryTree } from '@/utils/repositoryTree';
 
@@ -229,6 +231,7 @@ const documentTree = ref<DocumentTreeNode[]>([]);
 const document = ref<DocumentSummary | null>(null);
 const versions = ref<DocumentVersion[]>([]);
 const selectedSource = ref<GitRepositorySource | null>(null);
+const selectedFileBindings = ref<CodeBindingQueryItem[]>([]);
 const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
@@ -238,6 +241,8 @@ const projectScanJob = ref<AgentJob | null>(null);
 const projectScanUnits = ref<AgentSemanticUnit[]>([]);
 const projectScanDrawerOpen = ref(false);
 let projectScanPollTimer: number | null = null;
+let sourceRequestSequence = 0;
+let documentRequestSequence = 0;
 const errorMessage = ref('');
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
 const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
@@ -259,17 +264,18 @@ const latestVersion = computed(() => versions.value.reduce(
   0,
 ));
 const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
-  const selected = documentChoices.value.find(item => item.id === selectedDocumentId.value);
-  if (!selected) return documentChoices.value.slice(0, 3);
-  return [{
-    ...selected,
-    version: latestVersion.value || undefined,
-    reviewStatus: document.value?.reviewStatus,
-  }];
+  return bindingDocumentChoices(selectedFileBindings.value, documentChoices.value)
+    .map(item => item.id === selectedDocumentId.value
+      ? {
+          ...item,
+          version: latestVersion.value || undefined,
+          reviewStatus: document.value?.reviewStatus,
+        }
+      : item);
 });
 const pendingReviewCount = ref(0);
 const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
-  ? { [selectedFilePath.value]: links.value.length }
+  ? { [selectedFilePath.value]: selectedFileBindings.value.length }
   : {});
 const activeLinkedBlockCount = computed(() => activeCodeAnchor.value
   ? links.value.filter(link => link.codeAnchorId === activeCodeAnchor.value?.id).length
@@ -382,7 +388,13 @@ async function loadWorkbench() {
 }
 
 async function loadRepositoryDetails() {
-  if (!selectedRepositoryId.value) { files.value = []; gitChanges.value = []; selectedSource.value = null; return; }
+  if (!selectedRepositoryId.value) {
+    files.value = [];
+    gitChanges.value = [];
+    selectedSource.value = null;
+    selectedFileBindings.value = [];
+    return;
+  }
   [files.value, gitChanges.value] = await Promise.all([
     listGitRepositoryFiles(workspaceId.value, selectedRepositoryId.value),
     listGitChanges(workspaceId.value, selectedRepositoryId.value).catch(() => []),
@@ -393,22 +405,32 @@ async function loadRepositoryDetails() {
 }
 
 async function loadDocumentBundle() {
-  if (!selectedDocumentId.value) { document.value = null; versions.value = []; return; }
+  const requestSequence = ++documentRequestSequence;
+  const documentId = selectedDocumentId.value;
+  if (!documentId) { document.value = null; versions.value = []; return; }
   documentLoading.value = true;
   try {
-    [document.value, versions.value] = await Promise.all([
-      getDocument(selectedDocumentId.value), listDocumentVersions(selectedDocumentId.value),
+    const [loadedDocument, loadedVersions] = await Promise.all([
+      getDocument(documentId), listDocumentVersions(documentId),
     ]);
+    if (requestSequence !== documentRequestSequence || documentId !== selectedDocumentId.value) return;
+    document.value = loadedDocument;
+    versions.value = loadedVersions;
   } catch (error) {
+    if (requestSequence !== documentRequestSequence) return;
     document.value = null; versions.value = [];
     ElMessage.error(readableError(error, '关联文档加载失败'));
-  } finally { documentLoading.value = false; }
+  } finally {
+    if (requestSequence === documentRequestSequence) documentLoading.value = false;
+  }
 }
 
 async function handleRepositoryChange(repositoryId: string) {
+  sourceRequestSequence += 1;
   state.selectedRepositoryId.value = repositoryId;
   state.selectFile('');
   selectedSource.value = null;
+  selectedFileBindings.value = [];
   await router.replace({ query: { ...route.query, repositoryId } });
   try { contextLoading.value = true; await loadRepositoryDetails(); }
   catch (error) { ElMessage.error(readableError(error, '仓库内容加载失败')); }
@@ -421,15 +443,63 @@ async function openSourceByPath(path: string) {
 }
 
 async function openSource(file: GitRepositoryFile) {
+  const requestSequence = ++sourceRequestSequence;
+  const repositoryId = selectedRepositoryId.value;
   sourceLoading.value = true;
   state.selectFile(file.path);
+  selectedFileBindings.value = [];
+  state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   try {
-    selectedSource.value = await getGitRepositorySource(workspaceId.value, selectedRepositoryId.value, file.path);
-    rebuildFixture();
+    const source = await getGitRepositorySource(
+      workspaceId.value,
+      repositoryId,
+      file.path,
+    );
+    if (requestSequence !== sourceRequestSequence
+      || repositoryId !== selectedRepositoryId.value
+      || file.path !== selectedFilePath.value) return;
+    const revision = source.commitSha
+      || repositories.value.find(item => item.id === repositoryId)?.lastSyncedCommit;
+    if (!revision) throw new Error('当前仓库尚无可查询的同步版本');
+    const bindingResult = await queryCodeBindings(
+      workspaceId.value,
+      repositoryId,
+      revision,
+      file.path,
+    );
+    if (requestSequence !== sourceRequestSequence
+      || repositoryId !== selectedRepositoryId.value
+      || file.path !== selectedFilePath.value) return;
+    selectedSource.value = source;
+    selectedFileBindings.value = bindingResult.bindings;
+    const boundDocumentIds = new Set(bindingResult.bindings.map(item => item.documentId));
+    if (bindingResult.bindings.length === 0) {
+      state.selectDocument('');
+      state.replaceDocumentBlocks([]);
+      document.value = null;
+      versions.value = [];
+      documentRequestSequence += 1;
+    } else if (!boundDocumentIds.has(selectedDocumentId.value)) {
+      state.selectDocument(bindingResult.bindings[0].documentId);
+      state.replaceDocumentBlocks([]);
+      await router.replace({
+        query: { ...route.query, repositoryId, documentId: selectedDocumentId.value },
+      });
+      await loadDocumentBundle();
+      if (requestSequence !== sourceRequestSequence
+        || repositoryId !== selectedRepositoryId.value
+        || file.path !== selectedFilePath.value) return;
+    }
+    rebuildBindings();
   } catch (error) {
+    if (requestSequence !== sourceRequestSequence) return;
     selectedSource.value = null;
+    selectedFileBindings.value = [];
+    rebuildBindings();
     ElMessage.error(readableError(error, '源码读取失败'));
-  } finally { sourceLoading.value = false; }
+  } finally {
+    if (requestSequence === sourceRequestSequence) sourceLoading.value = false;
+  }
 }
 
 async function handleDocumentChange(documentId: string) {
@@ -438,26 +508,26 @@ async function handleDocumentChange(documentId: string) {
   state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   await router.replace({ query: { ...route.query, documentId } });
   await loadDocumentBundle();
+  rebuildBindings();
 }
 
 function handleBlocksLoaded(blocks: DocumentBlock[]) {
   state.replaceDocumentBlocks(blocks);
-  rebuildFixture();
+  rebuildBindings();
 }
 
-function rebuildFixture() {
-  if (!selectedSource.value?.readable || !selectedSource.value.content || documentBlocks.value.length === 0 || !activeRepository.value) {
+function rebuildBindings() {
+  if (!selectedSource.value?.readable || selectedSource.value.content === null || !activeRepository.value) {
     state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
     return;
   }
-  state.replaceFixture(buildLinkedWorkbenchFixture({
+  state.replaceFixture(buildBindingFixture({
     repositoryId: activeRepository.value.id,
     branch: activeRepository.value.defaultBranch,
     commitSha: selectedSource.value.commitSha || activeRepository.value.lastSyncedCommit || 'working-tree',
-    filePath: selectedSource.value.path,
-    language: selectedSource.value.language || 'text',
-    source: selectedSource.value.content,
-    blocks: documentBlocks.value,
+    source: selectedSource.value,
+    bindings: selectedFileBindings.value,
+    selectedDocumentId: selectedDocumentId.value,
   }));
   void nextTick(() => focusActiveLink('system'));
 }
@@ -539,7 +609,7 @@ function focusActiveLink(source: LinkActivationSource) {
   if (!link) return;
   const plan = focusPlan(source);
   if (plan.code) workbenchShellRef.value?.focusAnchor(link.codeAnchorId);
-  if (plan.document) workbenchShellRef.value?.focusBlock(link.blockId);
+  if (plan.document && link.blockId) workbenchShellRef.value?.focusBlock(link.blockId);
 }
 
 async function saveBlockViaCollaboration(block: DocumentBlock, content: DocumentBlockContent) {

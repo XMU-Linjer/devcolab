@@ -36,6 +36,7 @@ export function buildLinkedWorkbenchFixture(input: FixtureInput): LinkedFixture 
   const links = codeAnchors.map((anchor, index) => ({
     id: `mock-link-${input.repositoryId}-${index + 1}`,
     codeAnchorId: anchor.id,
+    documentId: input.blocks[index].documentId,
     blockId: input.blocks[index].id,
     relationType: index === driftIndex ? 'CONFLICTS_WITH' as const : 'IMPLEMENTS' as const,
   }));
