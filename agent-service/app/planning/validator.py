@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from typing import Any
 
@@ -51,6 +52,7 @@ class AgentPlanValidator:
 
         self._validate_counts_and_sequences(plan, issues)
         self._validate_evidence(plan, code_by_path, repository_id, issues)
+        self._validate_binding_completeness(plan, context, bindings, issues)
 
         for index, operation in enumerate(plan.operations):
             path = f"operations[{index}]"
@@ -96,6 +98,13 @@ class AgentPlanValidator:
                     self._issue(
                         issues, path, "BLOCK_TYPE_REQUIRED", "ADD_BLOCK requires proposedBlockType"
                     )
+                if not self._operation_body(operation):
+                    self._issue(
+                        issues,
+                        path,
+                        "BLOCK_CONTENT_REQUIRED",
+                        "ADD_BLOCK requires final document content",
+                    )
             elif operation.operationType in {
                 OperationType.UPDATE_BLOCK,
                 OperationType.DELETE_BLOCK,
@@ -139,6 +148,13 @@ class AgentPlanValidator:
                             "DELETE_CONTENT_INVALID",
                             "DELETE_BLOCK cannot contain proposed content",
                         )
+                elif not self._operation_body(operation):
+                    self._issue(
+                        issues,
+                        path,
+                        "BLOCK_CONTENT_REQUIRED",
+                        "UPDATE_BLOCK requires complete replacement content",
+                    )
             if operation.createdDocumentClientOperationId:
                 if operation.createdDocumentClientOperationId not in create_ids:
                     self._issue(
@@ -162,6 +178,8 @@ class AgentPlanValidator:
                         "CREATE_REFERENCE_ORDER",
                         "created document must appear earlier",
                     )
+
+        self._validate_document_authoring(plan, context, documents, code_by_path, issues)
 
         seen_upserts: set[tuple[str, str, str]] = set()
         for index, proposal in enumerate(plan.bindingProposals):
@@ -249,6 +267,329 @@ class AgentPlanValidator:
         if issues:
             raise PlanValidationError(issues)
         return plan
+
+    def _validate_binding_completeness(
+        self,
+        plan: AgentPlan,
+        context: dict[str, Any],
+        bindings: list[dict[str, Any]],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        if plan.decision != Decision.NO_CHANGE:
+            return
+        selected_paths = {
+            str(path) for path in context.get("task", {}).get("selectedPaths", []) if path
+        }
+        bound_paths = {
+            str(item.get("filePath") or item.get("pathPattern"))
+            for item in bindings
+            if item.get("filePath") or item.get("pathPattern")
+        }
+        missing = sorted(selected_paths - bound_paths)
+        if missing:
+            self._issue(
+                issues,
+                "decision",
+                "BINDING_CHANGE_REQUIRED",
+                "NO_CHANGE is invalid while selected files lack a formal Binding",
+            )
+
+    def _validate_document_authoring(
+        self,
+        plan: AgentPlan,
+        context: dict[str, Any],
+        documents: dict[str, dict[str, Any]],
+        code_by_path: dict[str, str],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        create_operations = {
+            item.clientOperationId: item
+            for item in plan.operations
+            if item.operationType == OperationType.CREATE_DOCUMENT
+        }
+        add_by_create: dict[str, list[tuple[int, Any]]] = {
+            operation_id: [] for operation_id in create_operations
+        }
+        updated_blocks: Counter[str] = Counter()
+        seen_bodies: dict[tuple[str, str, str], int] = {}
+        role = self._context_role(code_by_path)
+        source_text = "\n".join(code_by_path.values())
+        chinese_required = self._requires_chinese(context)
+
+        for index, operation in enumerate(plan.operations):
+            path = f"operations[{index}]"
+            body = self._operation_body(operation)
+            if operation.operationType == OperationType.UPDATE_BLOCK and operation.blockId:
+                updated_blocks[str(operation.blockId)] += 1
+            if operation.operationType == OperationType.ADD_BLOCK:
+                created_id = operation.createdDocumentClientOperationId
+                if created_id in add_by_create:
+                    add_by_create[created_id].append((index, operation))
+            if body:
+                normalized = self._normalize_body(body)
+                target = self._operation_document_key(operation)
+                duplicate_key = (target, operation.proposedBlockType or "", normalized)
+                if normalized and duplicate_key in seen_bodies:
+                    self._issue(
+                        issues,
+                        path,
+                        "DUPLICATE_BLOCK_CONTENT",
+                        "the same document cannot contain duplicate Block content",
+                    )
+                else:
+                    seen_bodies[duplicate_key] = index
+                if self._is_instructional_body(body):
+                    self._issue(
+                        issues,
+                        path,
+                        "INSTRUCTIONAL_DOCUMENT_CONTENT",
+                        "document content must be final prose, not writing advice",
+                    )
+                if role == "FRONTEND_API_CLIENT":
+                    self._validate_frontend_client_content(
+                        body,
+                        source_text,
+                        path,
+                        issues,
+                    )
+
+            title = self._operation_target_title(operation, create_operations, documents)
+            if title and not self._role_matches_document(role, title):
+                self._issue(
+                    issues,
+                    path,
+                    "DOCUMENT_RESPONSIBILITY_MISMATCH",
+                    "the selected code responsibility does not match the target document",
+                )
+
+        for block_id, count in updated_blocks.items():
+            if count > 1:
+                self._issue(
+                    issues,
+                    "operations",
+                    "DUPLICATE_BLOCK_UPDATE",
+                    f"Block {block_id} is updated more than once",
+                )
+
+        for create_id, create_operation in create_operations.items():
+            create_index = plan.operations.index(create_operation)
+            title = (create_operation.proposedDocumentTitle or "").strip()
+            content_operations = add_by_create.get(create_id, [])
+            substantive = [
+                operation
+                for _, operation in content_operations
+                if operation.proposedBlockType != "HEADING"
+                and len(self._operation_body(operation).strip()) >= 12
+            ]
+            if not substantive:
+                self._issue(
+                    issues,
+                    f"operations[{create_index}]",
+                    "CREATE_DOCUMENT_BODY_REQUIRED",
+                    "CREATE_DOCUMENT requires substantive final content in the same plan",
+                )
+            if content_operations and all(
+                operation.proposedBlockType == "HEADING" for _, operation in content_operations
+            ):
+                self._issue(
+                    issues,
+                    f"operations[{create_index}]",
+                    "HEADING_ONLY_DOCUMENT",
+                    "a document cannot consist only of headings",
+                )
+            if chinese_required and title and not self._contains_chinese(title):
+                self._issue(
+                    issues,
+                    f"operations[{create_index}].proposedDocumentTitle",
+                    "CHINESE_TITLE_REQUIRED",
+                    "new document titles must use Simplified Chinese",
+                )
+            for block_index, operation in content_operations:
+                body = self._operation_body(operation)
+                if chinese_required and body and not self._contains_chinese(body):
+                    self._issue(
+                        issues,
+                        f"operations[{block_index}]",
+                        "CHINESE_CONTENT_REQUIRED",
+                        "new document content must use Simplified Chinese",
+                    )
+                elif chinese_required and body and self._is_obviously_mixed_language(body):
+                    self._issue(
+                        issues,
+                        f"operations[{block_index}]",
+                        "MIXED_DOCUMENT_LANGUAGE",
+                        "new document content mixes Chinese and English prose excessively",
+                    )
+            short_count = sum(
+                1
+                for _, operation in content_operations
+                if len(self._operation_body(operation).strip()) < 40
+            )
+            if (
+                len(content_operations) >= 10
+                and short_count / len(content_operations) >= 0.7
+            ):
+                self._issue(
+                    issues,
+                    f"operations[{create_index}]",
+                    "FRAGMENTED_DOCUMENT",
+                    "too many short Blocks form a fragmented document",
+                )
+
+    def _validate_frontend_client_content(
+        self,
+        body: str,
+        source_text: str,
+        path: str,
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        backend_identifiers = (
+            "AuthController",
+            "AuthService",
+            "SecurityFilterChain",
+            "JwtAuthenticationFilter",
+        )
+        for identifier in backend_identifiers:
+            if identifier in body and identifier not in source_text:
+                self._issue(
+                    issues,
+                    path,
+                    "FRONTEND_BACKEND_SCOPE_POLLUTION",
+                    (
+                        "frontend API Client documentation contains "
+                        "backend-only implementation details"
+                    ),
+                )
+                break
+        unsupported_paths = {
+            item
+            for item in re.findall(r"/[A-Za-z0-9_{}./:-]+", body)
+            if item not in source_text
+        }
+        if unsupported_paths:
+            self._issue(
+                issues,
+                path,
+                "UNSUPPORTED_FRONTEND_ENDPOINT",
+                "frontend API Client documentation contains an endpoint absent from selected code",
+            )
+        backend_patterns = (
+            r"(?:服务端|后端).{0,20}(?:创建|清理|写入|设置).{0,12}Cookie",
+            r"刷新令牌.{0,12}Cookie",
+            r"(?:HTTP\s*)?(?:201|204)(?:\s+Created|\s+No\s+Content)?",
+        )
+        if any(
+            re.search(pattern, body, flags=re.IGNORECASE) and not re.search(pattern, source_text)
+            for pattern in backend_patterns
+        ):
+            self._issue(
+                issues,
+                path,
+                "FRONTEND_BACKEND_SCOPE_POLLUTION",
+                "frontend API Client documentation invents server-side behavior",
+            )
+
+    @staticmethod
+    def _context_role(code_by_path: dict[str, str]) -> str:
+        paths = [path.replace("\\", "/").lower() for path in code_by_path]
+        if paths and all(
+            re.search(r"(?:^|/)web/src/api/[^/]+\.tsx?$", path) for path in paths
+        ):
+            return "FRONTEND_API_CLIENT"
+        if paths and all(path.endswith("controller.java") for path in paths):
+            return "BACKEND_CONTROLLER"
+        return "GENERAL"
+
+    @staticmethod
+    def _role_matches_document(role: str, title: str) -> bool:
+        lowered = title.lower()
+        if role == "FRONTEND_API_CLIENT":
+            return not any(
+                marker in lowered
+                for marker in ("controller", "后端接口", "服务端接口", "后端认证")
+            )
+        if role == "BACKEND_CONTROLLER":
+            return not any(
+                marker in lowered
+                for marker in ("前端", "客户端", "api client")
+            )
+        return True
+
+    @staticmethod
+    def _operation_target_title(
+        operation: Any,
+        create_operations: dict[str, Any],
+        documents: dict[str, dict[str, Any]],
+    ) -> str:
+        if operation.operationType == OperationType.CREATE_DOCUMENT:
+            return operation.proposedDocumentTitle or ""
+        if operation.createdDocumentClientOperationId:
+            creator = create_operations.get(operation.createdDocumentClientOperationId)
+            return creator.proposedDocumentTitle if creator else ""
+        if operation.documentId:
+            return str(documents.get(str(operation.documentId), {}).get("title") or "")
+        return ""
+
+    @staticmethod
+    def _operation_document_key(operation: Any) -> str:
+        if operation.documentId:
+            return f"existing:{operation.documentId}"
+        if operation.createdDocumentClientOperationId:
+            return f"created:{operation.createdDocumentClientOperationId}"
+        return f"operation:{operation.clientOperationId}"
+
+    @staticmethod
+    def _operation_body(operation: Any) -> str:
+        if operation.proposedPlainText and operation.proposedPlainText.strip():
+            return str(operation.proposedPlainText).strip()
+        if operation.proposedContent is None:
+            return ""
+
+        values: list[str] = []
+
+        def collect(node: Any) -> None:
+            if isinstance(node, dict):
+                text = node.get("text")
+                if isinstance(text, str):
+                    values.append(text)
+                for value in node.values():
+                    collect(value)
+            elif isinstance(node, list):
+                for value in node:
+                    collect(value)
+
+        collect(operation.proposedContent.document)
+        return "\n".join(item for item in values if item.strip()).strip()
+
+    @staticmethod
+    def _normalize_body(value: str) -> str:
+        return re.sub(r"\s+", " ", value).strip().casefold()
+
+    @staticmethod
+    def _is_instructional_body(value: str) -> bool:
+        normalized = re.sub(r"^[#>*\-\d.\s]+", "", value.strip())
+        patterns = (
+            r"^(?:建议新增|建议补充|建议增加|应补充|可以增加|可以描述)",
+            r"^(?:add\s+(?:a\s+)?section|consider\s+documenting|this\s+section\s+should)\b",
+        )
+        return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in patterns)
+
+    @staticmethod
+    def _contains_chinese(value: str) -> bool:
+        return bool(re.search(r"[\u4e00-\u9fff]", value))
+
+    @staticmethod
+    def _is_obviously_mixed_language(value: str) -> bool:
+        without_code = re.sub(r"`[^`]*`", "", value)
+        without_code = re.sub(r"https?://\S+|(?:[A-Za-z]:)?[/\\][^\s，。；：]+", "", without_code)
+        chinese_count = len(re.findall(r"[\u4e00-\u9fff]", without_code))
+        latin_words = re.findall(r"\b[A-Za-z]{3,}\b", without_code)
+        return chinese_count > 0 and len(latin_words) > max(12, chinese_count // 2)
+
+    @staticmethod
+    def _requires_chinese(context: dict[str, Any]) -> bool:
+        instruction = str(context.get("task", {}).get("userInstruction") or "")
+        return not bool(re.search(r"(?:英文|英语|\bEnglish\b)", instruction, re.IGNORECASE))
 
     def _validate_counts_and_sequences(
         self, plan: AgentPlan, issues: list[PlanValidationIssue]

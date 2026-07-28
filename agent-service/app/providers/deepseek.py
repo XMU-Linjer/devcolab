@@ -48,7 +48,10 @@ class DeepSeekProvider:
             user_payload["repair"] = {
                 "previousPlan": previous_plan,
                 "validationErrors": validation_errors or [],
-                "instruction": "Return a complete corrected replacement AgentPlan JSON object.",
+                "instruction": (
+                    "直接返回修正后的完整 AgentPlan JSON。正式标题和正文必须是可发布的"
+                    "简体中文最终内容；不要解释错误原因，不要输出建议、计划或占位文字。"
+                ),
             }
         body = {
             "model": self._model,

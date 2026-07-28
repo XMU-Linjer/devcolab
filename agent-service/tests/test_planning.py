@@ -61,7 +61,7 @@ def context() -> dict[str, Any]:
                 "documentId": DOCUMENT,
                 "structure": {
                     "documentId": DOCUMENT,
-                    "title": "Design",
+                    "title": "应用设计",
                     "documentType": "REQUIREMENT",
                     "reviewStatus": "DRAFT",
                     "version": 3,
@@ -71,7 +71,7 @@ def context() -> dict[str, Any]:
                             "type": "PARAGRAPH",
                             "sortOrder": 0,
                             "version": 7,
-                            "plainText": "old",
+                            "plainText": "旧行为说明",
                         }
                     ],
                     "internal": "drop",
@@ -97,7 +97,7 @@ def update_plan() -> dict[str, Any]:
                 "documentId": DOCUMENT,
                 "blockId": BLOCK,
                 "baseBlockVersion": 7,
-                "proposedPlainText": "new behavior",
+                "proposedPlainText": "应用现在公开提供新的业务行为。",
             }
         ],
         "bindingProposals": [],
@@ -146,6 +146,9 @@ def test_prompt_contains_safety_constraints() -> None:
     assert "Never reference unread files" in prompt
     assert "Do not generate userId, role, status" in prompt
     assert "NO_CHANGE" in prompt
+    assert "工程文档编辑器" in prompt
+    assert "认证模块说明" in prompt
+    assert "不输出建议、写作计划" in prompt
 
 
 def test_valid_no_change() -> None:
@@ -241,7 +244,7 @@ def create_document_plan() -> dict[str, Any]:
                 "clientOperationId": "create-1",
                 "sequenceNumber": 1,
                 "operationType": "CREATE_DOCUMENT",
-                "proposedDocumentTitle": "Application API",
+                "proposedDocumentTitle": "应用 API 说明",
                 "proposedDocumentType": "API",
             },
             {
@@ -250,7 +253,7 @@ def create_document_plan() -> dict[str, Any]:
                 "operationType": "ADD_BLOCK",
                 "createdDocumentClientOperationId": "create-1",
                 "proposedBlockType": "PARAGRAPH",
-                "proposedPlainText": "The application exposes an API.",
+                "proposedPlainText": "应用通过公开接口提供经过代码验证的业务能力。",
             },
         ],
         "bindingProposals": [

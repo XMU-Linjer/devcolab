@@ -46,7 +46,7 @@ def create_document() -> AgentPlan:
                     "clientOperationId": "create-1",
                     "sequenceNumber": 1,
                     "operationType": "CREATE_DOCUMENT",
-                    "proposedDocumentTitle": "Example implementation",
+                    "proposedDocumentTitle": "示例实现说明",
                     "proposedDocumentType": "BACKEND",
                 },
                 {
@@ -55,7 +55,7 @@ def create_document() -> AgentPlan:
                     "operationType": "ADD_BLOCK",
                     "createdDocumentClientOperationId": "create-1",
                     "proposedBlockType": "PARAGRAPH",
-                    "proposedPlainText": "Example is implemented by the selected class.",
+                    "proposedPlainText": "示例能力由当前选中的类实现，并作为正式模块行为对外提供。",
                 },
             ],
             "bindingProposals": [
