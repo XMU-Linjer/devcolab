@@ -50,6 +50,9 @@ class OfficialMcpClient:
             "devcollab.binding.list",
             "devcollab.document.find_candidates",
             "devcollab.document.get_structure",
+            "devcollab.repository.list_files",
+            "devcollab.repository.list_changes",
+            "devcollab.binding.list_batch",
         }
     )
 

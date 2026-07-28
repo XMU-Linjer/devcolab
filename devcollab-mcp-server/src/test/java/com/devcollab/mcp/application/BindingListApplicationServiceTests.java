@@ -37,7 +37,7 @@ class BindingListApplicationServiceTests {
         gateway = mock(KnowledgeCoreGateway.class);
         McpProperties properties = new McpProperties(
                 "/mcp", "test", "1", 400, 40000, 2048,
-                100, 30000, 50, 20, 500,
+                100, 30000, 50, 20, 500, 200, 100,
                 List.of("http://localhost:*"), List.of("localhost:*"),
                 URI.create("http://localhost:8080"), Duration.ofSeconds(1)
         );

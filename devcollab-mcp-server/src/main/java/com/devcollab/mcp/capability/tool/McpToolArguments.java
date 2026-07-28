@@ -4,6 +4,7 @@ import com.devcollab.mcp.error.McpToolErrorCode;
 import com.devcollab.mcp.error.McpToolException;
 
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 final class McpToolArguments {
@@ -66,5 +67,32 @@ final class McpToolArguments {
             return bool;
         }
         throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " must be a boolean");
+    }
+
+    static String optionalString(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String text) {
+            return text;
+        }
+        throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " must be a string");
+    }
+
+    static List<String> requiredStringList(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (!(value instanceof List<?> values) || values.isEmpty()) {
+            throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " is required");
+        }
+        return values.stream().map(item -> {
+            if (!(item instanceof String text) || text.isBlank()) {
+                throw new McpToolException(
+                        McpToolErrorCode.INVALID_ARGUMENT,
+                        name + " must contain non-blank strings"
+                );
+            }
+            return text;
+        }).toList();
     }
 }

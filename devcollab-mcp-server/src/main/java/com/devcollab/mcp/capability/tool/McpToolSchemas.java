@@ -178,6 +178,153 @@ final class McpToolSchemas {
         );
     }
 
+    static Map<String, Object> repositoryListFilesInput(
+            int maxPathCharacters,
+            int maxPageSize
+    ) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("workspaceId", uuidProperty("Workspace identifier"));
+        properties.put("repositoryId", uuidProperty("Repository identifier"));
+        properties.put("pathPrefix", Map.of(
+                "type", "string", "maxLength", maxPathCharacters
+        ));
+        properties.put("recursive", Map.of("type", "boolean", "default", true));
+        properties.put("cursor", Map.of("type", "string", "minLength", 1));
+        properties.put("limit", Map.of(
+                "type", "integer", "minimum", 1, "maximum", maxPageSize
+        ));
+        return objectSchema(properties, List.of("workspaceId", "repositoryId"));
+    }
+
+    static Map<String, Object> repositoryListFilesOutput() {
+        Map<String, Object> file = objectSchema(
+                Map.of(
+                        "filePath", Map.of("type", "string"),
+                        "fileName", Map.of("type", "string"),
+                        "extension", Map.of("type", "string"),
+                        "sizeBytes", Map.of("type", "integer", "minimum", 0),
+                        "language", Map.of("type", List.of("string", "null")),
+                        "readable", Map.of("type", "boolean"),
+                        "isDirectory", Map.of("type", "boolean")
+                ),
+                List.of(
+                        "filePath", "fileName", "extension", "sizeBytes",
+                        "language", "readable", "isDirectory"
+                )
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "pathPrefix", Map.of("type", "string"),
+                        "recursive", Map.of("type", "boolean"),
+                        "files", Map.of("type", "array", "items", file),
+                        "nextCursor", Map.of("type", List.of("string", "null")),
+                        "hasMore", Map.of("type", "boolean")
+                ),
+                List.of(
+                        "workspaceId", "repositoryId", "pathPrefix", "recursive",
+                        "files", "nextCursor", "hasMore"
+                )
+        );
+    }
+
+    static Map<String, Object> repositoryListChangesInput(int maxPageSize) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("workspaceId", uuidProperty("Workspace identifier"));
+        properties.put("repositoryId", uuidProperty("Repository identifier"));
+        properties.put("cursor", Map.of("type", "string", "minLength", 1));
+        properties.put("limit", Map.of(
+                "type", "integer", "minimum", 1, "maximum", maxPageSize
+        ));
+        return objectSchema(properties, List.of("workspaceId", "repositoryId"));
+    }
+
+    static Map<String, Object> repositoryListChangesOutput() {
+        Map<String, Object> file = objectSchema(
+                Map.of(
+                        "status", Map.of(
+                                "type", "string",
+                                "enum", List.of("ADDED", "MODIFIED", "DELETED", "RENAMED")
+                        ),
+                        "filePath", Map.of("type", "string"),
+                        "oldPath", Map.of("type", List.of("string", "null")),
+                        "binaryFile", Map.of("type", "boolean")
+                ),
+                List.of("status", "filePath", "oldPath", "binaryFile")
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "changeId", uuidProperty("Latest persisted change identifier", true),
+                        "changeType", Map.of("type", List.of("string", "null")),
+                        "commitSha", Map.of("type", List.of("string", "null")),
+                        "files", Map.of("type", "array", "items", file),
+                        "nextCursor", Map.of("type", List.of("string", "null")),
+                        "hasMore", Map.of("type", "boolean")
+                ),
+                List.of(
+                        "workspaceId", "repositoryId", "changeId", "changeType",
+                        "commitSha", "files", "nextCursor", "hasMore"
+                )
+        );
+    }
+
+    static Map<String, Object> bindingListBatchInput(
+            int maxPathCharacters,
+            int maxPaths
+    ) {
+        return objectSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "filePaths", Map.of(
+                                "type", "array",
+                                "minItems", 1,
+                                "maxItems", maxPaths,
+                                "items", Map.of(
+                                        "type", "string",
+                                        "minLength", 1,
+                                        "maxLength", maxPathCharacters
+                                )
+                        )
+                ),
+                List.of("workspaceId", "repositoryId", "filePaths")
+        );
+    }
+
+    static Map<String, Object> bindingListBatchOutput() {
+        Map<String, Object> binding = objectSchema(
+                Map.of(
+                        "bindingId", uuidProperty("Binding identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "documentId", uuidProperty("Document identifier"),
+                        "blockId", uuidProperty("Block identifier", true),
+                        "pathPattern", Map.of("type", "string")
+                ),
+                List.of(
+                        "bindingId", "repositoryId", "documentId",
+                        "blockId", "pathPattern"
+                )
+        );
+        Map<String, Object> file = objectSchema(
+                Map.of(
+                        "filePath", Map.of("type", "string"),
+                        "bindings", Map.of("type", "array", "items", binding)
+                ),
+                List.of("filePath", "bindings")
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "files", Map.of("type", "array", "items", file)
+                ),
+                List.of("workspaceId", "repositoryId", "files")
+        );
+    }
+
     static Map<String, Object> findCandidatesInput(
             int maxPathCharacters,
             int maxQueryCharacters,

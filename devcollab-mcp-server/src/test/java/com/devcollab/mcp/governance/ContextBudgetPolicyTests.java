@@ -69,6 +69,8 @@ class ContextBudgetPolicyTests {
                 50,
                 20,
                 500,
+                200,
+                100,
                 List.of("http://localhost:*"),
                 List.of("localhost:*"),
                 URI.create("http://localhost:8080"),

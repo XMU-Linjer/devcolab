@@ -18,6 +18,8 @@ devcollab:
     max-bindings: ${DEVCOLLAB_MCP_MAX_BINDINGS:50}
     max-candidates: ${DEVCOLLAB_MCP_MAX_CANDIDATES:20}
     max-document-query-characters: ${DEVCOLLAB_MCP_MAX_DOCUMENT_QUERY_CHARACTERS:500}
+    max-repository-page-size: ${DEVCOLLAB_MCP_MAX_REPOSITORY_PAGE_SIZE:200}
+    max-binding-batch-paths: ${DEVCOLLAB_MCP_MAX_BINDING_BATCH_PATHS:100}
     review-submission:
       max-operations: ${DEVCOLLAB_MCP_REVIEW_MAX_OPERATIONS:50}
       max-evidence: ${DEVCOLLAB_MCP_REVIEW_MAX_EVIDENCE:50}

@@ -47,13 +47,16 @@ async def test_official_client_maps_mcp_timeout(
     assert str(error.value) == "MCP request timed out"
 
 
-def test_official_client_whitelist_is_exactly_five_read_tools() -> None:
+def test_official_client_whitelist_is_exactly_eight_read_tools() -> None:
     assert OfficialMcpClient.ALLOWED_TOOLS == {
         "devcollab.workspace.get_context",
         "devcollab.code.read",
         "devcollab.binding.list",
         "devcollab.document.find_candidates",
         "devcollab.document.get_structure",
+        "devcollab.repository.list_files",
+        "devcollab.repository.list_changes",
+        "devcollab.binding.list_batch",
     }
 
 

@@ -25,6 +25,8 @@ public record McpProperties(
         @Min(1) int maxBindings,
         @Min(1) int maxCandidates,
         @Min(1) int maxDocumentQueryCharacters,
+        @Min(1) @Max(200) int maxRepositoryPageSize,
+        @Min(1) @Max(100) int maxBindingBatchPaths,
         @NotEmpty List<@NotBlank String> allowedOrigins,
         @NotEmpty List<@NotBlank String> allowedHosts,
         URI coreBaseUrl,

@@ -31,8 +31,11 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -152,6 +155,118 @@ public class GitKnowledgeApplicationService {
         workspaceService.requireMembership(workspaceId, currentUserId);
         requireRepository(repositoryId, workspaceId);
         return gitRepository.findFilesByRepositoryId(repositoryId);
+    }
+
+    public RepositoryFilePageResult listFilePage(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String pathPrefix,
+            boolean recursive,
+            String cursor,
+            int limit
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        requireRepository(repositoryId, workspaceId);
+        requirePageLimit(limit);
+        String prefix = normalizeOptionalPrefix(pathPrefix);
+        String afterPath = decodeCursor(cursor);
+        List<GitRepositoryFile> matches = gitRepository.findFilesByRepositoryId(repositoryId)
+                .stream()
+                .filter(file -> withinPrefix(file.path(), prefix, recursive))
+                .sorted(Comparator.comparing(GitRepositoryFile::path))
+                .filter(file -> afterPath == null || file.path().compareTo(afterPath) > 0)
+                .limit((long) limit + 1)
+                .toList();
+        boolean hasMore = matches.size() > limit;
+        List<GitRepositoryFile> page = hasMore ? matches.subList(0, limit) : matches;
+        String nextCursor = hasMore && !page.isEmpty()
+                ? encodeCursor(page.get(page.size() - 1).path()) : null;
+        return new RepositoryFilePageResult(
+                workspaceId, repositoryId, prefix, recursive,
+                List.copyOf(page), nextCursor, hasMore
+        );
+    }
+
+    public RepositoryChangePageResult listLatestChangeFilePage(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String cursor,
+            int limit
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        requireRepository(repositoryId, workspaceId);
+        requirePageLimit(limit);
+        List<GitChange> changes = gitRepository.findChangesByRepositoryId(repositoryId);
+        if (changes.isEmpty()) {
+            return new RepositoryChangePageResult(
+                    workspaceId, repositoryId, null, null, null,
+                    List.of(), null, false
+            );
+        }
+        GitChange latest = changes.get(0);
+        String afterKey = decodeCursor(cursor);
+        List<RepositoryChangePageResult.ChangedFile> matches =
+                gitRepository.findDiffsByChangeId(latest.id()).stream()
+                        .map(diff -> new RepositoryChangePageResult.ChangedFile(
+                                diff.id(), diff.changeType(), diff.path(),
+                                diff.oldPath(), diff.binaryFile()
+                        ))
+                        .sorted(Comparator
+                                .comparing(RepositoryChangePageResult.ChangedFile::filePath)
+                                .thenComparing(RepositoryChangePageResult.ChangedFile::diffId))
+                        .filter(file -> afterKey == null || changeKey(file).compareTo(afterKey) > 0)
+                        .limit((long) limit + 1)
+                        .toList();
+        boolean hasMore = matches.size() > limit;
+        List<RepositoryChangePageResult.ChangedFile> page =
+                hasMore ? matches.subList(0, limit) : matches;
+        String nextCursor = hasMore && !page.isEmpty()
+                ? encodeCursor(changeKey(page.get(page.size() - 1))) : null;
+        return new RepositoryChangePageResult(
+                workspaceId, repositoryId, latest.id(),
+                latest.changeType().name(), latest.commitSha(),
+                List.copyOf(page), nextCursor, hasMore
+        );
+    }
+
+    public CodeBindingBatchQueryResult queryBindingsBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            List<String> filePaths
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        requireRepository(repositoryId, workspaceId);
+        if (filePaths == null || filePaths.isEmpty() || filePaths.size() > 100) {
+            throw new InvalidCodeBindingException("filePaths 数量必须在 1 到 100 之间");
+        }
+        List<String> normalizedPaths = filePaths.stream()
+                .map(this::normalizePath)
+                .distinct()
+                .sorted()
+                .toList();
+        List<CodeDocumentBinding> bindings =
+                gitRepository.findBindingsByRepositoryId(repositoryId);
+        List<CodeBindingBatchQueryResult.FileBindings> files = normalizedPaths.stream()
+                .map(path -> new CodeBindingBatchQueryResult.FileBindings(
+                        path,
+                        bindings.stream()
+                                .filter(binding -> matches(binding.pathPattern(), path))
+                                .distinct()
+                                .sorted(Comparator
+                                        .comparing(CodeDocumentBinding::documentId)
+                                        .thenComparing(CodeDocumentBinding::id))
+                                .map(binding -> new CodeBindingBatchQueryResult.Binding(
+                                        binding.id(), binding.repositoryId(),
+                                        binding.documentId(), binding.blockId(),
+                                        binding.pathPattern()
+                                ))
+                                .toList()
+                ))
+                .toList();
+        return new CodeBindingBatchQueryResult(workspaceId, repositoryId, files);
     }
 
     public GitRepositorySourceDetails getSource(
@@ -503,6 +618,58 @@ public class GitKnowledgeApplicationService {
         String normalized = com.devcollab.knowledgecore.common.util.RepositoryPathValidator.normalize(value);
         com.devcollab.knowledgecore.common.util.RepositoryPathValidator.validate(value, "代码路径必须是仓库内相对路径");
         return normalized;
+    }
+
+    private String normalizeOptionalPrefix(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = normalizePath(value);
+        return normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1) : normalized;
+    }
+
+    private boolean withinPrefix(String path, String prefix, boolean recursive) {
+        String remainder;
+        if (prefix.isEmpty()) {
+            remainder = path;
+        } else {
+            String directoryPrefix = prefix + "/";
+            if (!path.startsWith(directoryPrefix)) {
+                return false;
+            }
+            remainder = path.substring(directoryPrefix.length());
+        }
+        return recursive || !remainder.contains("/");
+    }
+
+    private void requirePageLimit(int limit) {
+        if (limit < 1 || limit > 200) {
+            throw new InvalidCodeBindingException("limit 必须在 1 到 200 之间");
+        }
+    }
+
+    private String encodeCursor(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String decodeCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            return new String(
+                    Base64.getUrlDecoder().decode(cursor),
+                    StandardCharsets.UTF_8
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidCodeBindingException("cursor 格式不合法");
+        }
+    }
+
+    private String changeKey(RepositoryChangePageResult.ChangedFile file) {
+        return file.filePath() + "\0" + file.diffId();
     }
 
     private boolean matches(String pattern, String path) {

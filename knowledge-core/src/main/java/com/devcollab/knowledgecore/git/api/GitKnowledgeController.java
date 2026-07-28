@@ -115,6 +115,53 @@ public class GitKnowledgeController {
     }
 
     @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-files"
+    )
+    public RepositoryFilePageResponse listRepositoryFilePage(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @RequestParam(required = false) String pathPrefix,
+            @RequestParam(defaultValue = "true") boolean recursive,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "200") int limit,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return RepositoryFilePageResponse.from(service.listFilePage(
+                workspaceId, repositoryId, currentUser.userId(), pathPrefix,
+                recursive, cursor, limit
+        ));
+    }
+
+    @GetMapping(
+            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-changes"
+    )
+    public RepositoryChangePageResponse listRepositoryChangePage(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "200") int limit,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return RepositoryChangePageResponse.from(service.listLatestChangeFilePage(
+                workspaceId, repositoryId, currentUser.userId(), cursor, limit
+        ));
+    }
+
+    @PostMapping(
+            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings/batch"
+    )
+    public CodeBindingBatchQueryResponse queryBindingsBatch(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @Valid @RequestBody CodeBindingBatchQueryRequest request,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return CodeBindingBatchQueryResponse.from(service.queryBindingsBatch(
+                workspaceId, repositoryId, currentUser.userId(), request.filePaths()
+        ));
+    }
+
+    @GetMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source"
     )
     public GitRepositorySourceResponse getRepositorySource(

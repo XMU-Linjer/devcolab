@@ -43,6 +43,31 @@ public interface KnowledgeCoreGateway {
             McpUserIdentity identity
     );
 
+    RepositoryFilePage listRepositoryFiles(
+            UUID workspaceId,
+            UUID repositoryId,
+            String pathPrefix,
+            boolean recursive,
+            String cursor,
+            int limit,
+            McpUserIdentity identity
+    );
+
+    RepositoryChangePage listRepositoryChanges(
+            UUID workspaceId,
+            UUID repositoryId,
+            String cursor,
+            int limit,
+            McpUserIdentity identity
+    );
+
+    BindingBatchResult getFileBindingsBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            List<String> filePaths,
+            McpUserIdentity identity
+    );
+
     Map<String, Object> submitDocumentChange(
             UUID workspaceId,
             Map<String, Object> request,
@@ -132,6 +157,67 @@ public interface KnowledgeCoreGateway {
             List<DocumentCandidate> candidates,
             boolean truncated,
             int omittedCandidateCount
+    ) {
+    }
+
+    record RepositoryFilePage(
+            UUID workspaceId,
+            UUID repositoryId,
+            String pathPrefix,
+            boolean recursive,
+            List<RepositoryFileInfo> files,
+            String nextCursor,
+            boolean hasMore
+    ) {
+    }
+
+    record RepositoryFileInfo(
+            String filePath,
+            String fileName,
+            String extension,
+            long sizeBytes,
+            String language,
+            boolean readable,
+            boolean isDirectory
+    ) {
+    }
+
+    record RepositoryChangePage(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID changeId,
+            String changeType,
+            String commitSha,
+            List<RepositoryChangedFile> files,
+            String nextCursor,
+            boolean hasMore
+    ) {
+    }
+
+    record RepositoryChangedFile(
+            String status,
+            String filePath,
+            String oldPath,
+            boolean binaryFile
+    ) {
+    }
+
+    record BindingBatchResult(
+            UUID workspaceId,
+            UUID repositoryId,
+            List<FileBindingGroup> files
+    ) {
+    }
+
+    record FileBindingGroup(String filePath, List<BatchBindingInfo> bindings) {
+    }
+
+    record BatchBindingInfo(
+            UUID bindingId,
+            UUID repositoryId,
+            UUID documentId,
+            UUID blockId,
+            String pathPattern
     ) {
     }
 

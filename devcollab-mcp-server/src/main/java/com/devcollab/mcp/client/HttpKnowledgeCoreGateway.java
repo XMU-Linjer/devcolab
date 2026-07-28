@@ -217,6 +217,124 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
     }
 
     @Override
+    public RepositoryFilePage listRepositoryFiles(
+            UUID workspaceId,
+            UUID repositoryId,
+            String pathPrefix,
+            boolean recursive,
+            String cursor,
+            int limit,
+            McpUserIdentity identity
+    ) {
+        try {
+            RepositoryFilePagePayload payload = restClient.get()
+                    .uri(builder -> builder
+                            .path("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-files")
+                            .queryParamIfPresent("pathPrefix", java.util.Optional.ofNullable(pathPrefix))
+                            .queryParam("recursive", recursive)
+                            .queryParamIfPresent("cursor", java.util.Optional.ofNullable(cursor))
+                            .queryParam("limit", limit)
+                            .build(workspaceId, repositoryId))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .retrieve()
+                    .body(RepositoryFilePagePayload.class);
+            if (payload == null) {
+                throw new McpToolException(McpToolErrorCode.INTERNAL_ERROR, "File page was empty");
+            }
+            return new RepositoryFilePage(
+                    payload.workspaceId(), payload.repositoryId(),
+                    payload.pathPrefix(), payload.recursive(),
+                    payload.files() == null ? List.of() : payload.files().stream()
+                            .map(file -> new RepositoryFileInfo(
+                                    file.filePath(), file.fileName(), file.extension(),
+                                    file.sizeBytes(), file.language(), file.readable(),
+                                    file.isDirectory()
+                            )).toList(),
+                    payload.nextCursor(), payload.hasMore()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    @Override
+    public RepositoryChangePage listRepositoryChanges(
+            UUID workspaceId,
+            UUID repositoryId,
+            String cursor,
+            int limit,
+            McpUserIdentity identity
+    ) {
+        try {
+            RepositoryChangePagePayload payload = restClient.get()
+                    .uri(builder -> builder
+                            .path("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-changes")
+                            .queryParamIfPresent("cursor", java.util.Optional.ofNullable(cursor))
+                            .queryParam("limit", limit)
+                            .build(workspaceId, repositoryId))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .retrieve()
+                    .body(RepositoryChangePagePayload.class);
+            if (payload == null) {
+                throw new McpToolException(McpToolErrorCode.INTERNAL_ERROR, "Change page was empty");
+            }
+            return new RepositoryChangePage(
+                    payload.workspaceId(), payload.repositoryId(), payload.changeId(),
+                    payload.changeType(), payload.commitSha(),
+                    payload.files() == null ? List.of() : payload.files().stream()
+                            .map(file -> new RepositoryChangedFile(
+                                    file.status(), file.filePath(), file.oldPath(),
+                                    file.binaryFile()
+                            )).toList(),
+                    payload.nextCursor(), payload.hasMore()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    @Override
+    public BindingBatchResult getFileBindingsBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            List<String> filePaths,
+            McpUserIdentity identity
+    ) {
+        try {
+            BindingBatchPayload payload = restClient.post()
+                    .uri(
+                            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings/batch",
+                            workspaceId, repositoryId
+                    )
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .body(Map.of("filePaths", filePaths))
+                    .retrieve()
+                    .body(BindingBatchPayload.class);
+            if (payload == null) {
+                throw new McpToolException(McpToolErrorCode.INTERNAL_ERROR, "Binding batch was empty");
+            }
+            return new BindingBatchResult(
+                    payload.workspaceId(), payload.repositoryId(),
+                    payload.files() == null ? List.of() : payload.files().stream()
+                            .map(file -> new FileBindingGroup(
+                                    file.filePath(),
+                                    file.bindings() == null ? List.of()
+                                            : file.bindings().stream().map(binding ->
+                                                    new BatchBindingInfo(
+                                                            binding.bindingId(),
+                                                            binding.repositoryId(),
+                                                            binding.documentId(),
+                                                            binding.blockId(),
+                                                            binding.pathPattern()
+                                                    )).toList()
+                            )).toList()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    @Override
     public Map<String, Object> submitDocumentChange(
             UUID workspaceId,
             Map<String, Object> request,
@@ -395,6 +513,70 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             List<DocumentCandidatePayload> candidates,
             boolean truncated,
             int omittedCandidateCount
+    ) {
+    }
+
+    private record RepositoryFilePagePayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            String pathPrefix,
+            boolean recursive,
+            List<RepositoryFilePayload> files,
+            String nextCursor,
+            boolean hasMore
+    ) {
+    }
+
+    private record RepositoryFilePayload(
+            String filePath,
+            String fileName,
+            String extension,
+            long sizeBytes,
+            String language,
+            boolean readable,
+            boolean isDirectory
+    ) {
+    }
+
+    private record RepositoryChangePagePayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID changeId,
+            String changeType,
+            String commitSha,
+            List<RepositoryChangedFilePayload> files,
+            String nextCursor,
+            boolean hasMore
+    ) {
+    }
+
+    private record RepositoryChangedFilePayload(
+            String status,
+            String filePath,
+            String oldPath,
+            boolean binaryFile
+    ) {
+    }
+
+    private record BindingBatchPayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            List<FileBindingGroupPayload> files
+    ) {
+    }
+
+    private record FileBindingGroupPayload(
+            String filePath,
+            List<BatchBindingPayload> bindings
+    ) {
+    }
+
+    private record BatchBindingPayload(
+            UUID bindingId,
+            UUID repositoryId,
+            UUID documentId,
+            UUID blockId,
+            String pathPattern
     ) {
     }
 
