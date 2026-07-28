@@ -153,6 +153,9 @@ services:
       AGENT_DATABASE_URL: ${AGENT_DATABASE_URL:-postgresql://devcollab:devcollab@postgres:5432/devcollab}
       KNOWLEDGE_CORE_BASE_URL: ${AGENT_CORE_BASE_URL:-http://host.docker.internal:8080}
       AGENT_INTERNAL_SERVICE_TOKEN: ${DEVCOLLAB_AGENT_INTERNAL_TOKEN:-devcollab-local-agent-service-token-change-me}
+      AGENT_PROJECT_UNIT_CONCURRENCY: ${AGENT_PROJECT_UNIT_CONCURRENCY:-2}
+      AGENT_PROJECT_EXECUTION_LIMIT: ${AGENT_PROJECT_EXECUTION_LIMIT:-0}
+      AGENT_PROJECT_MAX_TOOL_CALLS: ${AGENT_PROJECT_MAX_TOOL_CALLS:-24}
     expose:
       - "8092"
     depends_on:
@@ -188,6 +191,9 @@ services:
       AGENT_DATABASE_URL: ${AGENT_DATABASE_URL:-postgresql://devcollab:devcollab@postgres:5432/devcollab}
       KNOWLEDGE_CORE_BASE_URL: ${AGENT_CORE_BASE_URL:-http://host.docker.internal:8080}
       AGENT_INTERNAL_SERVICE_TOKEN: ${DEVCOLLAB_AGENT_INTERNAL_TOKEN:-devcollab-local-agent-service-token-change-me}
+      AGENT_PROJECT_UNIT_CONCURRENCY: ${AGENT_PROJECT_UNIT_CONCURRENCY:-2}
+      AGENT_PROJECT_EXECUTION_LIMIT: ${AGENT_PROJECT_EXECUTION_LIMIT:-0}
+      AGENT_PROJECT_MAX_TOOL_CALLS: ${AGENT_PROJECT_MAX_TOOL_CALLS:-24}
     command: ["python", "-m", "app.worker"]
     depends_on:
       agent-migrate:

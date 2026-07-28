@@ -263,7 +263,11 @@ public class GitKnowledgeApplicationService {
                                         .thenComparing(CodeDocumentBinding::id))
                                 .map(binding -> new CodeBindingBatchQueryResult.Binding(
                                         binding.id(), binding.repositoryId(),
-                                        binding.documentId(), binding.blockId(),
+                                        binding.documentId(),
+                                        documentRepository.findById(binding.documentId())
+                                                .map(Document::title)
+                                                .orElse(null),
+                                        binding.blockId(),
                                         binding.pathPattern()
                                 ))
                                 .toList()

@@ -118,15 +118,15 @@
         append-to-body
       >
         <section v-if="projectScanJob" class="project-scan-panel">
-          <el-tag :type="projectScanJob.status === 'READY_FOR_ANALYSIS' ? 'success' : 'primary'">
+          <el-tag :type="projectJobTerminal ? 'success' : 'primary'">
             {{ projectScanPhaseLabel }}
           </el-tag>
           <el-progress
-            v-if="projectScanJob.status !== 'READY_FOR_ANALYSIS'"
+            v-if="!projectJobTerminal"
             :percentage="projectScanProgress"
             :indeterminate="projectScanJob.status === 'RUNNING'"
           />
-          <template v-if="projectScanJob.status === 'READY_FOR_ANALYSIS'">
+          <template v-if="projectScanJob.plannedUnitCount > 0">
             <h3>项目结构分析完成</h3>
             <dl class="project-scan-stats">
               <div><dt>发现文件</dt><dd>{{ projectScanJob.discoveredFileCount }}</dd></div>
@@ -134,6 +134,15 @@
               <div><dt>语义模块</dt><dd>{{ projectScanJob.analysisUnitCount }}</dd></div>
               <div><dt>存在于多个模块的文件</dt><dd>{{ projectScanJob.overlappingFileCount }}</dd></div>
             </dl>
+            <dl class="project-scan-stats">
+              <div><dt>正在处理</dt><dd>{{ projectScanJob.runningUnitCount }}</dd></div>
+              <div><dt>已提交评审</dt><dd>{{ projectScanJob.reviewSubmittedUnitCount }}</dd></div>
+              <div><dt>无需修改</dt><dd>{{ projectScanJob.noChangeUnitCount }}</dd></div>
+              <div><dt>失败</dt><dd>{{ projectScanJob.failedUnitCount }}</dd></div>
+            </dl>
+            <p v-if="projectScanJob.currentUnitNames.length" class="project-scan-hint">
+              正在处理：{{ projectScanJob.currentUnitNames.join('、') }}
+            </p>
             <h4>语义模块预览</h4>
             <el-empty v-if="projectScanUnits.length === 0" description="暂无语义模块" />
             <ul v-else class="project-scan-units">
@@ -142,6 +151,11 @@
                 <span>{{ unit.semanticKind }} · {{ unit.primaryFiles.length }} 个主文件</span>
               </li>
             </ul>
+            <el-button
+              v-if="projectScanJob.reviewSubmittedUnitCount > 0"
+              type="primary"
+              @click="handleReviewNavigation"
+            >进入审批区</el-button>
           </template>
           <el-alert
             v-else-if="projectScanJob.status === 'FAILED'"
@@ -276,12 +290,28 @@ const projectScanPhaseLabels: Partial<Record<NonNullable<AgentJob['phase']>, str
   BUILDING_SEMANTIC_GRAPH: '正在构建语义关系',
   BUILDING_ANALYSIS_UNITS: '正在构建语义模块',
   READY_FOR_ANALYSIS: '项目结构分析完成',
+  PLANNING_UNITS: '正在由 DeepSeek 划分语义模块',
+  VALIDATING_UNIT_PLAN: '正在校验语义模块计划',
+  EXECUTING_UNITS: '正在逐个生成正式文档',
+  COMPLETED: '项目处理完成',
 };
+const projectJobTerminal = computed(() => [
+  'COMPLETED',
+  'PARTIALLY_COMPLETED',
+  'FAILED',
+  'CANCELLED',
+].includes(projectScanJob.value?.status ?? ''));
 const projectScanPhaseLabel = computed(() => {
   const phase = projectScanJob.value?.phase;
   return phase ? projectScanPhaseLabels[phase] ?? '等待后台扫描' : '等待后台扫描';
 });
 const projectScanProgress = computed(() => {
+  if (projectScanJob.value?.plannedUnitCount) {
+    return Math.round(
+      ((projectScanJob.value.completedUnitCount + projectScanJob.value.failedUnitCount)
+        / projectScanJob.value.plannedUnitCount) * 100,
+    );
+  }
   const phases: AgentJob['phase'][] = [
     'DISCOVERING_FILES',
     'CLASSIFYING_FILES',
@@ -289,6 +319,10 @@ const projectScanProgress = computed(() => {
     'LOADING_BINDINGS',
     'BUILDING_SEMANTIC_GRAPH',
     'BUILDING_ANALYSIS_UNITS',
+    'PLANNING_UNITS',
+    'VALIDATING_UNIT_PLAN',
+    'EXECUTING_UNITS',
+    'COMPLETED',
     'READY_FOR_ANALYSIS',
   ];
   const index = phases.indexOf(projectScanJob.value?.phase ?? null);
@@ -571,10 +605,12 @@ async function pollProjectScan(jobId: string) {
   if (projectScanPollTimer !== null) window.clearTimeout(projectScanPollTimer);
   try {
     projectScanJob.value = await getAgentJob(jobId);
-    if (projectScanJob.value.status === 'READY_FOR_ANALYSIS') {
+    if (projectScanJob.value.plannedUnitCount > 0) {
       const page = await listAgentJobUnits(jobId, 0, 20);
       projectScanUnits.value = page.units;
       projectScanDrawerOpen.value = true;
+    }
+    if (projectJobTerminal.value) {
       localStorage.removeItem(projectScanStorageKey());
       return;
     }

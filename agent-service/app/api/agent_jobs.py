@@ -168,6 +168,18 @@ def _summary(record: dict[str, Any]) -> AgentJobSummary:
         unboundFileCount=cast(int, record.get("unbound_file_count", 0)),
         analysisUnitCount=cast(int, record.get("analysis_unit_count", 0)),
         overlappingFileCount=cast(int, record.get("overlapping_file_count", 0)),
+        plannerStatus=record.get("planner_status"),
+        plannedUnitCount=cast(int, record.get("planned_unit_count", 0)),
+        pendingUnitCount=cast(int, record.get("pending_unit_count", 0)),
+        runningUnitCount=cast(int, record.get("running_unit_count", 0)),
+        completedUnitCount=cast(int, record.get("completed_unit_count", 0)),
+        failedUnitCount=cast(int, record.get("failed_unit_count", 0)),
+        noChangeUnitCount=cast(int, record.get("no_change_unit_count", 0)),
+        reviewSubmittedUnitCount=cast(
+            int, record.get("review_submitted_unit_count", 0)
+        ),
+        currentPhase=record.get("current_phase"),
+        currentUnitNames=cast(list[str], record.get("current_unit_names", []))[:5],
     )
 
 
@@ -185,7 +197,7 @@ def _semantic_unit(record: dict[str, Any]) -> SemanticAnalysisUnit:
         semanticKey=str(record["semantic_key"]),
         displayName=str(record["display_name"]),
         semanticKind=str(record["semantic_kind"]),
-        status="READY_FOR_ANALYSIS",
+        status=record["status"],
         primaryDirectory=str(record["primary_directory"] or ""),
         files=[
             SemanticUnitFile(

@@ -66,6 +66,30 @@ class AgentDelegationServiceTests {
     }
 
     @Test
+    void projectDelegationCanDiscoverAndSubmitThroughTheExistingReviewBoundary() {
+        UUID jobId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(gitRepository.findRepositoryById(repositoryId))
+                .thenReturn(Optional.of(repository(repositoryId, workspaceId, "abc123")));
+
+        AgentDelegation delegation =
+                service.create(
+                        jobId, workspaceId, repositoryId, "PROJECT_INITIALIZATION", userId
+                );
+
+        assertThat(delegation.allowedTools()).contains(
+                "devcollab.repository.list_files",
+                "devcollab.repository.inspect_code_metadata",
+                "devcollab.code.read",
+                "devcollab.binding.list_batch",
+                "devcollab.document.get_structure",
+                "devcollab.review.submit_document_change"
+        );
+    }
+
+    @Test
     void rejectsExchangeWhenServiceIdentityIsInvalid() {
         assertThatThrownBy(() ->
                 service.exchange(UUID.randomUUID(), UUID.randomUUID(), "wrong"))

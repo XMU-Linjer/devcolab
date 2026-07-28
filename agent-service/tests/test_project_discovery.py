@@ -20,6 +20,7 @@ from app.runtime.file_classification import classify_file
 from app.runtime.job_executor import JobExecutionError
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import ProjectFile, build_semantic_units
+from app.schemas.unit_plans import UnitPlan
 from app.worker import AgentWorker
 
 WORKSPACE_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -261,7 +262,7 @@ async def test_project_discovery_pages_deduplicates_batches_and_never_persists_s
         phases.append(phase)
 
     service = ProjectDiscoveryService(client, settings, on_phase)
-    rows, units, stats = await service.execute(
+    rows, project_files, planner_batches, project_index, stats = await service.execute(
         job_id=uuid4(),
         workspace_id=WORKSPACE_ID,
         repository_id=REPOSITORY_ID,
@@ -272,15 +273,15 @@ async def test_project_discovery_pages_deduplicates_batches_and_never_persists_s
     assert stats["supported_code_count"] == 2
     assert stats["metadata_failed_count"] == 1
     assert stats["skipped_file_count"] == 2
-    assert units
+    assert project_files
+    assert project_index["files"]
+    assert planner_batches
     assert all("content" not in row and "authorization" not in row for row in rows)
     assert phases == [
         "DISCOVERING_FILES",
         "CLASSIFYING_FILES",
         "LOADING_CODE_METADATA",
         "LOADING_BINDINGS",
-        "BUILDING_SEMANTIC_GRAPH",
-        "BUILDING_ANALYSIS_UNITS",
     ]
     assert not any(
         name == "devcollab.binding.list" for name, _arguments, _auth in client.calls
@@ -326,7 +327,7 @@ async def test_project_discovery_counts_missing_metadata_and_rejects_wrong_revis
         return None
 
     service = ProjectDiscoveryService(client, settings, on_phase)
-    rows, _units, stats = await service.execute(
+    rows, _project_files, _planner_batches, _project_index, stats = await service.execute(
         job_id=uuid4(),
         workspace_id=WORKSPACE_ID,
         repository_id=REPOSITORY_ID,
@@ -412,7 +413,7 @@ def test_create_project_job_is_enqueue_only_and_units_query_is_authorized(
 
 
 @pytest.mark.asyncio
-async def test_worker_completes_project_discovery_without_model_or_review(
+async def test_worker_plans_project_units_and_enqueues_them_for_execution(
     settings: Settings,
 ) -> None:
     repository = MemoryAgentJobRepository()
@@ -437,13 +438,44 @@ async def test_worker_completes_project_discovery_without_model_or_review(
         },
     )
     model = FakeModelProvider()
+    model.unit_plans = [
+        UnitPlan.model_validate(
+            {
+                "units": [
+                    {
+                        "name": "示例业务能力",
+                        "kind": "BUSINESS_SERVICE",
+                        "summary": "说明示例业务服务的职责与边界。",
+                        "primaryFiles": ["src/Example.java"],
+                        "supportingFiles": [],
+                        "relatedDocumentIds": [],
+                        "groupingEvidence": ["SERVICE roleHint"],
+                    },
+                    {
+                        "name": "示例接口能力",
+                        "kind": "BACKEND_REST_API",
+                        "summary": "说明示例接口的输入输出边界。",
+                        "primaryFiles": ["src/Example.java"],
+                        "supportingFiles": [],
+                        "relatedDocumentIds": [],
+                        "groupingEvidence": ["CONTROLLER roleHint"],
+                    },
+                ]
+            }
+        )
+    ]
     mcp = FakeMcpClient(bound=False)
     worker = AgentWorker(
         repository,
         mcp,
         FakeDelegationClient(),
         model,
-        settings.model_copy(update={"agent_worker_heartbeat_seconds": 0.01}),
+        settings.model_copy(
+            update={
+                "agent_worker_heartbeat_seconds": 0.01,
+                "agent_project_execution_limit": 1,
+            }
+        ),
         worker_id="project-worker",
     )
     claimed = await repository.claim_next_unit("project-worker", 60)
@@ -452,19 +484,24 @@ async def test_worker_completes_project_discovery_without_model_or_review(
     await worker._execute(claimed)
 
     job = next(iter(repository.jobs.values()))
-    assert job["status"] == "READY_FOR_ANALYSIS"
-    assert job["phase"] == "READY_FOR_ANALYSIS"
+    assert job["status"] == "RUNNING"
+    assert job["phase"] == "EXECUTING_UNITS"
     assert job["completed_units"] == 0
     assert job["review_request_ids"] == []
-    assert model.calls == []
+    assert len(model.unit_plan_calls) == 1
+    assert (
+        model.unit_plan_calls[0]["projectIndex"]["requestedMaxUnits"]
+        == settings.agent_max_analysis_units
+    )
     assert mcp.submissions == []
     semantic = [
         item for item in repository.units.values()
         if item["unit_kind"] == "SEMANTIC_ANALYSIS"
     ]
-    assert semantic
-    assert all(item["status"] == "READY_FOR_ANALYSIS" for item in semantic)
-    assert await repository.claim_next_unit("other-worker", 60) is None
+    assert len(semantic) == 2
+    assert [item["status"] for item in semantic].count("PENDING") == 1
+    assert [item["status"] for item in semantic].count("READY_FOR_ANALYSIS") == 1
+    assert await repository.claim_next_unit("other-worker", 60) is not None
 
 
 def _metadata(path: str, size: int) -> dict[str, Any]:

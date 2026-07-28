@@ -1,12 +1,13 @@
 import json
 from importlib.resources import files
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from pydantic import ValidationError
 
 from app.providers.base import ModelProviderError
 from app.schemas.plans import AgentPlan
+from app.schemas.unit_plans import UnitPlan
 
 
 class DeepSeekProvider:
@@ -35,6 +36,11 @@ class DeepSeekProvider:
         self._system_prompt = (
             files("app.prompts").joinpath("document_sync_v1.md").read_text(encoding="utf-8")
         )
+        self._unit_planning_prompt = (
+            files("app.prompts")
+            .joinpath("project_unit_planning_v1.md")
+            .read_text(encoding="utf-8")
+        )
 
     async def plan_document_sync(
         self,
@@ -57,12 +63,58 @@ class DeepSeekProvider:
                     "简体中文最终内容；不要解释错误原因，不要输出建议、计划或占位文字。"
                 ),
             }
+        return cast(
+            AgentPlan,
+            await self._request_structured(
+            system_prompt=self._system_prompt,
+            user_payload=user_payload,
+            schema=AgentPlan,
+            response_name="AgentPlan",
+            ),
+        )
+
+    async def plan_project_units(
+        self,
+        project_index: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> UnitPlan:
+        self._require_configuration()
+        user_payload: dict[str, Any] = {
+            "unitPlanSchema": UnitPlan.model_json_schema(),
+            "projectIndex": project_index,
+        }
+        if previous_plan is not None:
+            user_payload["repair"] = {
+                "previousPlan": previous_plan,
+                "validationErrors": validation_errors or [],
+                "instruction": "只返回修正后的完整 UnitPlan JSON，不要解释。",
+            }
+        return cast(
+            UnitPlan,
+            await self._request_structured(
+            system_prompt=self._unit_planning_prompt,
+            user_payload=user_payload,
+            schema=UnitPlan,
+            response_name="UnitPlan",
+            ),
+        )
+
+    async def _request_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_payload: dict[str, Any],
+        schema: type[AgentPlan] | type[UnitPlan],
+        response_name: str,
+    ) -> AgentPlan | UnitPlan:
         body = {
             "model": self._model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": self._system_prompt},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":")),
@@ -98,11 +150,11 @@ class DeepSeekProvider:
             if not isinstance(decoded, dict):
                 raise TypeError("AgentPlan must be an object")
             raw_plan = decoded
-            return AgentPlan.model_validate(raw_plan)
+            return schema.model_validate(raw_plan)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             raise ModelProviderError(
                 "MODEL_INVALID_RESPONSE",
-                "Model returned an invalid AgentPlan",
+                f"Model returned an invalid {response_name}",
                 raw_plan=raw_plan,
             ) from exc
 

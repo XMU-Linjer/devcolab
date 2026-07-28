@@ -135,3 +135,38 @@ async def test_deepseek_requires_configuration() -> None:
     with pytest.raises(ModelProviderError) as caught:
         await empty.plan_document_sync({})
     assert caught.value.code == "MODEL_CONFIGURATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_project_planner_uses_separate_unit_plan_schema() -> None:
+    seen: dict[str, Any] = {}
+    unit_plan = {
+        "units": [
+            {
+                "name": "认证服务",
+                "kind": "BUSINESS_SERVICE",
+                "summary": "描述认证服务职责。",
+                "primaryFiles": ["src/AuthService.java"],
+                "supportingFiles": [],
+                "relatedDocumentIds": [],
+                "groupingEvidence": ["SERVICE roleHint"],
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(unit_plan)
+
+    result = await provider(handler).plan_project_units(
+        {
+            "repositoryId": "repo",
+            "revision": "abc",
+            "files": [{"filePath": "src/AuthService.java"}],
+            "documents": [],
+        }
+    )
+    user = json.loads(seen["messages"][1]["content"])
+    assert result.units[0].name == "认证服务"
+    assert user["unitPlanSchema"]["title"] == "UnitPlan"
+    assert "agentPlanSchema" not in user

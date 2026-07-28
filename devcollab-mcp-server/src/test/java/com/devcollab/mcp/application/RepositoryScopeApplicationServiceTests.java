@@ -119,7 +119,8 @@ class RepositoryScopeApplicationServiceTests {
                 workspaceId, repositoryId, List.of(
                 new KnowledgeCoreGateway.FileBindingGroup(
                         "src/A.java", List.of(new KnowledgeCoreGateway.BatchBindingInfo(
-                        UUID.randomUUID(), repositoryId, documentId, null, "src/A.java"))),
+                        UUID.randomUUID(), repositoryId, documentId, "认证设计",
+                        null, "src/A.java"))),
                 new KnowledgeCoreGateway.FileBindingGroup("src/Empty.java", List.of())
         )));
         Map<String, Object> result = new BindingListBatchApplicationService(

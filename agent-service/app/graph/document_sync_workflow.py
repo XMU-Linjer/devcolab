@@ -83,6 +83,29 @@ class DocumentSyncWorkflow:
         graph.add_edge("fail_run", END)
         self.graph = graph.compile()
 
+    async def execute_context_bundle(self, state: AgentState) -> dict[str, Any]:
+        mutable = cast(dict[str, Any], state)
+        mutable.update(await self.plan_changes(state))
+        mutable.update(await self.validate_plan(state))
+        route = self._route(state)
+        if route == "NO_CHANGE":
+            mutable.update(await self.finish_no_change(state))
+            return mutable
+        if route == "SUBMIT_REVIEW":
+            mutable.update(await self.submit_review(state))
+            return mutable
+        mutable.update(await self.repair_plan(state))
+        mutable.update(await self.validate_repaired_plan(state))
+        route = self._route(state)
+        if route == "NO_CHANGE":
+            mutable.update(await self.finish_no_change(state))
+            return mutable
+        if route == "SUBMIT_REVIEW":
+            mutable.update(await self.submit_review(state))
+            return mutable
+        await self.fail_run(state)
+        raise AssertionError("unreachable")
+
     async def plan_changes(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("PLANNING", "plan_changes", {})
         model_context = build_model_context(state["context_bundle"])

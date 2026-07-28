@@ -17,7 +17,8 @@ public record CodeBindingBatchQueryResponse(
                         file.filePath(),
                         file.bindings().stream().map(binding -> new Binding(
                                 binding.bindingId(), binding.repositoryId(),
-                                binding.documentId(), binding.blockId(),
+                                binding.documentId(), binding.documentTitle(),
+                                binding.blockId(),
                                 binding.pathPattern()
                         )).toList()
                 )).toList()
@@ -31,6 +32,7 @@ public record CodeBindingBatchQueryResponse(
             UUID bindingId,
             UUID repositoryId,
             UUID documentId,
+            String documentTitle,
             UUID blockId,
             String pathPattern
     ) {

@@ -6,6 +6,7 @@ class AgentState(TypedDict, total=False):
     workspace_id: str
     repository_id: str
     selected_paths: list[str]
+    preferred_document_ids: list[str]
     user_instruction: str | None
     authorization: str
     workspace_context: dict[str, Any]

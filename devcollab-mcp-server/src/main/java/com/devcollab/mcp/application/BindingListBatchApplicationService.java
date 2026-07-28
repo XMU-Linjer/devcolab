@@ -56,6 +56,7 @@ public class BindingListBatchApplicationService {
                 item.put("bindingId", binding.bindingId());
                 item.put("repositoryId", binding.repositoryId());
                 item.put("documentId", binding.documentId());
+                item.put("documentTitle", binding.documentTitle());
                 item.put("blockId", binding.blockId());
                 item.put("pathPattern", binding.pathPattern());
                 return item;

@@ -185,5 +185,15 @@ function readyJob() {
     unboundFileCount: 10,
     analysisUnitCount: 3,
     overlappingFileCount: 2,
+    plannerStatus: 'COMPLETED',
+    plannedUnitCount: 3,
+    pendingUnitCount: 0,
+    runningUnitCount: 0,
+    completedUnitCount: 3,
+    failedUnitCount: 0,
+    noChangeUnitCount: 1,
+    reviewSubmittedUnitCount: 2,
+    currentPhase: 'COMPLETED',
+    currentUnitNames: [],
   };
 }

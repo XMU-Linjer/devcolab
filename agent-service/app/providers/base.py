@@ -1,6 +1,7 @@
 from typing import Any, Protocol
 
 from app.schemas.plans import AgentPlan
+from app.schemas.unit_plans import UnitPlan
 
 
 class ModelProviderError(RuntimeError):
@@ -24,3 +25,11 @@ class ModelProvider(Protocol):
         previous_plan: dict[str, Any] | None = None,
         validation_errors: list[dict[str, str]] | None = None,
     ) -> AgentPlan: ...
+
+    async def plan_project_units(
+        self,
+        project_index: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> UnitPlan: ...

@@ -13,7 +13,7 @@ export type AgentRunStatus =
   | 'NO_CHANGE'
   | 'FAILED';
 
-export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'READY_FOR_ANALYSIS' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'READY_FOR_ANALYSIS' | 'COMPLETED' | 'PARTIALLY_COMPLETED' | 'FAILED' | 'CANCELLED';
 export type AgentJobPhase =
   | 'LOADING_CONTEXT'
   | 'MODEL_RUNNING'
@@ -26,7 +26,11 @@ export type AgentJobPhase =
   | 'LOADING_BINDINGS'
   | 'BUILDING_SEMANTIC_GRAPH'
   | 'BUILDING_ANALYSIS_UNITS'
-  | 'READY_FOR_ANALYSIS';
+  | 'READY_FOR_ANALYSIS'
+  | 'PLANNING_UNITS'
+  | 'VALIDATING_UNIT_PLAN'
+  | 'EXECUTING_UNITS'
+  | 'COMPLETED';
 
 export interface CreateAgentRunPayload {
   workspaceId: string;
@@ -101,6 +105,16 @@ export interface AgentJob {
   unboundFileCount: number;
   analysisUnitCount: number;
   overlappingFileCount: number;
+  plannerStatus: string | null;
+  plannedUnitCount: number;
+  pendingUnitCount: number;
+  runningUnitCount: number;
+  completedUnitCount: number;
+  failedUnitCount: number;
+  noChangeUnitCount: number;
+  reviewSubmittedUnitCount: number;
+  currentPhase: string | null;
+  currentUnitNames: string[];
 }
 
 export interface AgentSemanticUnit {
@@ -108,7 +122,7 @@ export interface AgentSemanticUnit {
   semanticKey: string;
   displayName: string;
   semanticKind: string;
-  status: 'READY_FOR_ANALYSIS';
+  status: 'PENDING' | 'CLAIMED' | 'RUNNING' | 'RETRY_WAITING' | 'READY_FOR_ANALYSIS' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   primaryDirectory: string;
   primaryFiles: string[];
   supportingFiles: string[];

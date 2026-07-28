@@ -21,12 +21,16 @@ from app.config import Settings, get_settings
 from app.graph.document_sync_workflow import DocumentSyncWorkflow, ReviewSubmissionError
 from app.graph.state import AgentState
 from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
+from app.planning.deepseek_unit_planner import DeepSeekUnitPlanner
+from app.planning.unit_plan_validator import UnitPlanValidationError
 from app.planning.validator import PlanValidationError
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
 from app.runtime.job_executor import JobExecutionError
 from app.runtime.project_discovery import ProjectDiscoveryService
+from app.runtime.project_unit_context import ProjectUnitContextBuilder
+from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
 
 LOGGER = logging.getLogger("devcollab.agent.worker")
 RETRYABLE_ERRORS = {
@@ -70,21 +74,46 @@ class AgentWorker:
 
     async def run(self) -> None:
         LOGGER.info("Agent worker started workerId=%s", self._worker_id)
+        tasks: set[asyncio.Task[None]] = set()
         while not self._stopping.is_set():
             try:
                 await self._repository.record_worker_heartbeat(self._worker_id)
+                finished = {task for task in tasks if task.done()}
+                for task in finished:
+                    tasks.remove(task)
+                    if task.exception() is not None:
+                        LOGGER.error(
+                            "Agent worker task failed",
+                            exc_info=task.exception(),
+                        )
+                if len(tasks) >= self._settings.agent_project_unit_concurrency:
+                    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    continue
                 unit = await self._repository.claim_next_unit(
                     self._worker_id, self._settings.agent_unit_lease_seconds
                 )
                 if unit is None:
+                    if tasks:
+                        await asyncio.wait(
+                            tasks,
+                            timeout=self._settings.agent_worker_poll_seconds,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        continue
                     await self._wait_for_poll()
                     continue
-                await self._execute(unit)
+                tasks.add(
+                    asyncio.create_task(
+                        self._execute(unit), name=f"agent-unit-{unit['id']}"
+                    )
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 LOGGER.exception("Agent worker loop failed")
                 await self._wait_for_poll()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _wait_for_poll(self) -> None:
         try:
@@ -123,19 +152,57 @@ class AgentWorker:
                 delegated, self._provider, self._settings, on_status
             )
             scope = job["scope_payload"]
+            selected_paths: list[str]
+            preferred_document_ids: list[str] = []
+            user_instruction = job.get("user_instruction")
+            if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
+                context = await self._repository.get_unit_context(unit_id)
+                selected_paths = [
+                    str(item.get("file_path") or item.get("filePath"))
+                    for item in context.get("files", [])
+                ]
+                preferred_document_ids = [
+                    str(item.get("document_id") or item.get("documentId"))
+                    for item in context.get("documents", [])
+                ]
+                unit_instruction = (
+                    f"项目语义模块：{context.get('display_name')}\n"
+                    f"模块职责：{context.get('summary') or ''}"
+                )
+                user_instruction = (
+                    f"{user_instruction}\n{unit_instruction}"
+                    if user_instruction
+                    else unit_instruction
+                )
+            else:
+                selected_paths = [str(scope["filePath"])]
             run_id = f"job-{job_id}-unit-{unit_id}"
             initial_state: AgentState = {
                 "run_id": run_id,
                 "workspace_id": str(job["workspace_id"]),
                 "repository_id": str(job["repository_id"]),
-                "selected_paths": [str(scope["filePath"])],
-                "user_instruction": job.get("user_instruction"),
+                "selected_paths": selected_paths,
+                "preferred_document_ids": preferred_document_ids,
+                "user_instruction": user_instruction,
                 "authorization": "delegated",
                 "tool_call_count": 0,
                 "code_chars_used": 0,
                 "trace_events": [],
                 "errors": [],
             }
+            if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
+                initial_state = await ProjectUnitContextBuilder(
+                    delegated, self._settings
+                ).build(
+                    run_id=run_id,
+                    workspace_id=str(job["workspace_id"]),
+                    repository_id=str(job["repository_id"]),
+                    revision=str(job["revision"]),
+                    selected_paths=selected_paths,
+                    preferred_document_ids=preferred_document_ids,
+                    user_instruction=user_instruction,
+                )
+                return await workflow.execute_context_bundle(initial_state)
             return await workflow.graph.ainvoke(initial_state)
 
         async def run_project_discovery() -> None:
@@ -147,14 +214,59 @@ class AgentWorker:
                     raise RuntimeError("Agent unit lease was lost")
 
             service = ProjectDiscoveryService(delegated, self._settings, on_phase)
-            files, units, stats = await service.execute(
+            (
+                files,
+                project_files,
+                planner_batches,
+                project_index,
+                stats,
+            ) = await service.execute(
                 job_id=job_id,
                 workspace_id=UUID(str(job["workspace_id"])),
                 repository_id=UUID(str(job["repository_id"])),
                 revision=str(job["revision"]),
             )
+            execution_limit = self._settings.agent_project_execution_limit
+            planner_limit = self._settings.agent_max_analysis_units
+            project_index["requestedMaxUnits"] = planner_limit
+            for batch in planner_batches:
+                batch["requestedMaxUnits"] = planner_limit
+                batch["constraints"] = {
+                    "maxUnits": planner_limit,
+                    "maxFilesPerUnit": (
+                        self._settings.agent_max_total_files_per_unit
+                    ),
+                }
+            planner = DeepSeekUnitPlanner(
+                self._provider,
+                max_files_per_unit=self._settings.agent_max_total_files_per_unit,
+                max_units=planner_limit,
+                on_phase=on_phase,
+            )
+            unit_plan = (
+                await planner.plan(planner_batches[0])
+                if len(planner_batches) == 1
+                else await planner.plan(
+                    planner_batches,
+                    validation_index=project_index,
+                )
+            )
+            units = materialize_deepseek_units(
+                unit_plan,
+                project_files,
+                job_id=job_id,
+                revision=str(job["revision"]),
+            )
+            stats["analysis_unit_count"] = len(units)
+            stats["overlapping_file_count"] = overlapping_file_count(units)
             await self._repository.complete_project_discovery(
-                unit_id, self._worker_id, files, units, stats
+                unit_id,
+                self._worker_id,
+                files,
+                units,
+                stats,
+                self._settings.agent_unit_max_attempts,
+                execution_limit,
             )
 
         workflow_task: asyncio.Task[dict[str, Any]] | None = None
@@ -252,6 +364,11 @@ class AgentWorker:
             return exc.code, str(exc)[:300]
         if isinstance(exc, PlanValidationError):
             return "PLAN_VALIDATION_FAILED", "Agent plan failed validation after one repair"
+        if isinstance(exc, UnitPlanValidationError):
+            return (
+                "UNIT_PLAN_VALIDATION_FAILED",
+                str(exc)[:300],
+            )
         if isinstance(exc, ReviewSubmissionError):
             return "REVIEW_CONFLICT", str(exc)[:300]
         if isinstance(exc, DelegationClientError):

@@ -7,6 +7,8 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from app.schemas.unit_plans import UnitPlan
+
 SEMANTIC_KINDS = {
     "FRONTEND_API_CLIENT",
     "BACKEND_REST_API",
@@ -57,6 +59,7 @@ class PlannedSemanticUnit:
     id: UUID
     semantic_key: str
     display_name: str
+    summary: str
     semantic_kind: str
     primary_directory: str
     language_set: tuple[str, ...]
@@ -218,6 +221,7 @@ def build_semantic_units(
                 id=uuid5(NAMESPACE_URL, f"devcollab:{job_id}:{fingerprint}"),
                 semantic_key=semantic_key,
                 display_name=_display_name(kind, directory, primary),
+                summary=_display_name(kind, directory, primary),
                 semantic_kind=kind,
                 primary_directory=directory,
                 language_set=tuple(sorted({by_path[path].language for path in all_paths})),
@@ -248,6 +252,81 @@ def overlapping_file_count(units: list[PlannedSemanticUnit]) -> int:
         for item in unit.files
     )
     return sum(count > 1 for count in appearances.values())
+
+
+def materialize_deepseek_units(
+    plan: UnitPlan,
+    project_files: list[ProjectFile],
+    *,
+    job_id: UUID,
+    revision: str,
+) -> list[PlannedSemanticUnit]:
+    """Convert a validated model decision into deterministic persistence rows.
+
+    This function deliberately does not infer grouping, roles, names, kinds or
+    unit count. Those semantic decisions already exist in ``UnitPlan``.
+    """
+    by_path = {item.file_path: item for item in project_files}
+    units: list[PlannedSemanticUnit] = []
+    for item in plan.units:
+        primary = list(item.primaryFiles)
+        supporting = list(item.supportingFiles)
+        fingerprint = _fingerprint(
+            item.kind,
+            primary,
+            list(item.relatedDocumentIds),
+            revision,
+            target_document=None,
+        )
+        files = tuple(
+            [
+                UnitFile(
+                    by_path[path].id,
+                    path,
+                    "PRIMARY",
+                    "DEEPSEEK_PRIMARY",
+                    index,
+                )
+                for index, path in enumerate(primary, 1)
+            ]
+            + [
+                UnitFile(
+                    by_path[path].id,
+                    path,
+                    "SUPPORTING",
+                    "DEEPSEEK_SUPPORTING",
+                    len(primary) + index,
+                )
+                for index, path in enumerate(supporting, 1)
+            ]
+        )
+        documents = tuple(
+            UnitDocument(document_id, "BOUND", "DEEPSEEK_UNIT_PLAN", index)
+            for index, document_id in enumerate(item.relatedDocumentIds, 1)
+        )
+        all_paths = primary + supporting
+        directory = _common_directory(primary)
+        units.append(
+            PlannedSemanticUnit(
+                id=uuid5(NAMESPACE_URL, f"devcollab:{job_id}:{fingerprint}"),
+                semantic_key=f"{item.kind.lower()}:{fingerprint[:16]}",
+                display_name=item.name,
+                summary=item.summary,
+                semantic_kind=item.kind,
+                primary_directory=directory,
+                language_set=tuple(
+                    sorted({by_path[path].language for path in all_paths})
+                ),
+                estimated_size_bytes=sum(
+                    by_path[path].size_bytes for path in all_paths
+                ),
+                grouping_reasons=tuple(item.groupingEvidence),
+                unit_fingerprint=fingerprint,
+                files=files,
+                documents=documents,
+            )
+        )
+    return units
 
 
 def _semantic_kind(item: ProjectFile) -> str:

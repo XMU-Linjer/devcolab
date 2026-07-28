@@ -324,6 +324,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                                                             binding.bindingId(),
                                                             binding.repositoryId(),
                                                             binding.documentId(),
+                                                            binding.documentTitle(),
                                                             binding.blockId(),
                                                             binding.pathPattern()
                                                     )).toList()
@@ -621,6 +622,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             UUID bindingId,
             UUID repositoryId,
             UUID documentId,
+            String documentTitle,
             UUID blockId,
             String pathPattern
     ) {

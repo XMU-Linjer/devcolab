@@ -11,6 +11,7 @@ JobStatus = Literal[
     "FAILED",
     "CANCELLED",
     "READY_FOR_ANALYSIS",
+    "PARTIALLY_COMPLETED",
 ]
 
 
@@ -105,6 +106,10 @@ class AgentJobRecord(BaseModel):
         "BUILDING_SEMANTIC_GRAPH",
         "BUILDING_ANALYSIS_UNITS",
         "READY_FOR_ANALYSIS",
+        "PLANNING_UNITS",
+        "VALIDATING_UNIT_PLAN",
+        "EXECUTING_UNITS",
+        "COMPLETED",
     ] | None = None
     totalUnits: int = 1
     completedUnits: int = 0
@@ -140,6 +145,10 @@ class AgentJobSummary(BaseModel):
         "BUILDING_SEMANTIC_GRAPH",
         "BUILDING_ANALYSIS_UNITS",
         "READY_FOR_ANALYSIS",
+        "PLANNING_UNITS",
+        "VALIDATING_UNIT_PLAN",
+        "EXECUTING_UNITS",
+        "COMPLETED",
     ] | None
     totalUnits: int
     completedUnits: int
@@ -161,6 +170,16 @@ class AgentJobSummary(BaseModel):
     unboundFileCount: int = 0
     analysisUnitCount: int = 0
     overlappingFileCount: int = 0
+    plannerStatus: str | None = None
+    plannedUnitCount: int = 0
+    pendingUnitCount: int = 0
+    runningUnitCount: int = 0
+    completedUnitCount: int = 0
+    failedUnitCount: int = 0
+    noChangeUnitCount: int = 0
+    reviewSubmittedUnitCount: int = 0
+    currentPhase: str | None = None
+    currentUnitNames: list[str] = Field(default_factory=list)
 
 
 class AgentJobUnitsResponse(BaseModel):
@@ -190,7 +209,16 @@ class SemanticAnalysisUnit(BaseModel):
     semanticKey: str
     displayName: str
     semanticKind: str
-    status: Literal["READY_FOR_ANALYSIS"]
+    status: Literal[
+        "PENDING",
+        "CLAIMED",
+        "RUNNING",
+        "RETRY_WAITING",
+        "READY_FOR_ANALYSIS",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
+    ]
     primaryDirectory: str
     files: list[SemanticUnitFile]
     primaryFiles: list[str]

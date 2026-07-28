@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.persistence.job_repository import PostgresAgentJobRepository
+from app.persistence.job_repository import PostgresAgentJobRepository, decode_json_array
 from app.providers.base import ModelProviderError
 from app.runtime.file_classification import classify_file
 from app.runtime.unit_grouping import build_analysis_units
@@ -28,6 +28,11 @@ from app.worker import AgentWorker
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 REPOSITORY_ID = "22222222-2222-2222-2222-222222222222"
 AUTH = {"Authorization": "Bearer transient-secret"}
+
+
+def test_review_id_aggregate_decodes_postgres_json_text_as_an_array() -> None:
+    review_id = "a489d027-ac95-42cd-ac8c-21d0d185b503"
+    assert decode_json_array(json.dumps([review_id])) == [review_id]
 
 
 def test_create_current_file_job_returns_202_without_running_model(settings: Settings) -> None:

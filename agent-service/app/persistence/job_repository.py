@@ -11,6 +11,11 @@ import asyncpg  # type: ignore[import-untyped]
 from app.runtime.semantic_planner import PlannedSemanticUnit
 
 
+def decode_json_array(value: Any) -> list[Any]:
+    decoded = json.loads(value) if isinstance(value, str) else value
+    return list(decoded) if isinstance(decoded, (list, tuple)) else []
+
+
 class AgentJobRepository(Protocol):
     async def create_job(self, job: Mapping[str, Any], unit: Mapping[str, Any]) -> None: ...
 
@@ -24,6 +29,8 @@ class AgentJobRepository(Protocol):
 
     async def update_phase(self, unit_id: UUID, worker_id: str, phase: str) -> bool: ...
 
+    async def get_unit_context(self, unit_id: UUID) -> dict[str, Any]: ...
+
     async def complete_project_discovery(
         self,
         unit_id: UUID,
@@ -31,6 +38,8 @@ class AgentJobRepository(Protocol):
         files: list[dict[str, Any]],
         units: list[PlannedSemanticUnit],
         stats: Mapping[str, Any],
+        max_attempts: int,
+        execution_limit: int,
     ) -> None: ...
 
     async def list_semantic_units(
@@ -130,10 +139,60 @@ class PostgresAgentJobRepository:
         row = await pool.fetchrow(
             """
             SELECT j.*,
-                   COALESCE(j.phase, u.phase) AS current_phase
+                   COALESCE(j.phase, u.phase) AS current_phase,
+                   COALESCE(progress.planned_unit_count, 0) AS planned_unit_count,
+                   COALESCE(progress.pending_unit_count, 0) AS pending_unit_count,
+                   COALESCE(progress.running_unit_count, 0) AS running_unit_count,
+                   COALESCE(progress.completed_unit_count, 0) AS completed_unit_count,
+                   COALESCE(progress.failed_unit_count, 0) AS failed_unit_count,
+                   COALESCE(progress.no_change_unit_count, 0) AS no_change_unit_count,
+                   COALESCE(progress.review_submitted_unit_count, 0)
+                       AS review_submitted_unit_count,
+                   COALESCE(progress.current_unit_names, '[]'::jsonb)
+                       AS current_unit_names
             FROM agent_service.agent_jobs j
             LEFT JOIN agent_service.agent_units u
               ON u.job_id = j.id AND u.ordinal = 1
+            LEFT JOIN LATERAL (
+                SELECT
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                    )::int AS planned_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND status IN ('PENDING', 'RETRY_WAITING')
+                    )::int AS pending_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND status IN ('CLAIMED', 'RUNNING')
+                    )::int AS running_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND status = 'COMPLETED'
+                    )::int AS completed_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND status = 'FAILED'
+                    )::int AS failed_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND result = 'NO_CHANGE'
+                    )::int AS no_change_unit_count,
+                    count(*) FILTER (
+                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                          AND result = 'REVIEW_SUBMITTED'
+                    )::int AS review_submitted_unit_count,
+                    COALESCE(
+                        jsonb_agg(display_name ORDER BY ordinal)
+                            FILTER (
+                                WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                                  AND status IN ('CLAIMED', 'RUNNING')
+                            ),
+                        '[]'::jsonb
+                    ) AS current_unit_names
+                FROM agent_service.agent_units
+                WHERE job_id = j.id
+            ) progress ON true
             WHERE j.id = $1
             """,
             job_id,
@@ -161,22 +220,8 @@ class PostgresAgentJobRepository:
                 """
             )
             exhausted_job_ids = list({row["job_id"] for row in exhausted})
-            if exhausted_job_ids:
-                await connection.execute(
-                    """
-                    UPDATE agent_service.agent_jobs
-                    SET status = 'FAILED',
-                        failed_units = 1,
-                        error_code = 'WORKER_LEASE_EXPIRED',
-                        error_message = 'Worker lease expired after maximum attempts',
-                        completed_at = now(),
-                        updated_at = now(),
-                        version = version + 1
-                    WHERE id = ANY($1::uuid[])
-                      AND status <> 'CANCELLED'
-                    """,
-                    exhausted_job_ids,
-                )
+            for exhausted_job_id in exhausted_job_ids:
+                await self._refresh_project_job(connection, exhausted_job_id)
             row = await connection.fetchrow(
                 """
                 WITH candidate AS (
@@ -185,13 +230,30 @@ class PostgresAgentJobRepository:
                     JOIN agent_service.agent_jobs j ON j.id = u.job_id
                     WHERE j.status <> 'CANCELLED'
                       AND u.attempt < u.max_attempts
-                      AND u.unit_kind IN ('CURRENT_FILE_ANALYSIS', 'PROJECT_DISCOVERY')
+                      AND u.unit_kind IN (
+                        'CURRENT_FILE_ANALYSIS', 'PROJECT_DISCOVERY', 'SEMANTIC_ANALYSIS'
+                      )
                       AND (
                         (u.status IN ('PENDING', 'RETRY_WAITING')
                           AND (u.next_attempt_at IS NULL OR u.next_attempt_at <= now()))
                         OR
                         (u.status IN ('CLAIMED', 'RUNNING')
                           AND u.lease_expires_at <= now())
+                      )
+                      AND (
+                        u.unit_kind <> 'SEMANTIC_ANALYSIS'
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM agent_service.agent_unit_documents candidate_document
+                            JOIN agent_service.agent_unit_documents active_document
+                              ON active_document.document_id =
+                                 candidate_document.document_id
+                            JOIN agent_service.agent_units active_unit
+                              ON active_unit.id = active_document.unit_id
+                            WHERE candidate_document.unit_id = u.id
+                              AND active_unit.id <> u.id
+                              AND active_unit.status IN ('CLAIMED', 'RUNNING')
+                        )
                       )
                     ORDER BY COALESCE(u.next_attempt_at, u.created_at), u.created_at
                     FOR UPDATE OF u SKIP LOCKED
@@ -202,6 +264,8 @@ class PostgresAgentJobRepository:
                     phase = CASE
                         WHEN u.unit_kind = 'PROJECT_DISCOVERY'
                             THEN 'DISCOVERING_FILES'
+                        WHEN u.unit_kind = 'SEMANTIC_ANALYSIS'
+                            THEN 'LOADING_CONTEXT'
                         ELSE 'LOADING_CONTEXT'
                     END,
                     worker_id = $1,
@@ -239,6 +303,38 @@ class PostgresAgentJobRepository:
             )
             return {**dict(row), "job": self._decode_job(job)}
 
+    async def get_unit_context(self, unit_id: UUID) -> dict[str, Any]:
+        pool = await self._database()
+        unit = await pool.fetchrow(
+            "SELECT * FROM agent_service.agent_units WHERE id = $1",
+            unit_id,
+        )
+        if unit is None:
+            raise KeyError("Agent unit not found")
+        files = await pool.fetch(
+            """
+            SELECT file_path, role, relevance_reason, ordinal
+            FROM agent_service.agent_unit_files
+            WHERE unit_id = $1
+            ORDER BY ordinal, file_path
+            """,
+            unit_id,
+        )
+        documents = await pool.fetch(
+            """
+            SELECT document_id, relationship, source, ordinal
+            FROM agent_service.agent_unit_documents
+            WHERE unit_id = $1
+            ORDER BY ordinal, document_id
+            """,
+            unit_id,
+        )
+        return {
+            **dict(unit),
+            "files": [dict(row) for row in files],
+            "documents": [dict(row) for row in documents],
+        }
+
     @staticmethod
     def _decode_job(row: asyncpg.Record) -> dict[str, Any]:
         job = dict(row)
@@ -246,6 +342,7 @@ class PostgresAgentJobRepository:
             ("scope_payload", {}),
             ("review_request_ids", []),
             ("skipped_reason_counts", {}),
+            ("current_unit_names", []),
         ):
             value = job.get(field)
             if isinstance(value, str):
@@ -291,7 +388,13 @@ class PostgresAgentJobRepository:
             await connection.execute(
                 """
                 UPDATE agent_service.agent_jobs
-                SET phase = $2, updated_at = now(), version = version + 1
+                SET phase = $2::varchar,
+                    planner_status = CASE
+                        WHEN $2::varchar = 'PLANNING_UNITS' THEN 'RUNNING'
+                        WHEN $2::varchar = 'VALIDATING_UNIT_PLAN' THEN 'VALIDATING'
+                        ELSE planner_status
+                    END,
+                    updated_at = now(), version = version + 1
                 WHERE id = $1
                 """,
                 row["job_id"],
@@ -306,6 +409,8 @@ class PostgresAgentJobRepository:
         files: list[dict[str, Any]],
         units: list[PlannedSemanticUnit],
         stats: Mapping[str, Any],
+        max_attempts: int,
+        execution_limit: int,
     ) -> None:
         pool = await self._database()
         async with pool.acquire() as connection, connection.transaction():
@@ -324,6 +429,15 @@ class PostgresAgentJobRepository:
             if discovery is None:
                 raise RuntimeError("Agent unit lease was lost")
             job_id = discovery["job_id"]
+            await connection.execute(
+                """
+                DELETE FROM agent_service.agent_units
+                WHERE job_id = $1
+                  AND unit_kind = 'SEMANTIC_ANALYSIS'
+                  AND status IN ('PENDING', 'READY_FOR_ANALYSIS')
+                """,
+                job_id,
+            )
             if files:
                 await connection.executemany(
                     """
@@ -331,12 +445,12 @@ class PostgresAgentJobRepository:
                         id, job_id, repository_id, revision, file_path, file_name,
                         extension, language, size_bytes, classification, package_name,
                         module_key, layer_hint, role_hints, import_keys,
-                        exported_symbols, top_level_symbols, is_generated,
+                        exported_symbols, top_level_symbols, route_hints, is_generated,
                         metadata_error
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
                         $13, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb,
-                        $18, $19
+                        $18::jsonb, $19, $20
                     )
                     """,
                     [
@@ -349,29 +463,39 @@ class PostgresAgentJobRepository:
                             json.dumps(row["import_keys"]),
                             json.dumps(row["exported_symbols"]),
                             json.dumps(row["top_level_symbols"]),
+                            json.dumps(row["route_hints"]),
                             row["is_generated"], row["metadata_error"],
                         )
                         for row in files
                     ],
                 )
-            for ordinal, unit in enumerate(units, 2):
+            for execution_index, unit in enumerate(units, 1):
+                ordinal = execution_index + 1
+                initial_status = (
+                    "PENDING"
+                    if execution_limit == 0 or execution_index <= execution_limit
+                    else "READY_FOR_ANALYSIS"
+                )
                 await connection.execute(
                     """
                     INSERT INTO agent_service.agent_units (
                         id, job_id, ordinal, status, phase, attempt, max_attempts,
                         unit_kind, semantic_key, display_name, semantic_kind,
                         primary_directory, language_set, estimated_size_bytes,
-                        grouping_reasons, unit_fingerprint, created_at, updated_at
+                        grouping_reasons, unit_fingerprint, summary, created_at, updated_at
                     ) VALUES (
-                        $1, $2, $3, 'READY_FOR_ANALYSIS', 'READY_FOR_ANALYSIS',
-                        0, 1, 'SEMANTIC_ANALYSIS', $4, $5, $6, $7,
-                        $8::jsonb, $9, $10::jsonb, $11, now(), now()
+                        $1, $2, $3, $14::varchar, 'EXECUTING_UNITS',
+                        0, $12, 'SEMANTIC_ANALYSIS', $4, $5, $6, $7,
+                        $8::jsonb, $9, $10::jsonb, $11, $13, now(), now()
                     )
                     """,
                     unit.id, job_id, ordinal, unit.semantic_key, unit.display_name,
                     unit.semantic_kind, unit.primary_directory,
                     json.dumps(unit.language_set), unit.estimated_size_bytes,
                     json.dumps(unit.grouping_reasons), unit.unit_fingerprint,
+                    max_attempts,
+                    unit.summary,
+                    initial_status,
                 )
                 if unit.files:
                     await connection.executemany(
@@ -407,7 +531,7 @@ class PostgresAgentJobRepository:
             await connection.execute(
                 """
                 UPDATE agent_service.agent_units
-                SET status = 'COMPLETED', phase = 'READY_FOR_ANALYSIS',
+                SET status = 'COMPLETED', phase = 'COMPLETED',
                     result = NULL, lease_expires_at = NULL,
                     completed_at = now(), updated_at = now()
                 WHERE id = $1
@@ -417,8 +541,9 @@ class PostgresAgentJobRepository:
             await connection.execute(
                 """
                 UPDATE agent_service.agent_jobs
-                SET status = 'READY_FOR_ANALYSIS',
-                    phase = 'READY_FOR_ANALYSIS',
+                SET status = 'RUNNING',
+                    phase = 'EXECUTING_UNITS',
+                    planner_status = 'COMPLETED',
                     total_units = $2,
                     completed_units = 0,
                     failed_units = 0,
@@ -433,7 +558,7 @@ class PostgresAgentJobRepository:
                     unbound_file_count = $10,
                     analysis_unit_count = $11,
                     overlapping_file_count = $12,
-                    completed_at = now(),
+                    completed_at = NULL,
                     updated_at = now(),
                     version = version + 1
                 WHERE id = $1
@@ -521,7 +646,7 @@ class PostgresAgentJobRepository:
                 SET status = 'COMPLETED', result = $3, review_request_id = $4,
                     lease_expires_at = NULL, completed_at = now(), updated_at = now()
                 WHERE id = $1 AND worker_id = $2 AND status IN ('CLAIMED', 'RUNNING')
-                RETURNING job_id
+                RETURNING job_id, unit_kind
                 """,
                 unit_id,
                 worker_id,
@@ -530,6 +655,9 @@ class PostgresAgentJobRepository:
             )
             if row is None:
                 raise RuntimeError("Agent unit lease was lost")
+            if row["unit_kind"] == "SEMANTIC_ANALYSIS":
+                await self._refresh_project_job(connection, row["job_id"])
+                return
             review_ids = [] if review_request_id is None else [str(review_request_id)]
             await connection.execute(
                 """
@@ -565,7 +693,7 @@ class PostgresAgentJobRepository:
                         ELSE NULL
                     END
                 WHERE id = $1 AND worker_id = $2
-                RETURNING job_id
+                RETURNING job_id, unit_kind
                 """,
                 unit_id,
                 worker_id,
@@ -576,18 +704,27 @@ class PostgresAgentJobRepository:
             )
             if row is None:
                 return
+            if row["unit_kind"] == "SEMANTIC_ANALYSIS":
+                await self._refresh_project_job(connection, row["job_id"])
+                return
             if retry_at is None:
                 await connection.execute(
                     """
                     UPDATE agent_service.agent_jobs
                     SET status = 'FAILED', failed_units = 1, error_code = $2,
-                        error_message = $3, completed_at = now(), updated_at = now(),
+                        error_message = $3,
+                        planner_status = CASE
+                            WHEN $4 = 'PROJECT_DISCOVERY' THEN 'FAILED'
+                            ELSE planner_status
+                        END,
+                        completed_at = now(), updated_at = now(),
                         version = version + 1
                     WHERE id = $1
                     """,
                     row["job_id"],
                     error_code,
                     error_message[:500],
+                    row["unit_kind"],
                 )
             else:
                 await connection.execute(
@@ -602,6 +739,97 @@ class PostgresAgentJobRepository:
                     error_message[:500],
                 )
 
+    async def _refresh_project_job(
+        self,
+        connection: asyncpg.Connection,
+        job_id: UUID,
+    ) -> None:
+        progress = await connection.fetchrow(
+            """
+            SELECT
+                count(*)::int AS total,
+                count(*) FILTER (
+                    WHERE status <> 'READY_FOR_ANALYSIS'
+                )::int AS executable,
+                count(*) FILTER (
+                    WHERE status IN (
+                        'PENDING', 'CLAIMED', 'RUNNING', 'RETRY_WAITING'
+                    )
+                )::int AS active,
+                count(*) FILTER (WHERE status = 'COMPLETED')::int AS completed,
+                count(*) FILTER (WHERE status = 'FAILED')::int AS failed,
+                count(*) FILTER (WHERE result = 'NO_CHANGE')::int AS no_change,
+                count(*) FILTER (WHERE result = 'REVIEW_SUBMITTED')::int AS reviewed,
+                COALESCE(
+                    jsonb_agg(review_request_id ORDER BY ordinal)
+                        FILTER (WHERE review_request_id IS NOT NULL),
+                    '[]'::jsonb
+                ) AS review_ids
+            FROM agent_service.agent_units
+            WHERE job_id = $1 AND unit_kind = 'SEMANTIC_ANALYSIS'
+            """,
+            job_id,
+        )
+        if progress is None or int(progress["total"]) == 0:
+            return
+        total = int(progress["total"])
+        executable = int(progress["executable"])
+        active = int(progress["active"])
+        completed = int(progress["completed"])
+        failed = int(progress["failed"])
+        reviewed = int(progress["reviewed"])
+        review_ids = decode_json_array(progress["review_ids"])
+        if active > 0:
+            status = "RUNNING"
+            phase = "EXECUTING_UNITS"
+            result = None
+            completed_at = None
+        elif executable > 0 and completed == executable:
+            status = "COMPLETED"
+            phase = "COMPLETED"
+            result = "REVIEW_SUBMITTED" if reviewed else "NO_CHANGE"
+            completed_at = datetime.now().astimezone()
+        elif executable > 0 and completed > 0 and completed + failed == executable:
+            status = "PARTIALLY_COMPLETED"
+            phase = "COMPLETED"
+            result = "PARTIALLY_COMPLETED"
+            completed_at = datetime.now().astimezone()
+        else:
+            status = "FAILED"
+            phase = "COMPLETED"
+            result = None
+            completed_at = datetime.now().astimezone()
+        await connection.execute(
+            """
+            UPDATE agent_service.agent_jobs
+            SET status = $2::varchar,
+                phase = $3::varchar,
+                result = $4::varchar,
+                total_units = $5,
+                completed_units = $6,
+                failed_units = $7,
+                review_request_ids = $8::jsonb,
+                error_code = CASE
+                    WHEN $2::varchar = 'FAILED' THEN error_code ELSE NULL
+                END,
+                error_message = CASE
+                    WHEN $2::varchar = 'FAILED' THEN error_message ELSE NULL
+                END,
+                completed_at = $9,
+                updated_at = now(),
+                version = version + 1
+            WHERE id = $1 AND status <> 'CANCELLED'
+            """,
+            job_id,
+            status,
+            phase,
+            result,
+            total,
+            completed,
+            failed,
+            json.dumps([str(value) for value in review_ids]),
+            completed_at,
+        )
     async def record_worker_heartbeat(self, worker_id: str) -> None:
         pool = await self._database()
         await pool.execute(

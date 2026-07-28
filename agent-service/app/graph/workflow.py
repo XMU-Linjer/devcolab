@@ -115,7 +115,7 @@ class ContextWorkflow:
 
     async def list_existing_bindings(self, state: AgentState) -> dict[str, Any]:
         all_bindings: list[dict[str, Any]] = []
-        bound_ids: list[str] = []
+        bound_ids: list[str] = list(state.get("preferred_document_ids", []))
         unbound_paths: list[str] = []
         for path in state["selected_paths"]:
             result = await self._call(

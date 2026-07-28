@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -9,12 +10,7 @@ from app.clients.mcp_client import McpClientError, ReadOnlyMcpClient
 from app.config import Settings
 from app.runtime.file_classification import ClassifiedFile, classify_file
 from app.runtime.job_executor import JobExecutionError
-from app.runtime.semantic_planner import (
-    PlannedSemanticUnit,
-    ProjectFile,
-    build_semantic_units,
-    overlapping_file_count,
-)
+from app.runtime.semantic_planner import ProjectFile
 
 PhaseCallback = Callable[[str], Awaitable[None]]
 
@@ -37,7 +33,13 @@ class ProjectDiscoveryService:
         workspace_id: UUID,
         repository_id: UUID,
         revision: str,
-    ) -> tuple[list[dict[str, Any]], list[PlannedSemanticUnit], dict[str, Any]]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[ProjectFile],
+        list[dict[str, Any]],
+        dict[str, Any],
+        dict[str, Any],
+    ]:
         await self._on_phase("DISCOVERING_FILES")
         discovered = await self._discover(
             str(workspace_id), str(repository_id), revision
@@ -71,18 +73,6 @@ class ProjectDiscoveryService:
             str(repository_id),
             [item.file_path for item in eligible],
         )
-        await self._on_phase("BUILDING_SEMANTIC_GRAPH")
-        await self._on_phase("BUILDING_ANALYSIS_UNITS")
-        units = build_semantic_units(
-            project_files,
-            bindings,
-            job_id=job_id,
-            revision=revision,
-            max_primary_files=self._settings.agent_max_primary_files_per_unit,
-            max_supporting_files=self._settings.agent_max_supporting_files_per_unit,
-            max_total_files=self._settings.agent_max_total_files_per_unit,
-            max_units=self._settings.agent_max_analysis_units,
-        )
         all_rows = [
             self._file_row(
                 job_id, repository_id, revision, item,
@@ -91,6 +81,57 @@ class ProjectDiscoveryService:
             for item in classified
         ]
         bound_file_count = sum(bool(bindings.get(item.file_path)) for item in eligible)
+        documents: dict[str, dict[str, str]] = {}
+        binding_rows: list[dict[str, Any]] = []
+        for file_path in sorted(bindings):
+            for binding in bindings[file_path]:
+                document_id = str(binding.get("documentId", ""))
+                if document_id:
+                    documents[document_id] = {
+                        "documentId": document_id,
+                        "title": str(binding.get("documentTitle") or ""),
+                    }
+                binding_rows.append(
+                    {
+                        "filePath": file_path,
+                        "bindingId": binding.get("bindingId"),
+                        "documentId": binding.get("documentId"),
+                        "documentTitle": binding.get("documentTitle"),
+                        "blockId": binding.get("blockId"),
+                        "pathPattern": binding.get("pathPattern"),
+                    }
+                )
+        project_index = {
+            "repositoryId": str(repository_id),
+            "revision": revision,
+            "topLevelModules": sorted(
+                {
+                    (item.file_path.split("/", 1)[0] if "/" in item.file_path else ".")
+                    for item in eligible
+                }
+            ),
+            "files": [
+                {
+                    "filePath": item.file_path,
+                    "language": item.language,
+                    "sizeBytes": item.size_bytes,
+                    "packageName": item.package_name,
+                    "moduleKey": item.module_key,
+                    "layerHint": item.layer_hint,
+                    "roleHints": list(item.role_hints[:8]),
+                    "imports": list(item.import_keys[:12]),
+                    "exportedSymbols": list(item.exported_symbols[:8]),
+                    "topLevelSymbols": list(item.top_level_symbols[:8]),
+                    "routeHints": _string_list(
+                        metadata_by_path.get(item.file_path, {}).get("routeHints")
+                    ),
+                    "eligible": True,
+                }
+                for item in project_files
+            ],
+            "bindings": binding_rows,
+            "documents": [documents[key] for key in sorted(documents)],
+        }
         stats = {
             "discovered_file_count": len(discovered),
             "supported_code_count": len(eligible),
@@ -102,10 +143,13 @@ class ProjectDiscoveryService:
             "metadata_failed_count": metadata_failures,
             "bound_file_count": bound_file_count,
             "unbound_file_count": len(eligible) - bound_file_count,
-            "analysis_unit_count": len(units),
-            "overlapping_file_count": overlapping_file_count(units),
+            "analysis_unit_count": 0,
+            "overlapping_file_count": 0,
         }
-        return all_rows, units, stats
+        planner_batches = _partition_project_index(
+            project_index, self._settings.agent_model_max_input_characters
+        )
+        return all_rows, project_files, planner_batches, project_index, stats
 
     async def _discover(
         self,
@@ -291,6 +335,7 @@ class ProjectDiscoveryService:
             "import_keys": _string_list(metadata.get("imports")),
             "exported_symbols": _string_list(metadata.get("exportedSymbols")),
             "top_level_symbols": _string_list(metadata.get("topLevelSymbols")),
+            "route_hints": _string_list(metadata.get("routeHints")),
             "is_generated": item.is_generated,
             "metadata_error": _optional_text(metadata.get("errorCode")),
         }
@@ -304,3 +349,108 @@ def _string_list(value: object) -> list[str]:
 
 def _optional_text(value: object) -> str | None:
     return str(value) if isinstance(value, str) and value else None
+
+
+def _partition_project_index(
+    project_index: dict[str, Any],
+    max_characters: int,
+) -> list[dict[str, Any]]:
+    if len(json.dumps(project_index, ensure_ascii=False)) <= max_characters:
+        return [project_index]
+
+    files_by_module: dict[str, list[dict[str, Any]]] = {}
+    for item in project_index["files"]:
+        path = str(item["filePath"])
+        module = path.split("/", 1)[0] if "/" in path else "."
+        files_by_module.setdefault(module, []).append(_compact_file(item))
+
+    batches: list[dict[str, Any]] = []
+    for module in sorted(files_by_module):
+        current: list[dict[str, Any]] = []
+        for item in files_by_module[module]:
+            candidate = _project_index_batch(
+                project_index, current + [item], len(batches)
+            )
+            if (
+                current
+                and len(json.dumps(candidate, ensure_ascii=False)) > max_characters
+            ):
+                batches.append(
+                    _project_index_batch(project_index, current, len(batches))
+                )
+                current = [item]
+                candidate = _project_index_batch(
+                    project_index, current, len(batches)
+                )
+            else:
+                current.append(item)
+            if len(json.dumps(candidate, ensure_ascii=False)) > max_characters:
+                raise JobExecutionError(
+                    "PROJECT_INDEX_LIMIT_EXCEEDED",
+                    f"ProjectIndex batch for {module} exceeds the model input budget",
+                )
+        if current:
+            batches.append(_project_index_batch(project_index, current, len(batches)))
+    for index, batch in enumerate(batches):
+        batch["batch"] = {
+            "index": index,
+            "count": len(batches),
+            "strategy": "TOP_LEVEL_MODULE_THEN_CAPACITY",
+        }
+    return batches
+
+
+def _compact_file(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "filePath": item["filePath"],
+        "language": item.get("language"),
+        "packageName": item.get("packageName"),
+        "moduleKey": item.get("moduleKey"),
+        "layerHint": item.get("layerHint"),
+        "roleHints": list(item.get("roleHints", []))[:4],
+        "imports": list(item.get("imports", []))[:4],
+        "exportedSymbols": list(item.get("exportedSymbols", []))[:3],
+        "topLevelSymbols": list(item.get("topLevelSymbols", []))[:3],
+        "routeHints": list(item.get("routeHints", []))[:3],
+        "eligible": True,
+    }
+
+
+def _project_index_batch(
+    project_index: dict[str, Any],
+    files: list[dict[str, Any]],
+    batch_index: int,
+) -> dict[str, Any]:
+    paths = {str(item["filePath"]) for item in files}
+    bindings = [
+        item for item in project_index["bindings"]
+        if str(item.get("filePath")) in paths
+    ]
+    document_ids = {
+        str(item.get("documentId")) for item in bindings if item.get("documentId")
+    }
+    return {
+        "repositoryId": project_index["repositoryId"],
+        "revision": project_index["revision"],
+        "topLevelModules": sorted(
+            {
+                (
+                    str(item["filePath"]).split("/", 1)[0]
+                    if "/" in str(item["filePath"])
+                    else "."
+                )
+                for item in files
+            }
+        ),
+        "files": files,
+        "bindings": bindings,
+        "documents": [
+            item for item in project_index["documents"]
+            if str(item.get("documentId")) in document_ids
+        ],
+        "compression": {
+            "applied": True,
+            "strategy": "KEEP_ALL_BATCH_PATHS_LIMIT_RELATION_HINTS",
+            "batchIndex": batch_index,
+        },
+    }

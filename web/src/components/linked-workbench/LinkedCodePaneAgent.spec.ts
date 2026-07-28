@@ -240,5 +240,15 @@ function agentJob(status: AgentJobStatus) {
     unboundFileCount: 0,
     analysisUnitCount: 0,
     overlappingFileCount: 0,
+    plannerStatus: null,
+    plannedUnitCount: 0,
+    pendingUnitCount: 0,
+    runningUnitCount: 0,
+    completedUnitCount: 0,
+    failedUnitCount: 0,
+    noChangeUnitCount: 0,
+    reviewSubmittedUnitCount: 0,
+    currentPhase: null,
+    currentUnitNames: [],
   };
 }

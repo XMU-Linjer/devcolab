@@ -30,7 +30,12 @@ public class AgentDelegationService {
             "devcollab.workspace.get_context",
             "devcollab.repository.list_files",
             "devcollab.repository.inspect_code_metadata",
-            "devcollab.binding.list_batch"
+            "devcollab.code.read",
+            "devcollab.binding.list",
+            "devcollab.binding.list_batch",
+            "devcollab.document.find_candidates",
+            "devcollab.document.get_structure",
+            "devcollab.review.submit_document_change"
     );
 
     private final AgentDelegationRepository repository;

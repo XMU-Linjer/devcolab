@@ -10,6 +10,7 @@ from app.config import Settings
 from app.main import create_app
 from app.runtime.semantic_planner import PlannedSemanticUnit
 from app.schemas.plans import AgentPlan
+from app.schemas.unit_plans import UnitPlan
 
 
 class MemoryRunStore:
@@ -69,6 +70,7 @@ class MemoryAgentJobRepository:
                 "unbound_file_count": 0,
                 "analysis_unit_count": 0,
                 "overlapping_file_count": 0,
+                "planner_status": None,
             }
             self.units[unit["id"]] = {
                 **unit,
@@ -91,7 +93,38 @@ class MemoryAgentJobRepository:
         if job is None:
             return None
         unit = next(value for value in self.units.values() if value["job_id"] == job_id)
-        return {**job, "current_phase": job.get("phase") or unit["phase"]}
+        semantic = [
+            value
+            for value in self.units.values()
+            if value["job_id"] == job_id
+            and value["unit_kind"] == "SEMANTIC_ANALYSIS"
+        ]
+        return {
+            **job,
+            "current_phase": job.get("phase") or unit["phase"],
+            "planned_unit_count": len(semantic),
+            "pending_unit_count": sum(
+                item["status"] in {"PENDING", "RETRY_WAITING"} for item in semantic
+            ),
+            "running_unit_count": sum(
+                item["status"] in {"CLAIMED", "RUNNING"} for item in semantic
+            ),
+            "completed_unit_count": sum(
+                item["status"] == "COMPLETED" for item in semantic
+            ),
+            "failed_unit_count": sum(item["status"] == "FAILED" for item in semantic),
+            "no_change_unit_count": sum(
+                item.get("result") == "NO_CHANGE" for item in semantic
+            ),
+            "review_submitted_unit_count": sum(
+                item.get("result") == "REVIEW_SUBMITTED" for item in semantic
+            ),
+            "current_unit_names": [
+                str(item.get("display_name"))
+                for item in semantic
+                if item["status"] in {"CLAIMED", "RUNNING"}
+            ],
+        }
 
     async def claim_next_unit(
         self, worker_id: str, lease_seconds: int
@@ -124,11 +157,21 @@ class MemoryAgentJobRepository:
                     and unit["lease_expires_at"] is not None
                     and unit["lease_expires_at"] <= now
                 )
-                if (
-                    unit["unit_kind"] == "SEMANTIC_ANALYSIS"
-                    or unit["status"] == "READY_FOR_ANALYSIS"
-                ):
+                if unit["status"] == "READY_FOR_ANALYSIS":
                     continue
+                if unit["unit_kind"] == "SEMANTIC_ANALYSIS":
+                    candidate_docs = {
+                        str(item["documentId"]) for item in unit.get("documents", [])
+                    }
+                    active_docs = {
+                        str(item["documentId"])
+                        for candidate in self.units.values()
+                        if candidate["id"] != unit["id"]
+                        and candidate["status"] in {"CLAIMED", "RUNNING"}
+                        for item in candidate.get("documents", [])
+                    }
+                    if candidate_docs & active_docs:
+                        continue
                 if not available or unit["attempt"] >= unit["max_attempts"]:
                     continue
                 unit.update(
@@ -146,6 +189,9 @@ class MemoryAgentJobRepository:
                 job.update(status="RUNNING", started_at=job["started_at"] or now)
                 return {**unit, "job": dict(job)}
         return None
+
+    async def get_unit_context(self, unit_id: UUID) -> dict[str, Any]:
+        return dict(self.units[unit_id])
 
     async def heartbeat(self, unit_id: UUID, worker_id: str, lease_seconds: int) -> bool:
         unit = self.units[unit_id]
@@ -172,6 +218,8 @@ class MemoryAgentJobRepository:
         files: list[dict[str, Any]],
         units: list[PlannedSemanticUnit],
         stats: dict[str, Any],
+        max_attempts: int,
+        execution_limit: int,
     ) -> None:
         unit = self.units[unit_id]
         if unit["worker_id"] != worker_id:
@@ -180,19 +228,24 @@ class MemoryAgentJobRepository:
         self.job_files[job_id] = list(files)
         unit.update(
             status="COMPLETED",
-            phase="READY_FOR_ANALYSIS",
+            phase="COMPLETED",
             result=None,
         )
         now = datetime.now(UTC)
-        for ordinal, planned in enumerate(units, 2):
+        for execution_index, planned in enumerate(units, 1):
+            ordinal = execution_index + 1
             self.units[planned.id] = {
                 "id": planned.id,
                 "job_id": job_id,
                 "ordinal": ordinal,
-                "status": "READY_FOR_ANALYSIS",
-                "phase": "READY_FOR_ANALYSIS",
+                "status": (
+                    "PENDING"
+                    if execution_limit == 0 or execution_index <= execution_limit
+                    else "READY_FOR_ANALYSIS"
+                ),
+                "phase": "EXECUTING_UNITS",
                 "attempt": 0,
-                "max_attempts": 1,
+                "max_attempts": max_attempts,
                 "worker_id": None,
                 "lease_expires_at": None,
                 "next_attempt_at": None,
@@ -200,6 +253,7 @@ class MemoryAgentJobRepository:
                 "unit_kind": "SEMANTIC_ANALYSIS",
                 "semantic_key": planned.semantic_key,
                 "display_name": planned.display_name,
+                "summary": planned.summary,
                 "semantic_kind": planned.semantic_kind,
                 "primary_directory": planned.primary_directory,
                 "language_set": list(planned.language_set),
@@ -226,13 +280,14 @@ class MemoryAgentJobRepository:
                 ],
             }
         self.jobs[job_id].update(
-            status="READY_FOR_ANALYSIS",
-            phase="READY_FOR_ANALYSIS",
+            status="RUNNING",
+            phase="EXECUTING_UNITS",
+            planner_status="COMPLETED",
             total_units=len(units),
             completed_units=0,
             failed_units=0,
             review_request_ids=[],
-            completed_at=now,
+            completed_at=None,
             **stats,
         )
 
@@ -266,13 +321,18 @@ class MemoryAgentJobRepository:
             raise RuntimeError("lease lost")
         unit.update(status="COMPLETED", result=result, review_request_id=review_request_id)
         job = self.jobs[unit["job_id"]]
-        job.update(
-            status="COMPLETED",
-            result=result,
-            completed_units=1,
-            review_request_ids=[] if review_request_id is None else [str(review_request_id)],
-            completed_at=datetime.now(UTC),
-        )
+        if unit["unit_kind"] == "SEMANTIC_ANALYSIS":
+            self._refresh_project_job(job)
+        else:
+            job.update(
+                status="COMPLETED",
+                result=result,
+                completed_units=1,
+                review_request_ids=[]
+                if review_request_id is None
+                else [str(review_request_id)],
+                completed_at=datetime.now(UTC),
+            )
 
     async def fail_unit(
         self,
@@ -291,12 +351,62 @@ class MemoryAgentJobRepository:
             error_code=error_code,
         )
         job = self.jobs[unit["job_id"]]
+        if unit["unit_kind"] == "SEMANTIC_ANALYSIS":
+            self._refresh_project_job(job)
+        else:
+            job.update(
+                status="QUEUED" if retry_at else "FAILED",
+                failed_units=0 if retry_at else 1,
+                error_code=error_code,
+                error_message=error_message,
+            )
+
+    def _refresh_project_job(self, job: dict[str, Any]) -> None:
+        semantic = [
+            item
+            for item in self.units.values()
+            if item["job_id"] == job["id"]
+            and item["unit_kind"] == "SEMANTIC_ANALYSIS"
+        ]
+        active = [
+            item
+            for item in semantic
+            if item["status"] in {"PENDING", "CLAIMED", "RUNNING", "RETRY_WAITING"}
+        ]
+        completed = [item for item in semantic if item["status"] == "COMPLETED"]
+        failed = [item for item in semantic if item["status"] == "FAILED"]
+        executable = [
+            item for item in semantic if item["status"] != "READY_FOR_ANALYSIS"
+        ]
+        review_ids = [
+            str(item["review_request_id"])
+            for item in completed
+            if item.get("review_request_id")
+        ]
         job.update(
-            status="QUEUED" if retry_at else "FAILED",
-            failed_units=0 if retry_at else 1,
-            error_code=error_code,
-            error_message=error_message,
+            total_units=len(semantic),
+            completed_units=len(completed),
+            failed_units=len(failed),
+            review_request_ids=review_ids,
         )
+        if active:
+            job.update(status="RUNNING", phase="EXECUTING_UNITS")
+        elif executable and len(completed) == len(executable):
+            job.update(
+                status="COMPLETED",
+                phase="COMPLETED",
+                result="REVIEW_SUBMITTED" if review_ids else "NO_CHANGE",
+                completed_at=datetime.now(UTC),
+            )
+        elif executable and completed and len(completed) + len(failed) == len(executable):
+            job.update(
+                status="PARTIALLY_COMPLETED",
+                phase="COMPLETED",
+                result="PARTIALLY_COMPLETED",
+                completed_at=datetime.now(UTC),
+            )
+        else:
+            job.update(status="FAILED", phase="COMPLETED", completed_at=datetime.now(UTC))
 
     async def record_worker_heartbeat(self, worker_id: str) -> None:
         self.worker_heartbeats[worker_id] = datetime.now(UTC)
@@ -565,6 +675,24 @@ class FakeModelProvider:
             )
         ]
         self.calls: list[dict[str, Any]] = []
+        self.unit_plan_calls: list[dict[str, Any]] = []
+        self.unit_plans: list[UnitPlan | Exception] = [
+            UnitPlan.model_validate(
+                {
+                    "units": [
+                        {
+                            "name": "示例业务能力",
+                            "kind": "BUSINESS_SERVICE",
+                            "summary": "说明示例业务服务的职责与边界。",
+                            "primaryFiles": ["src/Example.java"],
+                            "supportingFiles": [],
+                            "relatedDocumentIds": [],
+                            "groupingEvidence": ["SERVICE roleHint"],
+                        }
+                    ]
+                }
+            )
+        ]
 
     async def plan_document_sync(
         self,
@@ -581,6 +709,27 @@ class FakeModelProvider:
             }
         )
         item = self.plans[min(len(self.calls) - 1, len(self.plans) - 1)]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    async def plan_project_units(
+        self,
+        project_index: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> UnitPlan:
+        self.unit_plan_calls.append(
+            {
+                "projectIndex": project_index,
+                "previousPlan": previous_plan,
+                "validationErrors": validation_errors,
+            }
+        )
+        item = self.unit_plans[
+            min(len(self.unit_plan_calls) - 1, len(self.unit_plans) - 1)
+        ]
         if isinstance(item, Exception):
             raise item
         return item

@@ -225,6 +225,7 @@ public interface KnowledgeCoreGateway {
             UUID bindingId,
             UUID repositoryId,
             UUID documentId,
+            String documentTitle,
             UUID blockId,
             String pathPattern
     ) {

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     agent_max_deleted_paths_per_unit: int = Field(100, ge=1, le=1_000)
     agent_max_units: int = Field(500, ge=1, le=5_000)
     agent_max_analysis_units: int = Field(500, ge=1, le=5_000)
+    agent_project_unit_concurrency: int = Field(2, ge=1, le=16)
+    agent_project_execution_limit: int = Field(0, ge=0, le=500)
+    agent_project_max_tool_calls: int = Field(24, ge=5, le=100)
 
 
 @lru_cache
