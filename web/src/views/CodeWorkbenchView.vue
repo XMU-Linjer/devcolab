@@ -91,6 +91,13 @@
         @open-agent-review="handleAgentReviewNavigation"
       >
         <template #header-actions>
+          <el-button
+            v-if="activeRepository"
+            data-test="project-scan"
+            size="small"
+            :loading="projectScanStarting"
+            @click="confirmProjectScan"
+          >检查整个项目</el-button>
           <NotificationCenter />
           <el-button size="small" @click="router.push('/workspaces')">返回列表</el-button>
           <el-button
@@ -103,16 +110,67 @@
         </template>
       </LinkedWorkbenchShell>
       <el-skeleton v-else :rows="12" animated />
+
+      <el-drawer
+        v-model="projectScanDrawerOpen"
+        title="项目结构分析"
+        size="420px"
+        append-to-body
+      >
+        <section v-if="projectScanJob" class="project-scan-panel">
+          <el-tag :type="projectScanJob.status === 'READY_FOR_ANALYSIS' ? 'success' : 'primary'">
+            {{ projectScanPhaseLabel }}
+          </el-tag>
+          <el-progress
+            v-if="projectScanJob.status !== 'READY_FOR_ANALYSIS'"
+            :percentage="projectScanProgress"
+            :indeterminate="projectScanJob.status === 'RUNNING'"
+          />
+          <template v-if="projectScanJob.status === 'READY_FOR_ANALYSIS'">
+            <h3>项目结构分析完成</h3>
+            <dl class="project-scan-stats">
+              <div><dt>发现文件</dt><dd>{{ projectScanJob.discoveredFileCount }}</dd></div>
+              <div><dt>支持代码</dt><dd>{{ projectScanJob.supportedCodeCount }}</dd></div>
+              <div><dt>语义模块</dt><dd>{{ projectScanJob.analysisUnitCount }}</dd></div>
+              <div><dt>存在于多个模块的文件</dt><dd>{{ projectScanJob.overlappingFileCount }}</dd></div>
+            </dl>
+            <h4>语义模块预览</h4>
+            <el-empty v-if="projectScanUnits.length === 0" description="暂无语义模块" />
+            <ul v-else class="project-scan-units">
+              <li v-for="unit in projectScanUnits" :key="unit.unitId">
+                <strong>{{ unit.displayName }}</strong>
+                <span>{{ unit.semanticKind }} · {{ unit.primaryFiles.length }} 个主文件</span>
+              </li>
+            </ul>
+          </template>
+          <el-alert
+            v-else-if="projectScanJob.status === 'FAILED'"
+            :title="projectScanJob.errorMessage || '项目扫描失败'"
+            type="error"
+            show-icon
+            :closable="false"
+          />
+          <p v-else class="project-scan-hint">扫描在后台运行，关闭当前页面不会取消任务。</p>
+        </section>
+      </el-drawer>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
+import {
+  createAgentJob,
+  getAgentJob,
+  listAgentJobUnits,
+  readableAgentError,
+  type AgentJob,
+  type AgentSemanticUnit,
+} from '@/api/agent';
 import { getPendingDocumentChangeCount } from '@/api/documentChange';
 import {
   getDocument,
@@ -161,6 +219,11 @@ const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
 const syncing = ref(false);
+const projectScanStarting = ref(false);
+const projectScanJob = ref<AgentJob | null>(null);
+const projectScanUnits = ref<AgentSemanticUnit[]>([]);
+const projectScanDrawerOpen = ref(false);
+let projectScanPollTimer: number | null = null;
 const errorMessage = ref('');
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
 const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
@@ -205,6 +268,32 @@ const recentCommitCount = computed(() => gitChanges.value.filter(change =>
   change.files.some(file => file.path === selectedFilePath.value || file.oldPath === selectedFilePath.value),
 ).length);
 const documentReadonly = computed(() => document.value?.reviewStatus === 'DEPRECATED' || document.value?.reviewStatus === 'SUPERSEDED');
+const projectScanPhaseLabels: Partial<Record<NonNullable<AgentJob['phase']>, string>> = {
+  DISCOVERING_FILES: '正在发现文件',
+  CLASSIFYING_FILES: '正在分类文件',
+  LOADING_CODE_METADATA: '正在读取代码结构',
+  LOADING_BINDINGS: '正在读取已有 Binding',
+  BUILDING_SEMANTIC_GRAPH: '正在构建语义关系',
+  BUILDING_ANALYSIS_UNITS: '正在构建语义模块',
+  READY_FOR_ANALYSIS: '项目结构分析完成',
+};
+const projectScanPhaseLabel = computed(() => {
+  const phase = projectScanJob.value?.phase;
+  return phase ? projectScanPhaseLabels[phase] ?? '等待后台扫描' : '等待后台扫描';
+});
+const projectScanProgress = computed(() => {
+  const phases: AgentJob['phase'][] = [
+    'DISCOVERING_FILES',
+    'CLASSIFYING_FILES',
+    'LOADING_CODE_METADATA',
+    'LOADING_BINDINGS',
+    'BUILDING_SEMANTIC_GRAPH',
+    'BUILDING_ANALYSIS_UNITS',
+    'READY_FOR_ANALYSIS',
+  ];
+  const index = phases.indexOf(projectScanJob.value?.phase ?? null);
+  return index < 0 ? 5 : Math.round(((index + 1) / phases.length) * 100);
+});
 
 const {
   connected: collaborationConnected,
@@ -216,13 +305,23 @@ const {
   updateContent: updateBlockContentViaCollaboration,
 } = useDocumentCollaboration(workspaceId, selectedDocumentId);
 
-onMounted(() => void loadWorkbench());
+onMounted(() => {
+  void initializeWorkbench();
+});
 const pollTimer = window.setInterval(() => {
   if (repositories.value.some(item => item.syncStatus === 'SYNC_PENDING' || item.syncStatus === 'SYNCING')) {
     void refreshSyncState();
   }
 }, 2500);
-onBeforeUnmount(() => window.clearInterval(pollTimer));
+onBeforeUnmount(() => {
+  window.clearInterval(pollTimer);
+  if (projectScanPollTimer !== null) window.clearTimeout(projectScanPollTimer);
+});
+
+async function initializeWorkbench() {
+  await loadWorkbench();
+  restoreProjectScan();
+}
 
 async function loadWorkbench() {
   if (!workspaceId.value) { errorMessage.value = '工作区地址无效'; return; }
@@ -424,6 +523,77 @@ async function handleSync() {
   finally { syncing.value = false; }
 }
 
+async function confirmProjectScan() {
+  if (!selectedRepositoryId.value || projectScanStarting.value) return;
+  try {
+    await ElMessageBox.confirm(
+      'Agent 将在后台扫描当前仓库，识别代码文件、已有文档关联和语义模块。本阶段只分析项目结构，不会修改正式文档。',
+      '检查整个项目',
+      {
+        confirmButtonText: '开始扫描',
+        cancelButtonText: '取消',
+        type: 'info',
+      },
+    );
+  } catch {
+    return;
+  }
+  await startProjectScan();
+}
+
+async function startProjectScan() {
+  projectScanStarting.value = true;
+  try {
+    const queued = await createAgentJob({
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      scope: { type: 'PROJECT_INITIALIZATION' },
+      userInstruction: null,
+    });
+    localStorage.setItem(projectScanStorageKey(), queued.jobId);
+    projectScanUnits.value = [];
+    projectScanDrawerOpen.value = true;
+    ElMessage.success('项目扫描已在后台启动，可以关闭当前窗口。');
+    await pollProjectScan(queued.jobId);
+  } catch (error) {
+    ElMessage.error(readableAgentError(error, '项目扫描启动失败'));
+  } finally {
+    projectScanStarting.value = false;
+  }
+}
+
+function restoreProjectScan() {
+  const jobId = localStorage.getItem(projectScanStorageKey());
+  if (jobId) void pollProjectScan(jobId);
+}
+
+async function pollProjectScan(jobId: string) {
+  if (projectScanPollTimer !== null) window.clearTimeout(projectScanPollTimer);
+  try {
+    projectScanJob.value = await getAgentJob(jobId);
+    if (projectScanJob.value.status === 'READY_FOR_ANALYSIS') {
+      const page = await listAgentJobUnits(jobId, 0, 20);
+      projectScanUnits.value = page.units;
+      projectScanDrawerOpen.value = true;
+      localStorage.removeItem(projectScanStorageKey());
+      return;
+    }
+    if (projectScanJob.value.status === 'FAILED' || projectScanJob.value.status === 'CANCELLED') {
+      projectScanDrawerOpen.value = true;
+      localStorage.removeItem(projectScanStorageKey());
+      return;
+    }
+    projectScanPollTimer = window.setTimeout(() => void pollProjectScan(jobId), 5000);
+  } catch (error) {
+    localStorage.removeItem(projectScanStorageKey());
+    ElMessage.error(readableAgentError(error, '项目扫描状态读取失败'));
+  }
+}
+
+function projectScanStorageKey() {
+  return `devcollab.project-scan.${workspaceId.value}.${selectedRepositoryId.value}`;
+}
+
 async function refreshSyncState() {
   const previous = activeRepository.value?.syncStatus;
   repositories.value = await listGitRepositories(workspaceId.value);
@@ -445,5 +615,13 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .linked-page-shell { height: 100vh; overflow: hidden; }
 .linked-page-main { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px; overflow: hidden; padding: 12px 14px 0; background: #f2f5f9; }
 .linked-page-main > .linked-workbench-shell:first-child { grid-row: 1 / -1; }
+.project-scan-panel { display: grid; gap: 16px; }
+.project-scan-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.project-scan-stats div { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.project-scan-stats dt { color: #64748b; font-size: 12px; }
+.project-scan-stats dd { margin: 4px 0 0; color: #0f172a; font-size: 22px; font-weight: 700; }
+.project-scan-units { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.project-scan-units li { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+.project-scan-units span, .project-scan-hint { color: #64748b; font-size: 13px; }
 @media (max-width: 760px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .linked-page-main { min-height: 100vh; } }
 </style>

@@ -18,6 +18,7 @@ class DelegationClient(Protocol):
         job_id: UUID,
         workspace_id: UUID,
         repository_id: UUID,
+        scope_type: str,
         authorization: str,
     ) -> dict[str, Any]: ...
 
@@ -40,6 +41,7 @@ class KnowledgeCoreDelegationClient:
         job_id: UUID,
         workspace_id: UUID,
         repository_id: UUID,
+        scope_type: str,
         authorization: str,
     ) -> dict[str, Any]:
         response = await self._request(
@@ -50,6 +52,7 @@ class KnowledgeCoreDelegationClient:
                 "jobId": str(job_id),
                 "workspaceId": str(workspace_id),
                 "repositoryId": str(repository_id),
+                "scopeType": scope_type,
             },
         )
         return self._json(response)

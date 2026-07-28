@@ -6,7 +6,7 @@ import os
 import signal
 import socket
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import asyncpg  # type: ignore[import-untyped]
@@ -25,6 +25,8 @@ from app.planning.validator import PlanValidationError
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
+from app.runtime.job_executor import JobExecutionError
+from app.runtime.project_discovery import ProjectDiscoveryService
 
 LOGGER = logging.getLogger("devcollab.agent.worker")
 RETRYABLE_ERRORS = {
@@ -136,8 +138,47 @@ class AgentWorker:
             }
             return await workflow.graph.ainvoke(initial_state)
 
+        async def run_project_discovery() -> None:
+            async def on_phase(phase: str) -> None:
+                updated = await self._repository.update_phase(
+                    unit_id, self._worker_id, phase
+                )
+                if not updated:
+                    raise RuntimeError("Agent unit lease was lost")
+
+            service = ProjectDiscoveryService(delegated, self._settings, on_phase)
+            files, units, stats = await service.execute(
+                job_id=job_id,
+                workspace_id=UUID(str(job["workspace_id"])),
+                repository_id=UUID(str(job["repository_id"])),
+                revision=str(job["revision"]),
+            )
+            await self._repository.complete_project_discovery(
+                unit_id, self._worker_id, files, units, stats
+            )
+
         workflow_task: asyncio.Task[dict[str, Any]] | None = None
+        discovery_task: asyncio.Task[None] | None = None
         try:
+            if unit.get("unit_kind") == "PROJECT_DISCOVERY":
+                discovery_task = asyncio.create_task(
+                    run_project_discovery(), name=f"project-discovery-{unit_id}"
+                )
+                async with asyncio.timeout(self._settings.agent_unit_timeout_seconds):
+                    done, _pending = await asyncio.wait(
+                        {
+                            cast(asyncio.Task[Any], discovery_task),
+                            cast(asyncio.Task[Any], heartbeat),
+                        },
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if heartbeat in done:
+                        discovery_task.cancel()
+                        await asyncio.gather(discovery_task, return_exceptions=True)
+                        heartbeat.result()
+                        raise RuntimeError("Agent unit heartbeat stopped unexpectedly")
+                    discovery_task.result()
+                return
             workflow_task = asyncio.create_task(
                 run_workflow(), name=f"workflow-{unit_id}"
             )
@@ -159,7 +200,21 @@ class AgentWorker:
                 unit_id, self._worker_id, outcome, review_id
             )
         except Exception as exc:
-            code, message = self._safe_error(exc)
+            LOGGER.exception(
+                "Agent unit execution failed jobId=%s unitId=%s unitKind=%s",
+                job_id,
+                unit_id,
+                unit.get("unit_kind"),
+            )
+            if unit.get("unit_kind") == "PROJECT_DISCOVERY" and isinstance(
+                exc, TimeoutError
+            ):
+                code, message = (
+                    "PROJECT_DISCOVERY_TIMEOUT",
+                    "Project discovery exceeded the configured unit timeout",
+                )
+            else:
+                code, message = self._safe_error(exc)
             attempt = int(unit["attempt"])
             max_attempts = int(unit["max_attempts"])
             retry_at = None
@@ -170,6 +225,9 @@ class AgentWorker:
                 unit_id, self._worker_id, code, message, retry_at
             )
         finally:
+            if discovery_task is not None and not discovery_task.done():
+                discovery_task.cancel()
+                await asyncio.gather(discovery_task, return_exceptions=True)
             if workflow_task is not None and not workflow_task.done():
                 workflow_task.cancel()
                 await asyncio.gather(workflow_task, return_exceptions=True)
@@ -200,6 +258,10 @@ class AgentWorker:
             return exc.code, str(exc)[:300]
         if isinstance(exc, McpClientError):
             return exc.code, str(exc)[:300]
+        if isinstance(exc, JobExecutionError):
+            return exc.code, str(exc)[:300]
+        if isinstance(exc, ValueError) and str(exc) == "UNIT_LIMIT_EXCEEDED":
+            return "UNIT_LIMIT_EXCEEDED", "Analysis unit limit exceeded"
         if isinstance(
             exc,
             (

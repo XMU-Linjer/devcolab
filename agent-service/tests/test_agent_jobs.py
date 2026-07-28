@@ -49,7 +49,6 @@ def test_create_current_file_job_returns_202_without_running_model(settings: Set
     [
         {"type": "DIRECTORY", "pathPrefix": "src"},
         {"type": "GIT_CHANGES"},
-        {"type": "PROJECT_INITIALIZATION"},
     ],
 )
 def test_persistent_job_api_rejects_non_current_file_scope(
@@ -458,6 +457,7 @@ async def _seed_repository() -> MemoryAgentJobRepository:
         {
             "id": UUID("aaaaaaaa-0000-0000-0000-000000000002"),
             "max_attempts": 3,
+            "unit_kind": "CURRENT_FILE_ANALYSIS",
         },
     )
     return repository

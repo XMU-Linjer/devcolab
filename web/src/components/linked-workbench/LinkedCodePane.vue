@@ -129,10 +129,13 @@ const agentPhase = ref<AgentJobPhase | null>(null);
 const changeRequestId = ref<string | null>(null);
 let pollTimer: number | null = null;
 
-const terminalStatuses = new Set<AgentJobStatus>(['COMPLETED', 'FAILED', 'CANCELLED']);
+const terminalStatuses = new Set<AgentJobStatus>([
+  'READY_FOR_ANALYSIS', 'COMPLETED', 'FAILED', 'CANCELLED',
+]);
 const statusLabels: Record<AgentJobStatus, string> = {
   QUEUED: '排队中',
   RUNNING: 'Agent 正在处理',
+  READY_FOR_ANALYSIS: '项目结构分析完成',
   COMPLETED: 'Agent 检查完成',
   FAILED: 'Agent 检查失败',
   CANCELLED: 'Agent 检查已取消',
@@ -143,6 +146,13 @@ const phaseLabels: Record<AgentJobPhase, string> = {
   VALIDATING: '正在校验建议',
   REPAIRING: '正在修正建议',
   SUBMITTING_REVIEW: '正在提交评审',
+  DISCOVERING_FILES: '正在发现文件',
+  CLASSIFYING_FILES: '正在分类文件',
+  LOADING_CODE_METADATA: '正在读取代码结构',
+  LOADING_BINDINGS: '正在读取已有 Binding',
+  BUILDING_SEMANTIC_GRAPH: '正在构建语义关系',
+  BUILDING_ANALYSIS_UNITS: '正在构建语义模块',
+  READY_FOR_ANALYSIS: '项目结构分析完成',
 };
 const isAgentRunning = computed(() => creatingRun.value || Boolean(
   agentStatus.value && !terminalStatuses.has(agentStatus.value),

@@ -68,6 +68,14 @@ public interface KnowledgeCoreGateway {
             McpUserIdentity identity
     );
 
+    CodeMetadataBatch inspectCodeMetadata(
+            UUID workspaceId,
+            UUID repositoryId,
+            String revision,
+            List<String> filePaths,
+            McpUserIdentity identity
+    );
+
     Map<String, Object> submitDocumentChange(
             UUID workspaceId,
             Map<String, Object> request,
@@ -163,6 +171,7 @@ public interface KnowledgeCoreGateway {
     record RepositoryFilePage(
             UUID workspaceId,
             UUID repositoryId,
+            String revision,
             String pathPrefix,
             boolean recursive,
             List<RepositoryFileInfo> files,
@@ -218,6 +227,31 @@ public interface KnowledgeCoreGateway {
             UUID documentId,
             UUID blockId,
             String pathPattern
+    ) {
+    }
+
+    record CodeMetadataBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            String revision,
+            List<CodeMetadataInfo> files
+    ) {
+    }
+
+    record CodeMetadataInfo(
+            String filePath,
+            String language,
+            String packageName,
+            String moduleKey,
+            String layerHint,
+            List<String> imports,
+            List<String> exportedSymbols,
+            List<String> topLevelSymbols,
+            List<String> annotations,
+            List<String> routeHints,
+            List<String> roleHints,
+            String parseStatus,
+            String errorCode
     ) {
     }
 

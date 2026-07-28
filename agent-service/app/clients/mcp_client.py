@@ -53,6 +53,7 @@ class OfficialMcpClient:
             "devcollab.repository.list_files",
             "devcollab.repository.list_changes",
             "devcollab.binding.list_batch",
+            "devcollab.repository.inspect_code_metadata",
         }
     )
 

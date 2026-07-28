@@ -230,5 +230,15 @@ function agentJob(status: AgentJobStatus) {
     startedAt: null,
     completedAt: null,
     updatedAt: '2026-07-28T00:00:00Z',
+    discoveredFileCount: 0,
+    supportedCodeCount: 0,
+    skippedFileCount: 0,
+    skippedReasonCounts: {},
+    metadataParsedCount: 0,
+    metadataFailedCount: 0,
+    boundFileCount: 0,
+    unboundFileCount: 0,
+    analysisUnitCount: 0,
+    overlappingFileCount: 0,
   };
 }

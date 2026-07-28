@@ -37,15 +37,22 @@ class Settings(BaseSettings):
     agent_review_max_operations: int = Field(50, ge=1, le=50)
     agent_review_max_evidence: int = Field(50, ge=1, le=50)
     agent_repository_page_size: int = Field(200, ge=1, le=200)
+    agent_project_list_page_size: int = Field(200, ge=1, le=200)
+    agent_metadata_batch_size: int = Field(100, ge=1, le=100)
     agent_binding_batch_size: int = Field(100, ge=1, le=100)
     agent_max_discovered_files: int = Field(5_000, ge=1, le=50_000)
+    agent_project_max_files: int = Field(5_000, ge=1, le=50_000)
     agent_max_discovery_pages: int = Field(100, ge=1, le=1_000)
     agent_max_single_file_bytes: int = Field(1_000_000, ge=1)
     agent_max_files_per_unit: int = Field(6, ge=1, le=20)
+    agent_max_primary_files_per_unit: int = Field(6, ge=1, le=20)
+    agent_max_supporting_files_per_unit: int = Field(4, ge=0, le=20)
+    agent_max_total_files_per_unit: int = Field(10, ge=1, le=30)
     agent_max_deleted_paths_per_unit: int = Field(100, ge=1, le=1_000)
     agent_max_units: int = Field(500, ge=1, le=5_000)
+    agent_max_analysis_units: int = Field(500, ge=1, le=5_000)
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings.model_validate({})

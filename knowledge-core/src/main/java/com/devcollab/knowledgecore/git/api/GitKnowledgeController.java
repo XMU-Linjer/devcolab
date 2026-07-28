@@ -161,6 +161,21 @@ public class GitKnowledgeController {
         ));
     }
 
+    @PostMapping(
+            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-metadata/batch"
+    )
+    public CodeMetadataBatchResponse inspectCodeMetadata(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID repositoryId,
+            @Valid @RequestBody CodeMetadataBatchRequest request,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return CodeMetadataBatchResponse.from(service.inspectCodeMetadata(
+                workspaceId, repositoryId, currentUser.userId(),
+                request.revision(), request.filePaths()
+        ));
+    }
+
     @GetMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source"
     )

@@ -8,6 +8,7 @@ import java.util.UUID;
 public record RepositoryFilePageResult(
         UUID workspaceId,
         UUID repositoryId,
+        String revision,
         String pathPrefix,
         boolean recursive,
         List<GitRepositoryFile> files,

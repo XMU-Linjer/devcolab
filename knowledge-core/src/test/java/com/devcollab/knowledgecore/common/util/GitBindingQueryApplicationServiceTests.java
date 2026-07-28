@@ -34,7 +34,8 @@ class GitBindingQueryApplicationServiceTests {
         service = new GitKnowledgeApplicationService(
                 gitRepository, mock(WorkspaceApplicationService.class),
                 mock(WorkspacePermissionPolicy.class), documentRepository,
-                mock(DocumentBlockRepository.class), mock(OutboxEventPublisher.class)
+                mock(DocumentBlockRepository.class), mock(OutboxEventPublisher.class),
+                new CodeMetadataInspector()
         );
         workspaceId = UUID.randomUUID();
         repositoryId = UUID.randomUUID();

@@ -82,10 +82,13 @@ class ClassifiedFile:
     language: str | None
     size_bytes: int
     deleted: bool = False
+    file_name: str = ""
+    extension: str = ""
+    is_generated: bool = False
 
     @property
     def eligible(self) -> bool:
-        return self.classification in {"SUPPORTED_CODE", "DELETED_CODE_REFERENCE"}
+        return self.classification == "SUPPORTED_CODE"
 
 
 def classify_file(
@@ -100,8 +103,14 @@ def classify_file(
     size = max(0, int(item.get("sizeBytes") or 0))
     language = item.get("language") or SUPPORTED_CODE_EXTENSIONS.get(extension)
     segments = {segment.lower() for segment in pure.parts[:-1]}
-    if segments & SKIPPED_DIRECTORY_SEGMENTS:
-        classification = "VENDOR_GENERATED_SKIPPED"
+    generated = "generated" in segments or any(
+        segment.endswith("-generated") for segment in segments
+    )
+    vendor = bool(segments & (SKIPPED_DIRECTORY_SEGMENTS - {"generated"}))
+    if generated:
+        classification = "GENERATED_SKIPPED"
+    elif vendor:
+        classification = "VENDOR_SKIPPED"
     elif (
         bool(item.get("binaryFile"))
         or item.get("readable") is False
@@ -109,9 +118,7 @@ def classify_file(
     ):
         classification = "BINARY_SKIPPED"
     elif extension in SUPPORTED_CODE_EXTENSIONS:
-        if deleted:
-            classification = "DELETED_CODE_REFERENCE"
-        elif size > max_size_bytes:
+        if size > max_size_bytes:
             classification = "OVERSIZED_SKIPPED"
         else:
             classification = "SUPPORTED_CODE"
@@ -122,5 +129,8 @@ def classify_file(
     }:
         classification = "TEXT_NON_CODE_SKIPPED"
     else:
-        classification = "UNSUPPORTED_SKIPPED"
-    return ClassifiedFile(path, classification, language, size, deleted)
+        classification = "UNSUPPORTED_EXTENSION_SKIPPED"
+    return ClassifiedFile(
+        path, classification, language, size, deleted,
+        pure.name, extension, generated,
+    )

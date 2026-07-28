@@ -28,6 +28,7 @@ public class RepositoryFilesApplicationService {
     public Map<String, Object> listFiles(
             UUID workspaceId,
             UUID repositoryId,
+            String revision,
             String pathPrefix,
             boolean recursive,
             String cursor,
@@ -41,13 +42,40 @@ public class RepositoryFilesApplicationService {
                     "limit exceeds the repository page size"
             );
         }
+        if (identity.delegated()
+                && (!workspaceId.equals(identity.delegationWorkspaceId())
+                || !repositoryId.equals(identity.delegationRepositoryId()))) {
+            throw new McpToolException(
+                    McpToolErrorCode.PERMISSION_DENIED,
+                    "Delegated repository scope does not match"
+            );
+        }
+        String expectedRevision = revision;
+        if (identity.delegated()) {
+            if (revision != null
+                    && !revision.equalsIgnoreCase(identity.delegationRevision())) {
+                throw new McpToolException(
+                        McpToolErrorCode.PERMISSION_DENIED,
+                        "Delegated repository revision does not match"
+                );
+            }
+            expectedRevision = identity.delegationRevision();
+        }
         var page = gateway.listRepositoryFiles(
                 workspaceId, repositoryId, normalizedPrefix, recursive,
                 cursor, limit, identity
         );
+        if (expectedRevision != null
+                && !expectedRevision.equalsIgnoreCase(page.revision())) {
+            throw new McpToolException(
+                    McpToolErrorCode.INVALID_ARGUMENT,
+                    "Repository revision changed during file discovery"
+            );
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("workspaceId", page.workspaceId());
         result.put("repositoryId", page.repositoryId());
+        result.put("revision", page.revision());
         result.put("pathPrefix", page.pathPrefix());
         result.put("recursive", page.recursive());
         result.put("files", page.files().stream().map(file -> {

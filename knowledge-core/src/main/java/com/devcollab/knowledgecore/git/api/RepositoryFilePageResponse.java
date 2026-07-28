@@ -8,6 +8,7 @@ import java.util.UUID;
 public record RepositoryFilePageResponse(
         UUID workspaceId,
         UUID repositoryId,
+        String revision,
         String pathPrefix,
         boolean recursive,
         List<FileItem> files,
@@ -16,7 +17,7 @@ public record RepositoryFilePageResponse(
 ) {
     public static RepositoryFilePageResponse from(RepositoryFilePageResult result) {
         return new RepositoryFilePageResponse(
-                result.workspaceId(), result.repositoryId(), result.pathPrefix(),
+                result.workspaceId(), result.repositoryId(), result.revision(), result.pathPrefix(),
                 result.recursive(),
                 result.files().stream().map(file -> new FileItem(
                         file.path(),

@@ -185,6 +185,7 @@ final class McpToolSchemas {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("workspaceId", uuidProperty("Workspace identifier"));
         properties.put("repositoryId", uuidProperty("Repository identifier"));
+        properties.put("revision", Map.of("type", "string", "minLength", 1));
         properties.put("pathPrefix", Map.of(
                 "type", "string", "maxLength", maxPathCharacters
         ));
@@ -216,6 +217,7 @@ final class McpToolSchemas {
                 Map.of(
                         "workspaceId", uuidProperty("Workspace identifier"),
                         "repositoryId", uuidProperty("Repository identifier"),
+                        "revision", Map.of("type", "string"),
                         "pathPrefix", Map.of("type", "string"),
                         "recursive", Map.of("type", "boolean"),
                         "files", Map.of("type", "array", "items", file),
@@ -223,7 +225,7 @@ final class McpToolSchemas {
                         "hasMore", Map.of("type", "boolean")
                 ),
                 List.of(
-                        "workspaceId", "repositoryId", "pathPrefix", "recursive",
+                        "workspaceId", "repositoryId", "revision", "pathPrefix", "recursive",
                         "files", "nextCursor", "hasMore"
                 )
         );
@@ -238,6 +240,82 @@ final class McpToolSchemas {
                 "type", "integer", "minimum", 1, "maximum", maxPageSize
         ));
         return objectSchema(properties, List.of("workspaceId", "repositoryId"));
+    }
+
+    static Map<String, Object> repositoryCodeMetadataInput(
+            int maxPathCharacters,
+            int maxPaths
+    ) {
+        return objectSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "revision", Map.of(
+                                "type", "string",
+                                "minLength", 1,
+                                "maxLength", 64
+                        ),
+                        "filePaths", Map.of(
+                                "type", "array",
+                                "minItems", 1,
+                                "maxItems", maxPaths,
+                                "items", Map.of(
+                                        "type", "string",
+                                        "minLength", 1,
+                                        "maxLength", maxPathCharacters
+                                )
+                        )
+                ),
+                List.of("workspaceId", "repositoryId", "revision", "filePaths")
+        );
+    }
+
+    static Map<String, Object> repositoryCodeMetadataOutput() {
+        Map<String, Object> nullableText = Map.of(
+                "type", List.of("string", "null")
+        );
+        Map<String, Object> stringArray = Map.of(
+                "type", "array",
+                "items", Map.of("type", "string")
+        );
+        Map<String, Object> file = objectSchema(
+                Map.ofEntries(
+                        Map.entry("filePath", Map.of("type", "string")),
+                        Map.entry("language", nullableText),
+                        Map.entry("packageName", nullableText),
+                        Map.entry("moduleKey", nullableText),
+                        Map.entry("moduleName", nullableText),
+                        Map.entry("layerHint", nullableText),
+                        Map.entry("imports", stringArray),
+                        Map.entry("resolvedRepositoryImports", stringArray),
+                        Map.entry("exportedSymbols", stringArray),
+                        Map.entry("topLevelSymbols", stringArray),
+                        Map.entry("annotations", stringArray),
+                        Map.entry("routeHints", stringArray),
+                        Map.entry("roleHints", stringArray),
+                        Map.entry("parseStatus", Map.of(
+                                "type", "string",
+                                "enum", List.of("PARSED", "FAILED")
+                        )),
+                        Map.entry("errorCode", nullableText)
+                ),
+                List.of(
+                        "filePath", "language", "packageName", "moduleKey", "moduleName",
+                        "layerHint", "imports", "exportedSymbols",
+                        "resolvedRepositoryImports",
+                        "topLevelSymbols", "annotations", "routeHints",
+                        "roleHints", "parseStatus", "errorCode"
+                )
+        );
+        return toolOutputSchema(
+                Map.of(
+                        "workspaceId", uuidProperty("Workspace identifier"),
+                        "repositoryId", uuidProperty("Repository identifier"),
+                        "revision", Map.of("type", "string"),
+                        "files", Map.of("type", "array", "items", file)
+                ),
+                List.of("workspaceId", "repositoryId", "revision", "files")
+        );
     }
 
     static Map<String, Object> repositoryListChangesOutput() {

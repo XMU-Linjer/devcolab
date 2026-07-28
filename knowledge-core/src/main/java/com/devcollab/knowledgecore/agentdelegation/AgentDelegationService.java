@@ -26,6 +26,12 @@ public class AgentDelegationService {
             "devcollab.document.get_structure",
             "devcollab.review.submit_document_change"
     );
+    public static final List<String> PROJECT_INITIALIZATION_TOOLS = List.of(
+            "devcollab.workspace.get_context",
+            "devcollab.repository.list_files",
+            "devcollab.repository.inspect_code_metadata",
+            "devcollab.binding.list_batch"
+    );
 
     private final AgentDelegationRepository repository;
     private final GitKnowledgeRepository gitRepository;
@@ -52,6 +58,7 @@ public class AgentDelegationService {
             UUID jobId,
             UUID workspaceId,
             UUID repositoryId,
+            String scopeType,
             UUID currentUserId
     ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
@@ -68,9 +75,23 @@ public class AgentDelegationService {
         Instant now = Instant.now();
         return repository.save(new AgentDelegation(
                 UUID.randomUUID(), jobId, currentUserId, workspaceId, repositoryId,
-                git.lastSyncedCommit(), CURRENT_FILE_TOOLS, "ACTIVE", now,
+                git.lastSyncedCommit(), allowedTools(scopeType), "ACTIVE", now,
                 now.plus(properties.delegationTtl()), null
         ));
+    }
+
+    private List<String> allowedTools(String scopeType) {
+        if ("CURRENT_FILE".equals(scopeType)) {
+            return CURRENT_FILE_TOOLS;
+        }
+        if ("PROJECT_INITIALIZATION".equals(scopeType)) {
+            return PROJECT_INITIALIZATION_TOOLS;
+        }
+        throw new AgentDelegationException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_SCOPE",
+                "Unsupported Agent job scope"
+        );
     }
 
     public AgentDelegation authorize(

@@ -53,7 +53,9 @@ class AgentDelegationServiceTests {
                 .thenReturn(Optional.of(repository(repositoryId, workspaceId, "abc123")));
 
         AgentDelegation delegation =
-                service.create(jobId, workspaceId, repositoryId, userId);
+                service.create(
+                        jobId, workspaceId, repositoryId, "CURRENT_FILE", userId
+                );
 
         verify(workspaceService).requireMembership(workspaceId, userId);
         assertThat(delegation.jobId()).isEqualTo(jobId);

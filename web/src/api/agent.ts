@@ -13,13 +13,20 @@ export type AgentRunStatus =
   | 'NO_CHANGE'
   | 'FAILED';
 
-export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'READY_FOR_ANALYSIS' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type AgentJobPhase =
   | 'LOADING_CONTEXT'
   | 'MODEL_RUNNING'
   | 'VALIDATING'
   | 'REPAIRING'
-  | 'SUBMITTING_REVIEW';
+  | 'SUBMITTING_REVIEW'
+  | 'DISCOVERING_FILES'
+  | 'CLASSIFYING_FILES'
+  | 'LOADING_CODE_METADATA'
+  | 'LOADING_BINDINGS'
+  | 'BUILDING_SEMANTIC_GRAPH'
+  | 'BUILDING_ANALYSIS_UNITS'
+  | 'READY_FOR_ANALYSIS';
 
 export interface CreateAgentRunPayload {
   workspaceId: string;
@@ -52,7 +59,9 @@ export interface AgentRun {
 export interface CreateAgentJobPayload {
   workspaceId: string;
   repositoryId: string;
-  scope: { type: 'CURRENT_FILE'; filePath: string };
+  scope:
+    | { type: 'CURRENT_FILE'; filePath: string }
+    | { type: 'PROJECT_INITIALIZATION' };
   userInstruction: string | null;
 }
 
@@ -64,8 +73,10 @@ export interface QueuedAgentJob {
 
 export interface AgentJob {
   jobId: string;
-  scopeType: 'CURRENT_FILE';
-  scopePayload: { type: 'CURRENT_FILE'; filePath: string };
+  scopeType: 'CURRENT_FILE' | 'PROJECT_INITIALIZATION';
+  scopePayload:
+    | { type: 'CURRENT_FILE'; filePath: string }
+    | { type: 'PROJECT_INITIALIZATION' };
   status: AgentJobStatus;
   result: 'NO_CHANGE' | 'REVIEW_SUBMITTED' | 'PARTIALLY_COMPLETED' | null;
   phase: AgentJobPhase | null;
@@ -80,6 +91,46 @@ export interface AgentJob {
   startedAt: string | null;
   completedAt: string | null;
   updatedAt: string;
+  discoveredFileCount: number;
+  supportedCodeCount: number;
+  skippedFileCount: number;
+  skippedReasonCounts: Record<string, number>;
+  metadataParsedCount: number;
+  metadataFailedCount: number;
+  boundFileCount: number;
+  unboundFileCount: number;
+  analysisUnitCount: number;
+  overlappingFileCount: number;
+}
+
+export interface AgentSemanticUnit {
+  unitId: string;
+  semanticKey: string;
+  displayName: string;
+  semanticKind: string;
+  status: 'READY_FOR_ANALYSIS';
+  primaryDirectory: string;
+  primaryFiles: string[];
+  supportingFiles: string[];
+  boundDocumentIds: string[];
+  boundDocuments: Array<{
+    documentId: string;
+    relationship: string;
+    source: string;
+    ordinal: number;
+  }>;
+  languageSet: string[];
+  estimatedSizeBytes: number;
+  groupingReasons: string[];
+  unitFingerprint: string;
+}
+
+export interface AgentJobUnitsPage {
+  jobId: string;
+  offset: number;
+  limit: number;
+  total: number;
+  units: AgentSemanticUnit[];
 }
 
 interface AgentErrorBody {
@@ -110,6 +161,14 @@ export async function createAgentJob(payload: CreateAgentJobPayload) {
 
 export async function getAgentJob(jobId: string) {
   const { data } = await agentHttp.get<AgentJob>(`/agent-jobs/${jobId}`);
+  return data;
+}
+
+export async function listAgentJobUnits(jobId: string, offset = 0, limit = 20) {
+  const { data } = await agentHttp.get<AgentJobUnitsPage>(
+    `/agent-jobs/${jobId}/units`,
+    { params: { offset, limit } },
+  );
   return data;
 }
 

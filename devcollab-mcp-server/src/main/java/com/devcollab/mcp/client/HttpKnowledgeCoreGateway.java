@@ -243,7 +243,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             }
             return new RepositoryFilePage(
                     payload.workspaceId(), payload.repositoryId(),
-                    payload.pathPrefix(), payload.recursive(),
+                    payload.revision(), payload.pathPrefix(), payload.recursive(),
                     payload.files() == null ? List.of() : payload.files().stream()
                             .map(file -> new RepositoryFileInfo(
                                     file.filePath(), file.fileName(), file.extension(),
@@ -332,6 +332,51 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
         } catch (RuntimeException exception) {
             throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
         }
+    }
+
+    @Override
+    public CodeMetadataBatch inspectCodeMetadata(
+            UUID workspaceId,
+            UUID repositoryId,
+            String revision,
+            List<String> filePaths,
+            McpUserIdentity identity
+    ) {
+        try {
+            CodeMetadataBatchPayload payload = restClient.post()
+                    .uri(
+                            "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-metadata/batch",
+                            workspaceId, repositoryId
+                    )
+                    .header(HttpHeaders.AUTHORIZATION, bearer(identity))
+                    .body(Map.of("revision", revision, "filePaths", filePaths))
+                    .retrieve()
+                    .body(CodeMetadataBatchPayload.class);
+            if (payload == null) {
+                throw new McpToolException(
+                        McpToolErrorCode.INTERNAL_ERROR,
+                        "Code metadata batch was empty"
+                );
+            }
+            return new CodeMetadataBatch(
+                    payload.workspaceId(), payload.repositoryId(), payload.revision(),
+                    payload.files() == null ? List.of() : payload.files().stream()
+                            .map(file -> new CodeMetadataInfo(
+                                    file.filePath(), file.language(), file.packageName(),
+                                    file.moduleKey(), file.layerHint(), safe(file.imports()),
+                                    safe(file.exportedSymbols()), safe(file.topLevelSymbols()),
+                                    safe(file.annotations()), safe(file.routeHints()),
+                                    safe(file.roleHints()), file.parseStatus(),
+                                    file.errorCode()
+                            )).toList()
+            );
+        } catch (RuntimeException exception) {
+            throw map(exception, McpToolErrorCode.REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    private static List<String> safe(List<String> values) {
+        return values == null ? List.of() : values;
     }
 
     @Override
@@ -519,6 +564,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
     private record RepositoryFilePagePayload(
             UUID workspaceId,
             UUID repositoryId,
+            String revision,
             String pathPrefix,
             boolean recursive,
             List<RepositoryFilePayload> files,
@@ -577,6 +623,31 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             UUID documentId,
             UUID blockId,
             String pathPattern
+    ) {
+    }
+
+    private record CodeMetadataBatchPayload(
+            UUID workspaceId,
+            UUID repositoryId,
+            String revision,
+            List<CodeMetadataPayload> files
+    ) {
+    }
+
+    private record CodeMetadataPayload(
+            String filePath,
+            String language,
+            String packageName,
+            String moduleKey,
+            String layerHint,
+            List<String> imports,
+            List<String> exportedSymbols,
+            List<String> topLevelSymbols,
+            List<String> annotations,
+            List<String> routeHints,
+            List<String> roleHints,
+            String parseStatus,
+            String errorCode
     ) {
     }
 

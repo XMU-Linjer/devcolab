@@ -44,7 +44,7 @@ class McpServerProtocolTests {
     private KnowledgeCoreGateway coreGateway;
 
     @Test
-    void officialSdkCanInitializeAndListNineTools() {
+    void officialSdkCanInitializeAndListTenTools() {
         try (McpSyncClient client = client()) {
             assertThat(client.initialize().serverInfo().name()).isEqualTo("devcollab-context-server");
             List<McpSchema.Tool> tools = client.listTools().tools();
@@ -59,6 +59,7 @@ class McpServerProtocolTests {
                             "devcollab.repository.list_files",
                             "devcollab.repository.list_changes",
                             "devcollab.binding.list_batch",
+                            "devcollab.repository.inspect_code_metadata",
                             "devcollab.review.submit_document_change"
                     );
             for (McpSchema.Tool tool : tools) {

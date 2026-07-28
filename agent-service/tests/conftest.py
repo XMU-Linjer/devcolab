@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.runtime.semantic_planner import PlannedSemanticUnit
 from app.schemas.plans import AgentPlan
 
 
@@ -37,6 +38,7 @@ class MemoryAgentJobRepository:
         self.units: dict[UUID, dict[str, Any]] = {}
         self.lock = asyncio.Lock()
         self.worker_heartbeats: dict[str, datetime] = {}
+        self.job_files: dict[UUID, list[dict[str, Any]]] = {}
 
     async def create_job(self, job: dict[str, Any], unit: dict[str, Any]) -> None:
         async with self.lock:
@@ -56,6 +58,17 @@ class MemoryAgentJobRepository:
                 "started_at": None,
                 "completed_at": None,
                 "current_phase": None,
+                "phase": None,
+                "discovered_file_count": 0,
+                "supported_code_count": 0,
+                "skipped_file_count": 0,
+                "skipped_reason_counts": {},
+                "metadata_parsed_count": 0,
+                "metadata_failed_count": 0,
+                "bound_file_count": 0,
+                "unbound_file_count": 0,
+                "analysis_unit_count": 0,
+                "overlapping_file_count": 0,
             }
             self.units[unit["id"]] = {
                 **unit,
@@ -68,6 +81,9 @@ class MemoryAgentJobRepository:
                 "lease_expires_at": None,
                 "next_attempt_at": None,
                 "created_at": now,
+                "unit_kind": unit.get("unit_kind", "CURRENT_FILE_ANALYSIS"),
+                "language_set": [],
+                "grouping_reasons": [],
             }
 
     async def get_job(self, job_id: UUID) -> dict[str, Any] | None:
@@ -75,7 +91,7 @@ class MemoryAgentJobRepository:
         if job is None:
             return None
         unit = next(value for value in self.units.values() if value["job_id"] == job_id)
-        return {**job, "current_phase": unit["phase"]}
+        return {**job, "current_phase": job.get("phase") or unit["phase"]}
 
     async def claim_next_unit(
         self, worker_id: str, lease_seconds: int
@@ -108,11 +124,20 @@ class MemoryAgentJobRepository:
                     and unit["lease_expires_at"] is not None
                     and unit["lease_expires_at"] <= now
                 )
+                if (
+                    unit["unit_kind"] == "SEMANTIC_ANALYSIS"
+                    or unit["status"] == "READY_FOR_ANALYSIS"
+                ):
+                    continue
                 if not available or unit["attempt"] >= unit["max_attempts"]:
                     continue
                 unit.update(
                     status="CLAIMED",
-                    phase="LOADING_CONTEXT",
+                    phase=(
+                        "DISCOVERING_FILES"
+                        if unit["unit_kind"] == "PROJECT_DISCOVERY"
+                        else "LOADING_CONTEXT"
+                    ),
                     worker_id=worker_id,
                     attempt=unit["attempt"] + 1,
                     lease_expires_at=now + timedelta(seconds=lease_seconds),
@@ -137,7 +162,97 @@ class MemoryAgentJobRepository:
         if unit["worker_id"] != worker_id:
             return False
         unit.update(status="RUNNING", phase=phase)
+        self.jobs[unit["job_id"]]["phase"] = phase
         return True
+
+    async def complete_project_discovery(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        files: list[dict[str, Any]],
+        units: list[PlannedSemanticUnit],
+        stats: dict[str, Any],
+    ) -> None:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id:
+            raise RuntimeError("lease lost")
+        job_id = unit["job_id"]
+        self.job_files[job_id] = list(files)
+        unit.update(
+            status="COMPLETED",
+            phase="READY_FOR_ANALYSIS",
+            result=None,
+        )
+        now = datetime.now(UTC)
+        for ordinal, planned in enumerate(units, 2):
+            self.units[planned.id] = {
+                "id": planned.id,
+                "job_id": job_id,
+                "ordinal": ordinal,
+                "status": "READY_FOR_ANALYSIS",
+                "phase": "READY_FOR_ANALYSIS",
+                "attempt": 0,
+                "max_attempts": 1,
+                "worker_id": None,
+                "lease_expires_at": None,
+                "next_attempt_at": None,
+                "created_at": now,
+                "unit_kind": "SEMANTIC_ANALYSIS",
+                "semantic_key": planned.semantic_key,
+                "display_name": planned.display_name,
+                "semantic_kind": planned.semantic_kind,
+                "primary_directory": planned.primary_directory,
+                "language_set": list(planned.language_set),
+                "estimated_size_bytes": planned.estimated_size_bytes,
+                "grouping_reasons": list(planned.grouping_reasons),
+                "unit_fingerprint": planned.unit_fingerprint,
+                "files": [
+                    {
+                        "filePath": item.file_path,
+                        "role": item.role,
+                        "relevanceReason": item.relevance_reason,
+                        "ordinal": item.ordinal,
+                    }
+                    for item in planned.files
+                ],
+                "documents": [
+                    {
+                        "documentId": item.document_id,
+                        "relationship": item.relationship,
+                        "source": item.source,
+                        "ordinal": item.ordinal,
+                    }
+                    for item in planned.documents
+                ],
+            }
+        self.jobs[job_id].update(
+            status="READY_FOR_ANALYSIS",
+            phase="READY_FOR_ANALYSIS",
+            total_units=len(units),
+            completed_units=0,
+            failed_units=0,
+            review_request_ids=[],
+            completed_at=now,
+            **stats,
+        )
+
+    async def list_semantic_units(
+        self, job_id: UUID, offset: int, limit: int
+    ) -> tuple[int, list[dict[str, Any]]]:
+        values = sorted(
+            (
+                dict(unit)
+                for unit in self.units.values()
+                if unit["job_id"] == job_id
+                and unit["unit_kind"] == "SEMANTIC_ANALYSIS"
+            ),
+            key=lambda item: (
+                item["semantic_kind"],
+                item["primary_directory"],
+                item["semantic_key"],
+            ),
+        )
+        return len(values), values[offset:offset + limit]
 
     async def complete_unit(
         self,
@@ -335,6 +450,7 @@ class FakeMcpClient:
             return {
                 "workspaceId": arguments["workspaceId"],
                 "repositoryId": arguments["repositoryId"],
+                "revision": "abc",
                 "pathPrefix": arguments.get("pathPrefix", ""),
                 "recursive": arguments.get("recursive", True),
                 "files": [
@@ -387,6 +503,30 @@ class FakeMcpClient:
                         ]
                         if self.bound
                         else [],
+                    }
+                    for path in arguments["filePaths"]
+                ],
+            }
+        if name == "devcollab.repository.inspect_code_metadata":
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "revision": arguments["revision"],
+                "files": [
+                    {
+                        "filePath": path,
+                        "language": "Java",
+                        "packageName": "com.example",
+                        "moduleKey": "src",
+                        "layerHint": "SERVICE",
+                        "imports": [],
+                        "exportedSymbols": [],
+                        "topLevelSymbols": ["Example"],
+                        "annotations": [],
+                        "routeHints": [],
+                        "roleHints": ["SERVICE"],
+                        "parseStatus": "PARSED",
+                        "errorCode": None,
                     }
                     for path in arguments["filePaths"]
                 ],

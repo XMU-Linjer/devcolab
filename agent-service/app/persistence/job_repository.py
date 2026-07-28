@@ -8,6 +8,8 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
+from app.runtime.semantic_planner import PlannedSemanticUnit
+
 
 class AgentJobRepository(Protocol):
     async def create_job(self, job: Mapping[str, Any], unit: Mapping[str, Any]) -> None: ...
@@ -21,6 +23,19 @@ class AgentJobRepository(Protocol):
     async def heartbeat(self, unit_id: UUID, worker_id: str, lease_seconds: int) -> bool: ...
 
     async def update_phase(self, unit_id: UUID, worker_id: str, phase: str) -> bool: ...
+
+    async def complete_project_discovery(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        files: list[dict[str, Any]],
+        units: list[PlannedSemanticUnit],
+        stats: Mapping[str, Any],
+    ) -> None: ...
+
+    async def list_semantic_units(
+        self, job_id: UUID, offset: int, limit: int
+    ) -> tuple[int, list[dict[str, Any]]]: ...
 
     async def complete_unit(
         self,
@@ -99,12 +114,14 @@ class PostgresAgentJobRepository:
             await connection.execute(
                 """
                 INSERT INTO agent_service.agent_units (
-                    id, job_id, ordinal, status, max_attempts, created_at, updated_at
-                ) VALUES ($1, $2, 1, 'PENDING', $3, $4, $4)
+                    id, job_id, ordinal, status, max_attempts, unit_kind,
+                    created_at, updated_at
+                ) VALUES ($1, $2, 1, 'PENDING', $3, $4, $5, $5)
                 """,
                 unit["id"],
                 job["id"],
                 unit["max_attempts"],
+                unit["unit_kind"],
                 job["created_at"],
             )
 
@@ -113,7 +130,7 @@ class PostgresAgentJobRepository:
         row = await pool.fetchrow(
             """
             SELECT j.*,
-                   u.phase AS current_phase
+                   COALESCE(j.phase, u.phase) AS current_phase
             FROM agent_service.agent_jobs j
             LEFT JOIN agent_service.agent_units u
               ON u.job_id = j.id AND u.ordinal = 1
@@ -168,6 +185,7 @@ class PostgresAgentJobRepository:
                     JOIN agent_service.agent_jobs j ON j.id = u.job_id
                     WHERE j.status <> 'CANCELLED'
                       AND u.attempt < u.max_attempts
+                      AND u.unit_kind IN ('CURRENT_FILE_ANALYSIS', 'PROJECT_DISCOVERY')
                       AND (
                         (u.status IN ('PENDING', 'RETRY_WAITING')
                           AND (u.next_attempt_at IS NULL OR u.next_attempt_at <= now()))
@@ -181,7 +199,11 @@ class PostgresAgentJobRepository:
                 )
                 UPDATE agent_service.agent_units u
                 SET status = 'CLAIMED',
-                    phase = 'LOADING_CONTEXT',
+                    phase = CASE
+                        WHEN u.unit_kind = 'PROJECT_DISCOVERY'
+                            THEN 'DISCOVERING_FILES'
+                        ELSE 'LOADING_CONTEXT'
+                    END,
                     worker_id = $1,
                     attempt = u.attempt + 1,
                     lease_expires_at = now() + ($2 * interval '1 second'),
@@ -223,6 +245,7 @@ class PostgresAgentJobRepository:
         for field, fallback in (
             ("scope_payload", {}),
             ("review_request_ids", []),
+            ("skipped_reason_counts", {}),
         ):
             value = job.get(field)
             if isinstance(value, str):
@@ -250,17 +273,238 @@ class PostgresAgentJobRepository:
 
     async def update_phase(self, unit_id: UUID, worker_id: str, phase: str) -> bool:
         pool = await self._database()
-        result = await pool.execute(
+        async with pool.acquire() as connection, connection.transaction():
+            row = await connection.fetchrow(
+                """
+                UPDATE agent_service.agent_units
+                SET phase = $3, status = 'RUNNING', updated_at = now()
+                WHERE id = $1 AND worker_id = $2
+                  AND status IN ('CLAIMED', 'RUNNING')
+                RETURNING job_id
+                """,
+                unit_id,
+                worker_id,
+                phase,
+            )
+            if row is None:
+                return False
+            await connection.execute(
+                """
+                UPDATE agent_service.agent_jobs
+                SET phase = $2, updated_at = now(), version = version + 1
+                WHERE id = $1
+                """,
+                row["job_id"],
+                phase,
+            )
+            return True
+
+    async def complete_project_discovery(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        files: list[dict[str, Any]],
+        units: list[PlannedSemanticUnit],
+        stats: Mapping[str, Any],
+    ) -> None:
+        pool = await self._database()
+        async with pool.acquire() as connection, connection.transaction():
+            discovery = await connection.fetchrow(
+                """
+                SELECT job_id
+                FROM agent_service.agent_units
+                WHERE id = $1 AND worker_id = $2
+                  AND unit_kind = 'PROJECT_DISCOVERY'
+                  AND status IN ('CLAIMED', 'RUNNING')
+                FOR UPDATE
+                """,
+                unit_id,
+                worker_id,
+            )
+            if discovery is None:
+                raise RuntimeError("Agent unit lease was lost")
+            job_id = discovery["job_id"]
+            if files:
+                await connection.executemany(
+                    """
+                    INSERT INTO agent_service.agent_job_files (
+                        id, job_id, repository_id, revision, file_path, file_name,
+                        extension, language, size_bytes, classification, package_name,
+                        module_key, layer_hint, role_hints, import_keys,
+                        exported_symbols, top_level_symbols, is_generated,
+                        metadata_error
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                        $13, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb,
+                        $18, $19
+                    )
+                    """,
+                    [
+                        (
+                            row["id"], job_id, row["repository_id"], row["revision"],
+                            row["file_path"], row["file_name"], row["extension"],
+                            row["language"], row["size_bytes"], row["classification"],
+                            row["package_name"], row["module_key"], row["layer_hint"],
+                            json.dumps(row["role_hints"]),
+                            json.dumps(row["import_keys"]),
+                            json.dumps(row["exported_symbols"]),
+                            json.dumps(row["top_level_symbols"]),
+                            row["is_generated"], row["metadata_error"],
+                        )
+                        for row in files
+                    ],
+                )
+            for ordinal, unit in enumerate(units, 2):
+                await connection.execute(
+                    """
+                    INSERT INTO agent_service.agent_units (
+                        id, job_id, ordinal, status, phase, attempt, max_attempts,
+                        unit_kind, semantic_key, display_name, semantic_kind,
+                        primary_directory, language_set, estimated_size_bytes,
+                        grouping_reasons, unit_fingerprint, created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, 'READY_FOR_ANALYSIS', 'READY_FOR_ANALYSIS',
+                        0, 1, 'SEMANTIC_ANALYSIS', $4, $5, $6, $7,
+                        $8::jsonb, $9, $10::jsonb, $11, now(), now()
+                    )
+                    """,
+                    unit.id, job_id, ordinal, unit.semantic_key, unit.display_name,
+                    unit.semantic_kind, unit.primary_directory,
+                    json.dumps(unit.language_set), unit.estimated_size_bytes,
+                    json.dumps(unit.grouping_reasons), unit.unit_fingerprint,
+                )
+                if unit.files:
+                    await connection.executemany(
+                        """
+                        INSERT INTO agent_service.agent_unit_files (
+                            unit_id, job_file_id, file_path, role,
+                            relevance_reason, ordinal
+                        ) VALUES ($1, $2, $3, $4, $5, $6)
+                        """,
+                        [
+                            (
+                                unit.id, item.job_file_id, item.file_path, item.role,
+                                item.relevance_reason, item.ordinal,
+                            )
+                            for item in unit.files
+                        ],
+                    )
+                if unit.documents:
+                    await connection.executemany(
+                        """
+                        INSERT INTO agent_service.agent_unit_documents (
+                            unit_id, document_id, relationship, source, ordinal
+                        ) VALUES ($1, $2, $3, $4, $5)
+                        """,
+                        [
+                            (
+                                unit.id, item.document_id, item.relationship,
+                                item.source, item.ordinal,
+                            )
+                            for item in unit.documents
+                        ],
+                    )
+            await connection.execute(
+                """
+                UPDATE agent_service.agent_units
+                SET status = 'COMPLETED', phase = 'READY_FOR_ANALYSIS',
+                    result = NULL, lease_expires_at = NULL,
+                    completed_at = now(), updated_at = now()
+                WHERE id = $1
+                """,
+                unit_id,
+            )
+            await connection.execute(
+                """
+                UPDATE agent_service.agent_jobs
+                SET status = 'READY_FOR_ANALYSIS',
+                    phase = 'READY_FOR_ANALYSIS',
+                    total_units = $2,
+                    completed_units = 0,
+                    failed_units = 0,
+                    review_request_ids = '[]'::jsonb,
+                    discovered_file_count = $3,
+                    supported_code_count = $4,
+                    skipped_file_count = $5,
+                    skipped_reason_counts = $6::jsonb,
+                    metadata_parsed_count = $7,
+                    metadata_failed_count = $8,
+                    bound_file_count = $9,
+                    unbound_file_count = $10,
+                    analysis_unit_count = $11,
+                    overlapping_file_count = $12,
+                    completed_at = now(),
+                    updated_at = now(),
+                    version = version + 1
+                WHERE id = $1
+                """,
+                job_id,
+                len(units),
+                stats["discovered_file_count"],
+                stats["supported_code_count"],
+                stats["skipped_file_count"],
+                json.dumps(stats["skipped_reason_counts"]),
+                stats["metadata_parsed_count"],
+                stats["metadata_failed_count"],
+                stats["bound_file_count"],
+                stats["unbound_file_count"],
+                stats["analysis_unit_count"],
+                stats["overlapping_file_count"],
+            )
+
+    async def list_semantic_units(
+        self, job_id: UUID, offset: int, limit: int
+    ) -> tuple[int, list[dict[str, Any]]]:
+        pool = await self._database()
+        total = await pool.fetchval(
             """
-            UPDATE agent_service.agent_units
-            SET phase = $3, status = 'RUNNING', updated_at = now()
-            WHERE id = $1 AND worker_id = $2 AND status IN ('CLAIMED', 'RUNNING')
+            SELECT count(*)
+            FROM agent_service.agent_units
+            WHERE job_id = $1 AND unit_kind = 'SEMANTIC_ANALYSIS'
             """,
-            unit_id,
-            worker_id,
-            phase,
+            job_id,
         )
-        return bool(result.endswith(" 1"))
+        rows = await pool.fetch(
+            """
+            SELECT u.*,
+                   COALESCE(
+                     jsonb_agg(DISTINCT jsonb_build_object(
+                       'filePath', uf.file_path,
+                       'role', uf.role,
+                       'relevanceReason', uf.relevance_reason,
+                       'ordinal', uf.ordinal
+                     )) FILTER (WHERE uf.unit_id IS NOT NULL),
+                     '[]'::jsonb
+                   ) AS files,
+                   COALESCE(
+                     jsonb_agg(DISTINCT jsonb_build_object(
+                       'documentId', ud.document_id,
+                       'relationship', ud.relationship,
+                       'source', ud.source,
+                       'ordinal', ud.ordinal
+                     )) FILTER (WHERE ud.unit_id IS NOT NULL),
+                     '[]'::jsonb
+                   ) AS documents
+            FROM agent_service.agent_units u
+            LEFT JOIN agent_service.agent_unit_files uf ON uf.unit_id = u.id
+            LEFT JOIN agent_service.agent_unit_documents ud ON ud.unit_id = u.id
+            WHERE u.job_id = $1 AND u.unit_kind = 'SEMANTIC_ANALYSIS'
+            GROUP BY u.id
+            ORDER BY u.semantic_kind, u.primary_directory, u.semantic_key
+            OFFSET $2 LIMIT $3
+            """,
+            job_id,
+            offset,
+            limit,
+        )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            for field in ("language_set", "grouping_reasons", "files", "documents"):
+                if isinstance(item.get(field), str):
+                    item[field] = json.loads(item[field])
+            result.append(item)
+        return int(total or 0), result
 
     async def complete_unit(
         self,

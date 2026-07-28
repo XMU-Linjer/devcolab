@@ -1,6 +1,6 @@
 package com.devcollab.mcp.capability.tool;
 
-import com.devcollab.mcp.application.RepositoryFilesApplicationService;
+import com.devcollab.mcp.application.RepositoryCodeMetadataApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
 import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
@@ -17,18 +17,19 @@ import java.util.Map;
 import java.util.UUID;
 
 @Component
-public class RepositoryListFilesToolContributor implements McpToolContributor {
+public class RepositoryInspectCodeMetadataToolContributor implements McpToolContributor {
 
-    public static final String TOOL_NAME = "devcollab.repository.list_files";
+    public static final String TOOL_NAME =
+            "devcollab.repository.inspect_code_metadata";
 
-    private final RepositoryFilesApplicationService service;
+    private final RepositoryCodeMetadataApplicationService service;
     private final AuditedToolExecutor executor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
     private final McpProperties properties;
 
-    public RepositoryListFilesToolContributor(
-            RepositoryFilesApplicationService service,
+    public RepositoryInspectCodeMetadataToolContributor(
+            RepositoryCodeMetadataApplicationService service,
             AuditedToolExecutor executor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
@@ -45,13 +46,13 @@ public class RepositoryListFilesToolContributor implements McpToolContributor {
     public List<McpServerFeatures.SyncToolSpecification> tools() {
         McpSchema.Tool tool = McpSchema.Tool.builder()
                 .name(TOOL_NAME)
-                .title("List repository files")
-                .description("Page through repository file metadata without reading content")
-                .inputSchema(McpToolSchemas.repositoryListFilesInput(
+                .title("Inspect code metadata")
+                .description("Parse bounded structural metadata without returning source code")
+                .inputSchema(McpToolSchemas.repositoryCodeMetadataInput(
                         properties.maxPathCharacters(),
-                        properties.maxRepositoryPageSize()
+                        properties.maxBindingBatchPaths()
                 ))
-                .outputSchema(McpToolSchemas.repositoryListFilesOutput())
+                .outputSchema(McpToolSchemas.repositoryCodeMetadataOutput())
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {
@@ -59,20 +60,13 @@ public class RepositoryListFilesToolContributor implements McpToolContributor {
             Map<String, Object> arguments = request.arguments();
             UUID workspaceId = McpToolArguments.requiredUuid(arguments, "workspaceId");
             UUID repositoryId = McpToolArguments.requiredUuid(arguments, "repositoryId");
-            String revision = McpToolArguments.optionalString(arguments, "revision");
-            String pathPrefix = McpToolArguments.optionalString(arguments, "pathPrefix");
-            String cursor = McpToolArguments.optionalString(arguments, "cursor");
-            boolean recursive = McpToolArguments.optionalBoolean(
-                    arguments, "recursive", true
-            );
-            Integer requestedLimit = McpToolArguments.optionalInteger(arguments, "limit");
-            int limit = requestedLimit == null
-                    ? properties.maxRepositoryPageSize() : requestedLimit;
+            String revision = McpToolArguments.requiredString(arguments, "revision");
+            List<String> filePaths =
+                    McpToolArguments.requiredStringList(arguments, "filePaths");
             Map<String, Object> result = executor.execute(
                     TOOL_NAME, identity, workspaceId, repositoryId, arguments,
-                    () -> service.listFiles(
-                            workspaceId, repositoryId, revision, pathPrefix, recursive,
-                            cursor, limit, identity
+                    () -> service.inspect(
+                            workspaceId, repositoryId, revision, filePaths, identity
                     )
             );
             return ToolResultFactory.success(result, objectMapper);

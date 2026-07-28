@@ -32,7 +32,7 @@ public class AgentDelegationController {
     ) {
         AgentDelegation created = service.create(
                 request.jobId(), request.workspaceId(), request.repositoryId(),
-                currentUser.userId()
+                request.scopeType(), currentUser.userId()
         );
         return new CreateResponse(
                 created.id(), created.createdByUserId(), created.revision(),
@@ -65,7 +65,8 @@ public class AgentDelegationController {
     public record CreateRequest(
             @NotNull UUID jobId,
             @NotNull UUID workspaceId,
-            @NotNull UUID repositoryId
+            @NotNull UUID repositoryId,
+            @NotNull String scopeType
     ) {
     }
 

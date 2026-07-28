@@ -10,6 +10,7 @@ JobStatus = Literal[
     "COMPLETED",
     "FAILED",
     "CANCELLED",
+    "READY_FOR_ANALYSIS",
 ]
 
 
@@ -36,7 +37,7 @@ class ProjectInitializationScope(BaseModel):
     type: Literal["PROJECT_INITIALIZATION"]
 
 
-AgentJobScope = CurrentFileScope
+AgentJobScope = CurrentFileScope | ProjectInitializationScope
 
 
 class CreateAgentJobRequest(BaseModel):
@@ -72,8 +73,14 @@ class AnalysisUnit(BaseModel):
     primaryDirectory: str
     languageSet: list[str]
     estimatedSizeBytes: int
-    status: Literal["PENDING"] = "PENDING"
+    status: Literal["PENDING", "READY_FOR_ANALYSIS"] = "PENDING"
     groupingReasons: list[str]
+    semanticKey: str | None = None
+    displayName: str | None = None
+    semanticKind: str | None = None
+    primaryFiles: list[str] = Field(default_factory=list)
+    supportingFiles: list[str] = Field(default_factory=list)
+    unitFingerprint: str | None = None
 
 
 class AgentJobRecord(BaseModel):
@@ -91,6 +98,13 @@ class AgentJobRecord(BaseModel):
         "VALIDATING",
         "REPAIRING",
         "SUBMITTING_REVIEW",
+        "DISCOVERING_FILES",
+        "CLASSIFYING_FILES",
+        "LOADING_CODE_METADATA",
+        "LOADING_BINDINGS",
+        "BUILDING_SEMANTIC_GRAPH",
+        "BUILDING_ANALYSIS_UNITS",
+        "READY_FOR_ANALYSIS",
     ] | None = None
     totalUnits: int = 1
     completedUnits: int = 0
@@ -109,7 +123,7 @@ class AgentJobSummary(BaseModel):
     status: JobStatus
     workspaceId: UUID
     repositoryId: UUID
-    scopeType: Literal["CURRENT_FILE"]
+    scopeType: Literal["CURRENT_FILE", "PROJECT_INITIALIZATION"]
     scopePayload: dict[str, object]
     revision: str
     result: Literal["NO_CHANGE", "REVIEW_SUBMITTED", "PARTIALLY_COMPLETED"] | None
@@ -119,6 +133,13 @@ class AgentJobSummary(BaseModel):
         "VALIDATING",
         "REPAIRING",
         "SUBMITTING_REVIEW",
+        "DISCOVERING_FILES",
+        "CLASSIFYING_FILES",
+        "LOADING_CODE_METADATA",
+        "LOADING_BINDINGS",
+        "BUILDING_SEMANTIC_GRAPH",
+        "BUILDING_ANALYSIS_UNITS",
+        "READY_FOR_ANALYSIS",
     ] | None
     totalUnits: int
     completedUnits: int
@@ -130,6 +151,16 @@ class AgentJobSummary(BaseModel):
     startedAt: datetime | None
     completedAt: datetime | None
     updatedAt: datetime
+    discoveredFileCount: int = 0
+    supportedCodeCount: int = 0
+    skippedFileCount: int = 0
+    skippedReasonCounts: dict[str, int] = Field(default_factory=dict)
+    metadataParsedCount: int = 0
+    metadataFailedCount: int = 0
+    boundFileCount: int = 0
+    unboundFileCount: int = 0
+    analysisUnitCount: int = 0
+    overlappingFileCount: int = 0
 
 
 class AgentJobUnitsResponse(BaseModel):
@@ -137,4 +168,36 @@ class AgentJobUnitsResponse(BaseModel):
     offset: int
     limit: int
     total: int
-    units: list[AnalysisUnit]
+    units: list["SemanticAnalysisUnit"]
+
+
+class SemanticUnitFile(BaseModel):
+    filePath: str
+    role: str
+    relevanceReason: str
+    ordinal: int
+
+
+class SemanticUnitDocument(BaseModel):
+    documentId: UUID
+    relationship: str
+    source: str
+    ordinal: int
+
+
+class SemanticAnalysisUnit(BaseModel):
+    unitId: UUID
+    semanticKey: str
+    displayName: str
+    semanticKind: str
+    status: Literal["READY_FOR_ANALYSIS"]
+    primaryDirectory: str
+    files: list[SemanticUnitFile]
+    primaryFiles: list[str]
+    supportingFiles: list[str]
+    boundDocumentIds: list[UUID]
+    boundDocuments: list[SemanticUnitDocument]
+    languageSet: list[str]
+    estimatedSizeBytes: int
+    groupingReasons: list[str]
+    unitFingerprint: str

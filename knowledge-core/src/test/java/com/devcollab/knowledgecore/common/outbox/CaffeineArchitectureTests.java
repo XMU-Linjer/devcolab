@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,14 +53,17 @@ class CaffeineArchitectureTests {
         BoundedCacheLoader loader = new BoundedCacheLoader(properties);
         Cache<String, String> cache = Caffeine.newBuilder().build();
         AtomicInteger loads = new AtomicInteger();
+        CountDownLatch firstLoadStarted = new CountDownLatch(1);
         try {
             var first = java.util.concurrent.CompletableFuture.supplyAsync(() ->
                     loader.get("test", cache, "same", () -> {
                         loads.incrementAndGet();
+                        firstLoadStarted.countDown();
                         sleep(100);
                         return "value";
                     })
             );
+            assertThat(firstLoadStarted.await(1, TimeUnit.SECONDS)).isTrue();
             var second = java.util.concurrent.CompletableFuture.supplyAsync(() ->
                     loader.get("test", cache, "same", () -> {
                         loads.incrementAndGet();

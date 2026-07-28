@@ -51,6 +51,7 @@ public class GitKnowledgeApplicationService {
     private final DocumentRepository documentRepository;
     private final DocumentBlockRepository blockRepository;
     private final OutboxEventPublisher outboxPublisher;
+    private final CodeMetadataInspector metadataInspector;
 
     public GitKnowledgeApplicationService(
             GitKnowledgeRepository gitRepository,
@@ -58,7 +59,8 @@ public class GitKnowledgeApplicationService {
             WorkspacePermissionPolicy permissionPolicy,
             DocumentRepository documentRepository,
             DocumentBlockRepository blockRepository,
-            OutboxEventPublisher outboxPublisher
+            OutboxEventPublisher outboxPublisher,
+            CodeMetadataInspector metadataInspector
     ) {
         this.gitRepository = gitRepository;
         this.workspaceService = workspaceService;
@@ -66,6 +68,7 @@ public class GitKnowledgeApplicationService {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.outboxPublisher = outboxPublisher;
+        this.metadataInspector = metadataInspector;
     }
 
     @Transactional
@@ -167,7 +170,7 @@ public class GitKnowledgeApplicationService {
             int limit
     ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
-        requireRepository(repositoryId, workspaceId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
         requirePageLimit(limit);
         String prefix = normalizeOptionalPrefix(pathPrefix);
         String afterPath = decodeCursor(cursor);
@@ -183,7 +186,7 @@ public class GitKnowledgeApplicationService {
         String nextCursor = hasMore && !page.isEmpty()
                 ? encodeCursor(page.get(page.size() - 1).path()) : null;
         return new RepositoryFilePageResult(
-                workspaceId, repositoryId, prefix, recursive,
+                workspaceId, repositoryId, repository.lastSyncedCommit(), prefix, recursive,
                 List.copyOf(page), nextCursor, hasMore
         );
     }
@@ -267,6 +270,50 @@ public class GitKnowledgeApplicationService {
                 ))
                 .toList();
         return new CodeBindingBatchQueryResult(workspaceId, repositoryId, files);
+    }
+
+    public CodeMetadataBatchResult inspectCodeMetadata(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String revision,
+            List<String> filePaths
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        GitRepository repository = requireRepository(repositoryId, workspaceId);
+        if (revision == null || !revision.equalsIgnoreCase(repository.lastSyncedCommit())) {
+            throw new InvalidCodeBindingException("Repository revision does not match");
+        }
+        if (filePaths == null || filePaths.isEmpty() || filePaths.size() > 100) {
+            throw new InvalidCodeBindingException("filePaths must contain 1 to 100 paths");
+        }
+        Map<String, GitRepositoryFile> available = gitRepository
+                .findFilesByRepositoryId(repositoryId)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GitRepositoryFile::path,
+                        file -> file,
+                        (left, right) -> left
+                ));
+        List<CodeMetadataBatchResult.FileMetadata> files = filePaths.stream()
+                .map(this::normalizePath)
+                .distinct()
+                .sorted()
+                .map(path -> {
+                    GitRepositoryFile file = available.get(path);
+                    if (file == null) {
+                        return new CodeMetadataBatchResult.FileMetadata(
+                                path, null, null, null, null, List.of(), List.of(),
+                                List.of(), List.of(), List.of(), List.of(),
+                                "FAILED", "FILE_NOT_FOUND"
+                        );
+                    }
+                    return metadataInspector.inspect(file);
+                })
+                .toList();
+        return new CodeMetadataBatchResult(
+                workspaceId, repositoryId, repository.lastSyncedCommit(), files
+        );
     }
 
     public GitRepositorySourceDetails getSource(

@@ -12,6 +12,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +51,7 @@ class RepositoryScopeApplicationServiceTests {
                 eq(workspaceId), eq(repositoryId), eq("src/main"), eq(true),
                 eq(null), eq(2), any()
         )).thenReturn(new KnowledgeCoreGateway.RepositoryFilePage(
-                workspaceId, repositoryId, "src/main", true,
+                workspaceId, repositoryId, "abc123", "src/main", true,
                 List.of(new KnowledgeCoreGateway.RepositoryFileInfo(
                         "src/main/App.java", "App.java", "java",
                         12, "Java", true, false
@@ -59,7 +60,7 @@ class RepositoryScopeApplicationServiceTests {
         Map<String, Object> result = new RepositoryFilesApplicationService(
                 gateway, properties
         ).listFiles(
-                workspaceId, repositoryId, "src\\main", true,
+                workspaceId, repositoryId, "abc123", "src\\main", true,
                 null, 2, identity
         );
         List<?> files = (List<?>) result.get("files");
@@ -75,7 +76,7 @@ class RepositoryScopeApplicationServiceTests {
                 new RepositoryFilesApplicationService(gateway, properties);
         for (String invalid : List.of("../a", "a/../b", "/etc/passwd", "C:\\file")) {
             assertThatThrownBy(() -> service.listFiles(
-                    workspaceId, repositoryId, invalid, true, null, 2, identity
+                    workspaceId, repositoryId, null, invalid, true, null, 2, identity
             )).isInstanceOf(McpToolException.class)
                     .extracting("code")
                     .isEqualTo(McpToolErrorCode.INVALID_REPOSITORY_PATH);
@@ -136,7 +137,7 @@ class RepositoryScopeApplicationServiceTests {
     void rejectsPageAndBatchLimits() {
         assertThatThrownBy(() -> new RepositoryFilesApplicationService(
                 gateway, properties
-        ).listFiles(workspaceId, repositoryId, "", true, null, 4, identity))
+        ).listFiles(workspaceId, repositoryId, null, "", true, null, 4, identity))
                 .isInstanceOf(McpToolException.class);
         assertThatThrownBy(() -> new BindingListBatchApplicationService(
                 gateway, properties
@@ -144,5 +145,75 @@ class RepositoryScopeApplicationServiceTests {
                 workspaceId, repositoryId,
                 List.of("a.java", "b.java", "c.java", "d.java"), identity
         )).isInstanceOf(McpToolException.class);
+    }
+
+    @Test
+    void metadataInspectionKeepsDelegatedRepositoryAndRevisionScope() {
+        McpUserIdentity delegated = delegatedIdentity("abc123");
+        when(gateway.inspectCodeMetadata(
+                eq(workspaceId), eq(repositoryId), eq("abc123"),
+                eq(List.of("src/App.java")), any()
+        )).thenReturn(new KnowledgeCoreGateway.CodeMetadataBatch(
+                workspaceId,
+                repositoryId,
+                "abc123",
+                List.of(new KnowledgeCoreGateway.CodeMetadataInfo(
+                        "src/App.java", "Java", "com.example", "src",
+                        "CONTROLLER", List.of("com.example.Service"),
+                        List.of(), List.of("App"), List.of("RestController"),
+                        List.of("/app"), List.of("CONTROLLER"), "PARSED", null
+                ))
+        ));
+
+        Map<String, Object> result = new RepositoryCodeMetadataApplicationService(
+                gateway, properties
+        ).inspect(
+                workspaceId, repositoryId, "abc123",
+                List.of("src\\App.java", "src/App.java"), delegated
+        );
+
+        assertThat(result.get("revision")).isEqualTo("abc123");
+        Map<?, ?> file = (Map<?, ?>) ((List<?>) result.get("files")).get(0);
+        assertThat(file.get("moduleName")).isEqualTo("src");
+        assertThat(file.containsKey("content")).isFalse();
+        assertThatThrownBy(() -> new RepositoryCodeMetadataApplicationService(
+                gateway, properties
+        ).inspect(
+                workspaceId, repositoryId, "different",
+                List.of("src/App.java"), delegated
+        )).isInstanceOf(McpToolException.class)
+                .extracting("code")
+                .isEqualTo(McpToolErrorCode.PERMISSION_DENIED);
+    }
+
+    @Test
+    void fileDiscoveryRejectsRevisionDriftForDelegatedJobs() {
+        when(gateway.listRepositoryFiles(
+                eq(workspaceId), eq(repositoryId), eq(""), eq(true),
+                eq(null), eq(2), any()
+        )).thenReturn(new KnowledgeCoreGateway.RepositoryFilePage(
+                workspaceId, repositoryId, "new-revision", "", true,
+                List.of(), null, false
+        ));
+
+        assertThatThrownBy(() -> new RepositoryFilesApplicationService(
+                gateway, properties
+        ).listFiles(
+                workspaceId, repositoryId, "job-revision", "", true,
+                null, 2, delegatedIdentity("job-revision")
+        )).isInstanceOf(McpToolException.class)
+                .extracting("code")
+                .isEqualTo(McpToolErrorCode.INVALID_ARGUMENT);
+    }
+
+    private McpUserIdentity delegatedIdentity(String revision) {
+        return new McpUserIdentity(
+                UUID.randomUUID(), UUID.randomUUID(), "agent", "delegated-token",
+                "agent_delegation", workspaceId, repositoryId, UUID.randomUUID(),
+                revision, Set.of(
+                        "devcollab.repository.list_files",
+                        "devcollab.repository.inspect_code_metadata"
+                )
+        );
     }
 }
