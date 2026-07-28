@@ -3,12 +3,12 @@ import { ElMessage } from 'element-plus';
 import { defineComponent } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createAgentRun, getAgentRun, type AgentRunStatus } from '@/api/agent';
+import { createAgentJob, getAgentJob, type AgentJobStatus } from '@/api/agent';
 import LinkedCodePane from './LinkedCodePane.vue';
 
 vi.mock('@/api/agent', () => ({
-  createAgentRun: vi.fn(),
-  getAgentRun: vi.fn(),
+  createAgentJob: vi.fn(),
+  getAgentJob: vi.fn(),
   readableAgentError: (_error: unknown, fallback: string) => fallback,
 }));
 
@@ -98,9 +98,14 @@ async function startCheck(wrapper: ReturnType<typeof mountPane>) {
 describe('LinkedCodePane Agent check', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(createAgentRun).mockResolvedValue({
-      runId: 'run-1',
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.spyOn(ElMessage, 'success').mockReturnValue({ close: vi.fn() });
+    vi.spyOn(ElMessage, 'error').mockReturnValue({ close: vi.fn() });
+    vi.mocked(createAgentJob).mockResolvedValue({
+      jobId: 'job-1',
       status: 'QUEUED',
+      createdAt: '2026-07-28T00:00:00Z',
     });
   });
 
@@ -120,14 +125,14 @@ describe('LinkedCodePane Agent check', () => {
   });
 
   it('submits only the current file and stops polling on NO_CHANGE', async () => {
-    vi.spyOn(ElMessage, 'success').mockReturnValue({ close: vi.fn() });
-    vi.mocked(getAgentRun)
+    vi.mocked(getAgentJob)
       .mockResolvedValueOnce({
-        ...agentRun('PLANNING'),
+        ...agentJob('RUNNING'),
+        phase: 'MODEL_RUNNING',
       })
       .mockResolvedValueOnce({
-        ...agentRun('NO_CHANGE'),
-        decision: 'NO_CHANGE',
+        ...agentJob('COMPLETED'),
+        result: 'NO_CHANGE',
       });
     const wrapper = mountPane();
 
@@ -136,43 +141,47 @@ describe('LinkedCodePane Agent check', () => {
     await wrapper.get('[data-testid="agent-start-button"]').trigger('click');
     await flushPromises();
 
-    expect(createAgentRun).toHaveBeenCalledWith({
+    expect(createAgentJob).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       repositoryId: 'repository-1',
-      selectedPaths: ['src/Example.java'],
+      scope: {
+        type: 'CURRENT_FILE',
+        filePath: 'src/Example.java',
+      },
       userInstruction: '核对接口说明',
     });
-    expect(getAgentRun).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(getAgentJob).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
 
-    await vi.advanceTimersByTimeAsync(1800);
+    await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
 
-    expect(getAgentRun).toHaveBeenCalledTimes(2);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(getAgentJob).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getAgentJob).toHaveBeenCalledTimes(2);
     expect(wrapper.get('[data-testid="agent-check-button"]').text()).toContain('Agent 检查');
   });
 
   it('stops polling and exposes the existing review navigation on REVIEW_SUBMITTED', async () => {
-    vi.mocked(getAgentRun).mockResolvedValue({
-      ...agentRun('REVIEW_SUBMITTED'),
-      decision: 'SUBMIT_REVIEW',
-      changeRequestId: 'change-1',
+    vi.mocked(getAgentJob).mockResolvedValue({
+      ...agentJob('COMPLETED'),
+      result: 'REVIEW_SUBMITTED',
+      reviewRequestIds: ['change-1'],
     });
     const wrapper = mountPane();
 
     await startCheck(wrapper);
 
-    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getAgentJob).toHaveBeenCalledTimes(1);
     expect(wrapper.get('[data-testid="agent-review-button"]').text()).toContain('查看评审');
     await wrapper.get('[data-testid="agent-review-button"]').trigger('click');
     expect(wrapper.emitted('open-agent-review')).toEqual([['change-1']]);
   });
 
   it('stops polling and keeps the entry reusable after FAILED', async () => {
-    vi.spyOn(ElMessage, 'error').mockReturnValue({ close: vi.fn() });
-    vi.mocked(getAgentRun).mockResolvedValue({
-      ...agentRun('FAILED'),
+    vi.mocked(getAgentJob).mockResolvedValue({
+      ...agentJob('FAILED'),
       errorCode: 'MODEL_PROVIDER_ERROR',
       errorMessage: 'Agent 服务暂时不可用',
     });
@@ -180,37 +189,46 @@ describe('LinkedCodePane Agent check', () => {
 
     await startCheck(wrapper);
 
-    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getAgentJob).toHaveBeenCalledTimes(1);
     expect(wrapper.get('[data-testid="agent-check-button"]').attributes('disabled')).toBeUndefined();
     expect(ElMessage.error).toHaveBeenCalledWith('Agent 服务暂时不可用');
   });
 
   it('clears a pending poll when the component is unmounted', async () => {
-    vi.mocked(getAgentRun).mockResolvedValue(agentRun('PLANNING'));
+    vi.mocked(getAgentJob).mockResolvedValue({
+      ...agentJob('RUNNING'),
+      phase: 'MODEL_RUNNING',
+    });
     const wrapper = mountPane();
 
     await startCheck(wrapper);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
 
     wrapper.unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getAgentJob).toHaveBeenCalledTimes(1);
   });
 });
 
-function agentRun(status: AgentRunStatus) {
+function agentJob(status: AgentJobStatus) {
   return {
-    runId: 'run-1',
+    jobId: 'job-1',
     status,
-    workspaceId: 'workspace-1',
-    repositoryId: 'repository-1',
-    selectedPaths: ['src/Example.java'],
-    currentNode: 'test',
-    decision: null,
-    summary: null,
-    changeRequestId: null,
+    scopeType: 'CURRENT_FILE' as const,
+    scopePayload: { type: 'CURRENT_FILE' as const, filePath: 'src/Example.java' },
+    result: null,
+    phase: null,
+    revision: 'abc',
+    totalUnits: 1,
+    completedUnits: 0,
+    failedUnits: 0,
+    reviewRequestIds: [],
     errorCode: null,
     errorMessage: null,
     createdAt: '2026-07-28T00:00:00Z',
+    startedAt: null,
+    completedAt: null,
     updatedAt: '2026-07-28T00:00:00Z',
   };
 }

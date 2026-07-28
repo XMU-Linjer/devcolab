@@ -5,13 +5,14 @@ from fastapi import FastAPI
 
 from app.api.agent_jobs import router as jobs_router
 from app.api.agent_runs import router as runs_router
+from app.clients.delegation_client import KnowledgeCoreDelegationClient
 from app.clients.mcp_client import OfficialMcpClient
 from app.clients.run_store import RedisRunStore
 from app.config import Settings, get_settings
+from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
 from app.providers.base import ModelProvider
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.executor import AgentRunExecutor
-from app.runtime.job_executor import AgentJobExecutor
 
 
 def create_app(
@@ -19,6 +20,8 @@ def create_app(
     mcp_client: object | None = None,
     run_store: object | None = None,
     model_provider: ModelProvider | None = None,
+    job_repository: AgentJobRepository | None = None,
+    delegation_client: object | None = None,
 ) -> FastAPI:
     configured = settings or get_settings()
 
@@ -35,7 +38,7 @@ def create_app(
             base_url=configured.deepseek_base_url,
             model=configured.deepseek_model,
             connect_timeout_seconds=configured.agent_model_connect_timeout_seconds,
-            total_timeout_seconds=configured.agent_model_total_timeout_seconds,
+            request_timeout_seconds=configured.agent_model_request_timeout_seconds,
         )
         app.state.run_executor = AgentRunExecutor(
             app.state.mcp_client,
@@ -43,14 +46,18 @@ def create_app(
             app.state.run_store,
             configured,
         )
-        app.state.job_executor = AgentJobExecutor(
-            app.state.mcp_client,
-            app.state.run_store,
-            configured,
+        app.state.job_repository = job_repository or PostgresAgentJobRepository(
+            configured.agent_database_url
+        )
+        app.state.delegation_client = delegation_client or KnowledgeCoreDelegationClient(
+            configured.knowledge_core_base_url,
+            configured.agent_internal_service_token,
+            configured.agent_delegation_timeout_seconds,
         )
         yield
-        await app.state.job_executor.close()
         await app.state.run_executor.close()
+        if job_repository is None:
+            await app.state.job_repository.close()
 
     app = FastAPI(
         title="DevCollab Agent Service",

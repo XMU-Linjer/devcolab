@@ -7,6 +7,7 @@ RUN mkdir app \
     && pip install --no-cache-dir . \
     && rm -rf app
 COPY app ./app
+COPY migrations ./migrations
 
 EXPOSE 8092
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8092"]

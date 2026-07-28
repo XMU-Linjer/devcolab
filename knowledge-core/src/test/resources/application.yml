@@ -10,6 +10,10 @@ spring:
     enabled: true
 
 devcollab:
+  agent-delegation:
+    service-token: devcollab-test-agent-service-token-at-least-32-bytes
+    delegation-ttl: PT24H
+    access-token-ttl: PT15M
   grpc:
     server:
       enabled: false

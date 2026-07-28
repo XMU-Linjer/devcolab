@@ -24,6 +24,10 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
+  agent-delegation:
+    service-token: ${DEVCOLLAB_AGENT_INTERNAL_TOKEN:devcollab-local-agent-service-token-change-me}
+    delegation-ttl: ${DEVCOLLAB_AGENT_DELEGATION_TTL:PT24H}
+    access-token-ttl: ${DEVCOLLAB_AGENT_ACCESS_TOKEN_TTL:PT15M}
   grpc:
     server:
       enabled: ${DEVCOLLAB_GRPC_ENABLED:true}

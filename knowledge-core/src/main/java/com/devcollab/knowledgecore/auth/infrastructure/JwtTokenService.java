@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Date;
+import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -43,6 +45,36 @@ public class JwtTokenService {
                 .withClaim("username", username)
                 .withIssuedAt(Date.from(now))
                 .withExpiresAt(Date.from(expiresAt))
+                .sign(algorithm);
+    }
+
+    public String issueAgentDelegationToken(
+            UUID userId,
+            UUID delegationId,
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID jobId,
+            String revision,
+            List<String> allowedTools,
+            Duration ttl
+    ) {
+        Instant now = Instant.now();
+        return JWT.create()
+                .withIssuer(properties.issuer())
+                .withAudience(properties.audience())
+                .withSubject(userId.toString())
+                .withJWTId(UUID.randomUUID().toString())
+                .withClaim("sid", delegationId.toString())
+                .withClaim("username", "agent-worker")
+                .withClaim("token_type", "agent_delegation")
+                .withClaim("delegation_id", delegationId.toString())
+                .withClaim("workspace_id", workspaceId.toString())
+                .withClaim("repository_id", repositoryId.toString())
+                .withClaim("job_id", jobId.toString())
+                .withClaim("revision", revision)
+                .withArrayClaim("allowed_tools", allowedTools.toArray(String[]::new))
+                .withIssuedAt(Date.from(now))
+                .withExpiresAt(Date.from(now.plus(ttl)))
                 .sign(algorithm);
     }
 

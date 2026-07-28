@@ -13,6 +13,14 @@ export type AgentRunStatus =
   | 'NO_CHANGE'
   | 'FAILED';
 
+export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type AgentJobPhase =
+  | 'LOADING_CONTEXT'
+  | 'MODEL_RUNNING'
+  | 'VALIDATING'
+  | 'REPAIRING'
+  | 'SUBMITTING_REVIEW';
+
 export interface CreateAgentRunPayload {
   workspaceId: string;
   repositoryId: string;
@@ -41,6 +49,39 @@ export interface AgentRun {
   updatedAt: string;
 }
 
+export interface CreateAgentJobPayload {
+  workspaceId: string;
+  repositoryId: string;
+  scope: { type: 'CURRENT_FILE'; filePath: string };
+  userInstruction: string | null;
+}
+
+export interface QueuedAgentJob {
+  jobId: string;
+  status: 'QUEUED';
+  createdAt: string;
+}
+
+export interface AgentJob {
+  jobId: string;
+  scopeType: 'CURRENT_FILE';
+  scopePayload: { type: 'CURRENT_FILE'; filePath: string };
+  status: AgentJobStatus;
+  result: 'NO_CHANGE' | 'REVIEW_SUBMITTED' | 'PARTIALLY_COMPLETED' | null;
+  phase: AgentJobPhase | null;
+  revision: string;
+  totalUnits: number;
+  completedUnits: number;
+  failedUnits: number;
+  reviewRequestIds: string[];
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
 interface AgentErrorBody {
   code?: string;
   message?: string;
@@ -59,6 +100,16 @@ export async function createAgentRun(payload: CreateAgentRunPayload) {
 
 export async function getAgentRun(runId: string) {
   const { data } = await agentHttp.get<AgentRun>(`/agent-runs/${runId}`);
+  return data;
+}
+
+export async function createAgentJob(payload: CreateAgentJobPayload) {
+  const { data } = await agentHttp.post<QueuedAgentJob>('/agent-jobs', payload);
+  return data;
+}
+
+export async function getAgentJob(jobId: string) {
+  const { data } = await agentHttp.get<AgentJob>(`/agent-jobs/${jobId}`);
   return data;
 }
 

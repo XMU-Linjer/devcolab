@@ -1,4 +1,7 @@
+import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +29,199 @@ class MemoryRunStore:
 
     async def get_job(self, job_id: str) -> dict[str, object] | None:
         return self.values.get(f"job:{job_id}")
+
+
+class MemoryAgentJobRepository:
+    def __init__(self) -> None:
+        self.jobs: dict[UUID, dict[str, Any]] = {}
+        self.units: dict[UUID, dict[str, Any]] = {}
+        self.lock = asyncio.Lock()
+        self.worker_heartbeats: dict[str, datetime] = {}
+
+    async def create_job(self, job: dict[str, Any], unit: dict[str, Any]) -> None:
+        async with self.lock:
+            now = job["created_at"]
+            self.jobs[job["id"]] = {
+                **job,
+                "status": "QUEUED",
+                "result": None,
+                "total_units": 1,
+                "completed_units": 0,
+                "failed_units": 0,
+                "review_request_ids": [],
+                "error_code": None,
+                "error_message": None,
+                "created_at": now,
+                "updated_at": now,
+                "started_at": None,
+                "completed_at": None,
+                "current_phase": None,
+            }
+            self.units[unit["id"]] = {
+                **unit,
+                "job_id": job["id"],
+                "ordinal": 1,
+                "status": "PENDING",
+                "phase": None,
+                "attempt": 0,
+                "worker_id": None,
+                "lease_expires_at": None,
+                "next_attempt_at": None,
+                "created_at": now,
+            }
+
+    async def get_job(self, job_id: UUID) -> dict[str, Any] | None:
+        job = self.jobs.get(job_id)
+        if job is None:
+            return None
+        unit = next(value for value in self.units.values() if value["job_id"] == job_id)
+        return {**job, "current_phase": unit["phase"]}
+
+    async def claim_next_unit(
+        self, worker_id: str, lease_seconds: int
+    ) -> dict[str, Any] | None:
+        async with self.lock:
+            now = datetime.now(UTC)
+            for unit in self.units.values():
+                if (
+                    unit["status"] in {"CLAIMED", "RUNNING"}
+                    and unit["lease_expires_at"] is not None
+                    and unit["lease_expires_at"] <= now
+                    and unit["attempt"] >= unit["max_attempts"]
+                ):
+                    unit.update(
+                        status="FAILED",
+                        lease_expires_at=None,
+                        error_code="WORKER_LEASE_EXPIRED",
+                    )
+                    self.jobs[unit["job_id"]].update(
+                        status="FAILED",
+                        failed_units=1,
+                        error_code="WORKER_LEASE_EXPIRED",
+                    )
+                    continue
+                available = (
+                    unit["status"] in {"PENDING", "RETRY_WAITING"}
+                    and (unit["next_attempt_at"] is None or unit["next_attempt_at"] <= now)
+                ) or (
+                    unit["status"] in {"CLAIMED", "RUNNING"}
+                    and unit["lease_expires_at"] is not None
+                    and unit["lease_expires_at"] <= now
+                )
+                if not available or unit["attempt"] >= unit["max_attempts"]:
+                    continue
+                unit.update(
+                    status="CLAIMED",
+                    phase="LOADING_CONTEXT",
+                    worker_id=worker_id,
+                    attempt=unit["attempt"] + 1,
+                    lease_expires_at=now + timedelta(seconds=lease_seconds),
+                )
+                job = self.jobs[unit["job_id"]]
+                job.update(status="RUNNING", started_at=job["started_at"] or now)
+                return {**unit, "job": dict(job)}
+        return None
+
+    async def heartbeat(self, unit_id: UUID, worker_id: str, lease_seconds: int) -> bool:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id or unit["status"] not in {"CLAIMED", "RUNNING"}:
+            return False
+        unit.update(
+            status="RUNNING",
+            lease_expires_at=datetime.now(UTC) + timedelta(seconds=lease_seconds),
+        )
+        return True
+
+    async def update_phase(self, unit_id: UUID, worker_id: str, phase: str) -> bool:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id:
+            return False
+        unit.update(status="RUNNING", phase=phase)
+        return True
+
+    async def complete_unit(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        result: str,
+        review_request_id: UUID | None,
+    ) -> None:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id:
+            raise RuntimeError("lease lost")
+        unit.update(status="COMPLETED", result=result, review_request_id=review_request_id)
+        job = self.jobs[unit["job_id"]]
+        job.update(
+            status="COMPLETED",
+            result=result,
+            completed_units=1,
+            review_request_ids=[] if review_request_id is None else [str(review_request_id)],
+            completed_at=datetime.now(UTC),
+        )
+
+    async def fail_unit(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        error_code: str,
+        error_message: str,
+        retry_at: datetime | None,
+    ) -> None:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id:
+            return
+        unit.update(
+            status="RETRY_WAITING" if retry_at else "FAILED",
+            next_attempt_at=retry_at,
+            error_code=error_code,
+        )
+        job = self.jobs[unit["job_id"]]
+        job.update(
+            status="QUEUED" if retry_at else "FAILED",
+            failed_units=0 if retry_at else 1,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    async def record_worker_heartbeat(self, worker_id: str) -> None:
+        self.worker_heartbeats[worker_id] = datetime.now(UTC)
+
+    async def close(self) -> None:
+        return None
+
+
+class FakeDelegationClient:
+    def __init__(self) -> None:
+        self.delegation_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        self.created_by = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        self.revision = "abc"
+        self.authorized = True
+        self.exchanges = 0
+
+    async def create(self, **_kwargs: Any) -> dict[str, Any]:
+        if not self.authorized:
+            from app.clients.delegation_client import DelegationClientError
+
+            raise DelegationClientError("MCP_PERMISSION_DENIED", "denied")
+        return {
+            "delegationId": str(self.delegation_id),
+            "createdByUserId": str(self.created_by),
+            "revision": self.revision,
+        }
+
+    async def authorize(self, **_kwargs: Any) -> None:
+        if not self.authorized:
+            from app.clients.delegation_client import DelegationClientError
+
+            raise DelegationClientError("MCP_PERMISSION_DENIED", "denied")
+
+    async def exchange(self, **_kwargs: Any) -> str:
+        self.exchanges += 1
+        if not self.authorized:
+            from app.clients.delegation_client import DelegationClientError
+
+            raise DelegationClientError("MCP_PERMISSION_DENIED", "denied")
+        return "Bearer short-lived-delegated-token"
 
 
 class FakeMcpClient:
@@ -253,6 +449,9 @@ class FakeModelProvider:
 @pytest.fixture
 def settings() -> Settings:
     return Settings(
+        deepseek_api_key="",
+        deepseek_base_url="",
+        deepseek_model="",
         agent_max_selected_files=2,
         agent_max_code_chars=40,
         agent_max_bound_documents=5,
@@ -285,6 +484,8 @@ def client(
             mcp_client=fake_mcp,
             run_store=run_store,
             model_provider=FakeModelProvider(),
+            job_repository=MemoryAgentJobRepository(),
+            delegation_client=FakeDelegationClient(),
         )
     ) as test_client:
         yield test_client

@@ -360,6 +360,12 @@ function Test-ManagedStateHealthy {
     if ((Get-ContainerHealth -ContainerName "devcollab-agent-service") -ne "HEALTHY") {
         return $false
     }
+    if (-not (Test-ContainerRunning -ContainerName "devcollab-agent-worker")) {
+        return $false
+    }
+    if ((Get-ContainerHealth -ContainerName "devcollab-agent-worker") -ne "HEALTHY") {
+        return $false
+    }
     return $true
 }
 
@@ -576,30 +582,26 @@ function Start-LocalDemo {
         Write-State -Processes $managed
         Wait-ManagedService -Entry $managed[-1]
 
-        $agentState = Get-ContainerState -ContainerName "devcollab-agent-service"
-        if ($agentState -eq "RUNNING") {
-            Write-Step "Agent Service container is already running"
+        Write-Step "running Agent migration and starting Agent API + Worker"
+        Push-Location $RepoRoot
+        try {
+            Invoke-Checked -FilePath "docker" -Arguments @(
+                "compose", "up", "-d", "--build",
+                "agent-migrate", "agent-service", "agent-worker"
+            )
         }
-        else {
-            Write-Step "starting Agent Service container (previous state: $agentState)"
-            Push-Location $RepoRoot
-            try {
-                Invoke-Checked -FilePath "docker" -Arguments @(
-                    "compose", "up", "-d", "--no-deps", "--build", "agent-service"
-                )
-            }
-            finally {
-                Pop-Location
-            }
+        finally {
+            Pop-Location
         }
         try {
             Wait-ContainerHealthy -Name "Agent Service" -ContainerName "devcollab-agent-service"
+            Wait-ContainerHealthy -Name "Agent Worker" -ContainerName "devcollab-agent-worker"
         }
         catch {
-            Write-Step "Agent Service failed; recent logs follow"
+            Write-Step "Agent runtime failed; recent logs follow"
             Push-Location $RepoRoot
             try {
-                & docker compose logs --tail 80 agent-service
+                & docker compose logs --tail 80 agent-migrate agent-service agent-worker
             }
             finally {
                 Pop-Location
@@ -635,7 +637,9 @@ function Stop-LocalDemo {
     Stop-ManagedProcesses
     Push-Location $RepoRoot
     try {
-        Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "nginx", "agent-service")
+        Invoke-Checked -FilePath "docker" -Arguments @(
+            "compose", "stop", "nginx", "agent-worker", "agent-service"
+        )
         if (-not $KeepInfrastructure) {
             Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "postgres", "redis", "kafka", "elasticsearch")
             Invoke-Checked -FilePath "docker" -Arguments @(
@@ -679,6 +683,17 @@ function Show-LocalDemoStatus {
     }
     $agentState = if ($agentContainerState -eq "RUNNING" -and $agentHealth -eq "HEALTHY") { "UP" } else { "DOWN" }
     Write-Step "Agent Service container state=$agentState dockerState=$agentContainerState health=$agentHealth"
+    $agentWorkerContainerState = Get-ContainerState -ContainerName "devcollab-agent-worker"
+    $agentWorkerHealth = if ($agentWorkerContainerState -eq "RUNNING") {
+        Get-ContainerHealth -ContainerName "devcollab-agent-worker"
+    }
+    else {
+        $agentWorkerContainerState
+    }
+    $agentWorkerState = if (
+        $agentWorkerContainerState -eq "RUNNING" -and $agentWorkerHealth -eq "HEALTHY"
+    ) { "UP" } else { "DOWN" }
+    Write-Step "Agent Worker container state=$agentWorkerState dockerState=$agentWorkerContainerState health=$agentWorkerHealth"
 }
 
 function Invoke-LocalDemoVerification {

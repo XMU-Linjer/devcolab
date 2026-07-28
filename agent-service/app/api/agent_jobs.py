@@ -2,13 +2,11 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 
-from app.clients.run_store import RunStoreError
+from app.clients.delegation_client import DelegationClientError
 from app.schemas.jobs import (
-    AgentJobRecord,
     AgentJobSummary,
-    AgentJobUnitsResponse,
     CreateAgentJobRequest,
     QueuedAgentJobResponse,
 )
@@ -24,34 +22,41 @@ async def create_agent_job(
 ) -> QueuedAgentJobResponse:
     token = _require_bearer(authorization)
     job_id = uuid4()
-    now = datetime.now(UTC)
-    scope = payload.scope.model_dump(mode="json")
-    queued = AgentJobRecord(
-        jobId=job_id,
-        status="QUEUED",
-        workspaceId=payload.workspaceId,
-        repositoryId=payload.repositoryId,
-        scope=scope,
-        createdAt=now,
-        updatedAt=now,
-    )
+    unit_id = uuid4()
+    created_at = datetime.now(UTC)
     try:
-        await request.app.state.run_store.save_job(
-            str(job_id),
-            queued.model_dump(mode="json"),
-            request.app.state.settings.agent_run_ttl_seconds,
+        delegation = await request.app.state.delegation_client.create(
+            job_id=job_id,
+            workspace_id=payload.workspaceId,
+            repository_id=payload.repositoryId,
+            authorization=token,
         )
-    except RunStoreError as exc:
-        raise _redis_unavailable(exc) from exc
-    request.app.state.job_executor.start(
-        job_id=str(job_id),
-        workspace_id=str(payload.workspaceId),
-        repository_id=str(payload.repositoryId),
-        scope=scope,
-        authorization=token,
-        created_at=now.isoformat(),
-    )
-    return QueuedAgentJobResponse(jobId=job_id, status="QUEUED")
+        await request.app.state.job_repository.create_job(
+            {
+                "id": job_id,
+                "delegation_id": UUID(str(delegation["delegationId"])),
+                "created_by_user_id": UUID(str(delegation["createdByUserId"])),
+                "workspace_id": payload.workspaceId,
+                "repository_id": payload.repositoryId,
+                "revision": str(delegation["revision"]),
+                "scope_type": "CURRENT_FILE",
+                "scope_payload": payload.scope.model_dump(mode="json"),
+                "user_instruction": payload.userInstruction,
+                "created_at": created_at,
+            },
+            {
+                "id": unit_id,
+                "max_attempts": request.app.state.settings.agent_unit_max_attempts,
+            },
+        )
+    except DelegationClientError as exc:
+        raise _delegation_error(exc) from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "MCP_UNAVAILABLE", "message": "Delegation response is invalid"},
+        ) from exc
+    return QueuedAgentJobResponse(jobId=job_id, status="QUEUED", createdAt=created_at)
 
 
 @router.get("/{job_id}", response_model=AgentJobSummary)
@@ -60,41 +65,48 @@ async def get_agent_job(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AgentJobSummary:
-    _require_bearer(authorization)
-    record = await _load(job_id, request)
-    return AgentJobSummary.model_validate(record.model_dump(exclude={"units"}))
-
-
-@router.get("/{job_id}/units", response_model=AgentJobUnitsResponse)
-async def get_agent_job_units(
-    job_id: UUID,
-    request: Request,
-    authorization: str | None = Header(default=None),
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=100),
-) -> AgentJobUnitsResponse:
-    _require_bearer(authorization)
-    record = await _load(job_id, request)
-    return AgentJobUnitsResponse(
-        jobId=job_id,
-        offset=offset,
-        limit=limit,
-        total=len(record.units),
-        units=record.units[offset : offset + limit],
-    )
-
-
-async def _load(job_id: UUID, request: Request) -> AgentJobRecord:
-    try:
-        payload = await request.app.state.run_store.get_job(str(job_id))
-    except RunStoreError as exc:
-        raise _redis_unavailable(exc) from exc
-    if payload is None:
+    token = _require_bearer(authorization)
+    record = await request.app.state.job_repository.get_job(job_id)
+    if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "INVALID_REQUEST", "message": "Agent job not found"},
         )
-    return AgentJobRecord.model_validate(cast(dict[str, object], payload))
+    try:
+        await request.app.state.delegation_client.authorize(
+            delegation_id=record["delegation_id"],
+            job_id=job_id,
+            authorization=token,
+        )
+    except DelegationClientError as exc:
+        raise _delegation_error(exc) from exc
+    return _summary(record)
+
+
+def _summary(record: dict[str, object]) -> AgentJobSummary:
+    scope = record["scope_payload"]
+    review_ids = cast(list[object], record["review_request_ids"])
+    return AgentJobSummary(
+        jobId=record["id"],
+        status=record["status"],
+        workspaceId=record["workspace_id"],
+        repositoryId=record["repository_id"],
+        scopeType="CURRENT_FILE",
+        scopePayload=scope if isinstance(scope, dict) else {},
+        revision=str(record["revision"]),
+        result=record["result"],
+        phase=record["current_phase"],
+        totalUnits=cast(int, record["total_units"]),
+        completedUnits=cast(int, record["completed_units"]),
+        failedUnits=cast(int, record["failed_units"]),
+        reviewRequestIds=[UUID(str(value)) for value in review_ids or []],
+        errorCode=record["error_code"],
+        errorMessage=record["error_message"],
+        createdAt=record["created_at"],
+        startedAt=record["started_at"],
+        completedAt=record["completed_at"],
+        updatedAt=record["updated_at"],
+    )
 
 
 def _require_bearer(authorization: str | None) -> str:
@@ -106,8 +118,16 @@ def _require_bearer(authorization: str | None) -> str:
     return authorization
 
 
-def _redis_unavailable(exc: RunStoreError) -> HTTPException:
+def _delegation_error(exc: DelegationClientError) -> HTTPException:
+    if exc.code == "MCP_PERMISSION_DENIED":
+        code = status.HTTP_403_FORBIDDEN
+    elif exc.code in {"INVALID_SCOPE", "FILE_NOT_FOUND"}:
+        code = status.HTTP_404_NOT_FOUND
+    elif exc.retryable:
+        code = status.HTTP_503_SERVICE_UNAVAILABLE
+    else:
+        code = status.HTTP_400_BAD_REQUEST
     return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={"code": "REDIS_UNAVAILABLE", "message": str(exc)},
+        status_code=code,
+        detail={"code": exc.code, "message": str(exc)[:300]},
     )

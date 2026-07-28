@@ -1,16 +1,13 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 JobStatus = Literal[
     "QUEUED",
-    "DISCOVERING_FILES",
-    "CLASSIFYING_FILES",
-    "LOADING_BINDINGS",
-    "BUILDING_UNITS",
-    "READY_FOR_ANALYSIS",
+    "RUNNING",
+    "COMPLETED",
     "FAILED",
     "CANCELLED",
 ]
@@ -39,10 +36,7 @@ class ProjectInitializationScope(BaseModel):
     type: Literal["PROJECT_INITIALIZATION"]
 
 
-AgentJobScope = Annotated[
-    CurrentFileScope | DirectoryScope | GitChangesScope | ProjectInitializationScope,
-    Field(discriminator="type"),
-]
+AgentJobScope = CurrentFileScope
 
 
 class CreateAgentJobRequest(BaseModel):
@@ -64,6 +58,7 @@ class CreateAgentJobRequest(BaseModel):
 class QueuedAgentJobResponse(BaseModel):
     jobId: UUID
     status: Literal["QUEUED"]
+    createdAt: datetime
 
 
 class AnalysisUnit(BaseModel):
@@ -88,17 +83,24 @@ class AgentJobRecord(BaseModel):
     workspaceId: UUID
     repositoryId: UUID
     scope: dict[str, object]
-    discoveredFileCount: int = 0
-    eligibleCodeCount: int = 0
-    skippedFileCount: int = 0
-    skippedReasonCounts: dict[str, int] = Field(default_factory=dict)
-    unitCount: int = 0
-    completedUnitCount: int = 0
+    revision: str
+    result: Literal["NO_CHANGE", "REVIEW_SUBMITTED", "PARTIALLY_COMPLETED"] | None = None
+    phase: Literal[
+        "LOADING_CONTEXT",
+        "MODEL_RUNNING",
+        "VALIDATING",
+        "REPAIRING",
+        "SUBMITTING_REVIEW",
+    ] | None = None
+    totalUnits: int = 1
+    completedUnits: int = 0
+    failedUnits: int = 0
     reviewRequestIds: list[UUID] = Field(default_factory=list)
-    units: list[AnalysisUnit] = Field(default_factory=list)
     errorCode: str | None = None
     errorMessage: str | None = None
     createdAt: datetime
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
     updatedAt: datetime
 
 
@@ -107,17 +109,26 @@ class AgentJobSummary(BaseModel):
     status: JobStatus
     workspaceId: UUID
     repositoryId: UUID
-    scope: dict[str, object]
-    discoveredFileCount: int
-    eligibleCodeCount: int
-    skippedFileCount: int
-    skippedReasonCounts: dict[str, int]
-    unitCount: int
-    completedUnitCount: int
+    scopeType: Literal["CURRENT_FILE"]
+    scopePayload: dict[str, object]
+    revision: str
+    result: Literal["NO_CHANGE", "REVIEW_SUBMITTED", "PARTIALLY_COMPLETED"] | None
+    phase: Literal[
+        "LOADING_CONTEXT",
+        "MODEL_RUNNING",
+        "VALIDATING",
+        "REPAIRING",
+        "SUBMITTING_REVIEW",
+    ] | None
+    totalUnits: int
+    completedUnits: int
+    failedUnits: int
     reviewRequestIds: list[UUID]
     errorCode: str | None
     errorMessage: str | None
     createdAt: datetime
+    startedAt: datetime | None
+    completedAt: datetime | None
     updatedAt: datetime
 
 

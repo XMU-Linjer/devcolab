@@ -28,6 +28,7 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemb
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceUserNotFoundException;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeException;
+import com.devcollab.knowledgecore.agentdelegation.AgentDelegationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +39,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AgentDelegationException.class)
+    public ResponseEntity<ApiErrorResponse> handleAgentDelegation(
+            AgentDelegationException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(
+                exception.status(),
+                exception.code(),
+                exception.getMessage(),
+                request
+        );
+    }
 
     @ExceptionHandler(DocumentChangeException.class)
     public ResponseEntity<ApiErrorResponse> handleDocumentChange(

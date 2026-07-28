@@ -17,14 +17,18 @@ class DeepSeekProvider:
         base_url: str,
         model: str,
         connect_timeout_seconds: float,
-        total_timeout_seconds: float,
+        request_timeout_seconds: float | None = None,
+        total_timeout_seconds: float | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._model = model
+        effective_timeout = request_timeout_seconds or total_timeout_seconds
+        if effective_timeout is None:
+            raise ValueError("A model request timeout is required")
         self._timeout = httpx.Timeout(
-            total_timeout_seconds,
+            effective_timeout,
             connect=connect_timeout_seconds,
         )
         self._transport = transport

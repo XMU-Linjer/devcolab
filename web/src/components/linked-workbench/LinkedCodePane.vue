@@ -4,11 +4,11 @@
       <div><strong :title="path">{{ path || '选择源码文件' }}</strong><span>{{ language || 'Text' }} · {{ lines.length }} 行</span></div>
       <div class="linked-pane-actions">
         <el-tag v-if="isAgentRunning" size="small" effect="plain">{{ agentStatusLabel }}</el-tag>
-        <el-tag v-else-if="agentStatus === 'REVIEW_SUBMITTED'" size="small" type="success" effect="plain">
+        <el-tag v-else-if="agentStatus === 'COMPLETED' && changeRequestId" size="small" type="success" effect="plain">
           已生成评审建议
         </el-tag>
         <el-button
-          v-if="agentStatus === 'REVIEW_SUBMITTED'"
+          v-if="agentStatus === 'COMPLETED' && changeRequestId"
           data-testid="agent-review-button"
           size="small"
           link
@@ -87,13 +87,14 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import {
-  createAgentRun,
-  getAgentRun,
+  createAgentJob,
+  getAgentJob,
   readableAgentError,
-  type AgentRunStatus,
+  type AgentJobPhase,
+  type AgentJobStatus,
 } from '@/api/agent';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue } from '@/types/linkedWorkbench';
 
@@ -122,27 +123,37 @@ const activeAnchor = computed(() => props.anchors.find(anchor => anchor.id === a
 const agentDialogOpen = ref(false);
 const creatingRun = ref(false);
 const userInstruction = ref('');
-const runId = ref<string | null>(null);
-const agentStatus = ref<AgentRunStatus | null>(null);
+const jobId = ref<string | null>(null);
+const agentStatus = ref<AgentJobStatus | null>(null);
+const agentPhase = ref<AgentJobPhase | null>(null);
 const changeRequestId = ref<string | null>(null);
 let pollTimer: number | null = null;
 
-const terminalStatuses = new Set<AgentRunStatus>(['REVIEW_SUBMITTED', 'NO_CHANGE', 'FAILED']);
-const statusLabels: Record<AgentRunStatus, string> = {
+const terminalStatuses = new Set<AgentJobStatus>(['COMPLETED', 'FAILED', 'CANCELLED']);
+const statusLabels: Record<AgentJobStatus, string> = {
   QUEUED: '排队中',
-  BUILDING_CONTEXT: '正在读取代码和关联文档',
-  PLANNING: 'Agent 正在分析',
-  VALIDATING: '正在校验建议',
-  REPAIRING_PLAN: '正在修正建议',
-  SUBMITTING_REVIEW: '正在提交评审',
-  REVIEW_SUBMITTED: '已生成评审建议',
-  NO_CHANGE: '文档无需更新',
+  RUNNING: 'Agent 正在处理',
+  COMPLETED: 'Agent 检查完成',
   FAILED: 'Agent 检查失败',
+  CANCELLED: 'Agent 检查已取消',
+};
+const phaseLabels: Record<AgentJobPhase, string> = {
+  LOADING_CONTEXT: '正在读取代码和关联文档',
+  MODEL_RUNNING: 'Agent 正在分析',
+  VALIDATING: '正在校验建议',
+  REPAIRING: '正在修正建议',
+  SUBMITTING_REVIEW: '正在提交评审',
 };
 const isAgentRunning = computed(() => creatingRun.value || Boolean(
   agentStatus.value && !terminalStatuses.has(agentStatus.value),
 ));
-const agentStatusLabel = computed(() => agentStatus.value ? statusLabels[agentStatus.value] : '正在启动');
+const agentStatusLabel = computed(() => (
+  agentPhase.value
+    ? phaseLabels[agentPhase.value]
+    : agentStatus.value
+      ? statusLabels[agentStatus.value]
+      : '正在启动'
+));
 const canInspect = computed(() => Boolean(
   props.sourceLoaded
   && props.path
@@ -153,9 +164,10 @@ const canInspect = computed(() => Boolean(
 
 watch(
   () => [props.workspaceId, props.repositoryId, props.path],
-  () => resetAgentRun(),
+  () => restoreAgentJob(),
 );
 onBeforeUnmount(() => stopPolling());
+onMounted(() => restoreAgentJob());
 
 function anchorForLine(line: number) {
   return props.anchors.find(anchor => line >= anchor.startLine && line <= anchor.endLine);
@@ -210,17 +222,23 @@ async function startAgentCheck() {
   if (!canInspect.value || creatingRun.value) return;
   creatingRun.value = true;
   try {
-    const queued = await createAgentRun({
+    const queued = await createAgentJob({
       workspaceId: props.workspaceId,
       repositoryId: props.repositoryId,
-      selectedPaths: [props.path],
+      scope: {
+        type: 'CURRENT_FILE',
+        filePath: props.path,
+      },
       userInstruction: userInstruction.value.trim() || null,
     });
-    runId.value = queued.runId;
+    jobId.value = queued.jobId;
     agentStatus.value = queued.status;
+    agentPhase.value = null;
     changeRequestId.value = null;
+    localStorage.setItem(activeJobStorageKey(), queued.jobId);
     agentDialogOpen.value = false;
-    await pollAgentRun();
+    ElMessage.success('Agent 已在后台开始处理，可以关闭当前窗口。');
+    await pollAgentJob();
   } catch (error) {
     ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
   } finally {
@@ -228,33 +246,34 @@ async function startAgentCheck() {
   }
 }
 
-async function pollAgentRun() {
-  if (!runId.value) return;
+async function pollAgentJob() {
+  if (!jobId.value) return;
   try {
-    const run = await getAgentRun(runId.value);
-    agentStatus.value = run.status;
-    changeRequestId.value = run.changeRequestId;
-    if (run.status === 'NO_CHANGE') {
+    const job = await getAgentJob(jobId.value);
+    agentStatus.value = job.status;
+    agentPhase.value = job.phase;
+    changeRequestId.value = job.reviewRequestIds[0] ?? null;
+    if (job.status === 'COMPLETED' && job.result === 'NO_CHANGE') {
       stopPolling();
-      runId.value = null;
+      clearActiveJob();
       ElMessage.success('当前代码与相关文档一致，无需更新。');
       return;
     }
-    if (run.status === 'REVIEW_SUBMITTED') {
+    if (job.status === 'COMPLETED' && job.result === 'REVIEW_SUBMITTED') {
       stopPolling();
-      runId.value = null;
+      clearActiveJob();
       return;
     }
-    if (run.status === 'FAILED') {
+    if (job.status === 'FAILED' || job.status === 'CANCELLED') {
       stopPolling();
-      runId.value = null;
-      ElMessage.error(run.errorMessage || 'Agent 检查失败');
+      clearActiveJob();
+      ElMessage.error(job.errorMessage || 'Agent 检查失败');
       return;
     }
     schedulePoll();
   } catch (error) {
     stopPolling();
-    runId.value = null;
+    clearActiveJob();
     agentStatus.value = 'FAILED';
     ElMessage.error(readableAgentError(error, 'Agent 状态读取失败'));
   }
@@ -262,7 +281,7 @@ async function pollAgentRun() {
 
 function schedulePoll() {
   stopPolling();
-  pollTimer = window.setTimeout(() => void pollAgentRun(), 1800);
+  pollTimer = window.setTimeout(() => void pollAgentJob(), 5000);
 }
 
 function stopPolling() {
@@ -272,13 +291,24 @@ function stopPolling() {
   }
 }
 
-function resetAgentRun() {
+function restoreAgentJob() {
   stopPolling();
-  runId.value = null;
+  jobId.value = localStorage.getItem(activeJobStorageKey());
   agentStatus.value = null;
+  agentPhase.value = null;
   changeRequestId.value = null;
   agentDialogOpen.value = false;
   resetAgentDialog();
+  if (jobId.value) void pollAgentJob();
+}
+
+function activeJobStorageKey() {
+  return `devcollab.agent.active-job:${props.workspaceId}:${props.repositoryId}:${props.path}`;
+}
+
+function clearActiveJob() {
+  localStorage.removeItem(activeJobStorageKey());
+  jobId.value = null;
 }
 
 function focusAnchor(anchorId: string) {
