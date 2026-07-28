@@ -20,6 +20,13 @@ class MemoryRunStore:
     async def get(self, run_id: str) -> dict[str, object] | None:
         return self.values.get(run_id)
 
+    async def save_job(self, job_id: str, payload: dict[str, object], ttl: int) -> None:
+        self.values[f"job:{job_id}"] = payload
+        self.ttls[f"job:{job_id}"] = ttl
+
+    async def get_job(self, job_id: str) -> dict[str, object] | None:
+        return self.values.get(f"job:{job_id}")
+
 
 class FakeMcpClient:
     def __init__(
@@ -127,6 +134,66 @@ class FakeMcpClient:
                 "truncated": False,
                 "omittedBlockCount": 0,
                 "omittedCharacterCount": 0,
+            }
+        if name == "devcollab.repository.list_files":
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "pathPrefix": arguments.get("pathPrefix", ""),
+                "recursive": arguments.get("recursive", True),
+                "files": [
+                    {
+                        "filePath": "src/Example.java",
+                        "fileName": "Example.java",
+                        "extension": "java",
+                        "sizeBytes": 16,
+                        "language": "Java",
+                        "readable": True,
+                        "isDirectory": False,
+                    }
+                ],
+                "nextCursor": None,
+                "hasMore": False,
+            }
+        if name == "devcollab.repository.list_changes":
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "changeId": "77777777-7777-7777-7777-777777777777",
+                "changeType": "COMMIT",
+                "commitSha": "abc",
+                "files": [
+                    {
+                        "status": "MODIFIED",
+                        "filePath": "src/Example.java",
+                        "oldPath": None,
+                        "binaryFile": False,
+                    }
+                ],
+                "nextCursor": None,
+                "hasMore": False,
+            }
+        if name == "devcollab.binding.list_batch":
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "files": [
+                    {
+                        "filePath": path,
+                        "bindings": [
+                            {
+                                "bindingId": "33333333-3333-3333-3333-333333333333",
+                                "repositoryId": arguments["repositoryId"],
+                                "documentId": "44444444-4444-4444-4444-444444444444",
+                                "blockId": None,
+                                "pathPattern": path,
+                            }
+                        ]
+                        if self.bound
+                        else [],
+                    }
+                    for path in arguments["filePaths"]
+                ],
             }
         raise AssertionError(f"Unexpected tool: {name}")
 

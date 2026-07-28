@@ -3,13 +3,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.agent_runs import router
+from app.api.agent_jobs import router as jobs_router
+from app.api.agent_runs import router as runs_router
 from app.clients.mcp_client import OfficialMcpClient
 from app.clients.run_store import RedisRunStore
 from app.config import Settings, get_settings
 from app.providers.base import ModelProvider
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.executor import AgentRunExecutor
+from app.runtime.job_executor import AgentJobExecutor
 
 
 def create_app(
@@ -41,7 +43,13 @@ def create_app(
             app.state.run_store,
             configured,
         )
+        app.state.job_executor = AgentJobExecutor(
+            app.state.mcp_client,
+            app.state.run_store,
+            configured,
+        )
         yield
+        await app.state.job_executor.close()
         await app.state.run_executor.close()
 
     app = FastAPI(
@@ -49,7 +57,8 @@ def create_app(
         version="0.1.0",
         lifespan=lifespan,
     )
-    app.include_router(router)
+    app.include_router(runs_router)
+    app.include_router(jobs_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

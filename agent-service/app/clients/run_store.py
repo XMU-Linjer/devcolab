@@ -13,6 +13,10 @@ class RunStore(Protocol):
 
     async def get(self, run_id: str) -> dict[str, object] | None: ...
 
+    async def save_job(self, job_id: str, payload: dict[str, object], ttl: int) -> None: ...
+
+    async def get_job(self, job_id: str) -> dict[str, object] | None: ...
+
 
 class RedisRunStore:
     def __init__(self, redis_url: str) -> None:
@@ -31,6 +35,23 @@ class RedisRunStore:
     async def get(self, run_id: str) -> dict[str, object] | None:
         try:
             value = await self._redis.get(f"agent:run:{run_id}")
+        except Exception as exc:
+            raise RunStoreError("Redis is unavailable") from exc
+        return json.loads(value) if value else None
+
+    async def save_job(self, job_id: str, payload: dict[str, object], ttl: int) -> None:
+        try:
+            await self._redis.set(
+                f"agent:job:{job_id}",
+                json.dumps(payload, ensure_ascii=False),
+                ex=ttl,
+            )
+        except Exception as exc:
+            raise RunStoreError("Redis is unavailable") from exc
+
+    async def get_job(self, job_id: str) -> dict[str, object] | None:
+        try:
+            value = await self._redis.get(f"agent:job:{job_id}")
         except Exception as exc:
             raise RunStoreError("Redis is unavailable") from exc
         return json.loads(value) if value else None
