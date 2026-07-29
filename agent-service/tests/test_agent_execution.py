@@ -56,6 +56,7 @@ def create_document() -> AgentPlan:
                     "createdDocumentClientOperationId": "create-1",
                     "proposedBlockType": "PARAGRAPH",
                     "proposedPlainText": "示例能力由当前选中的类实现，并作为正式模块行为对外提供。",
+                    "proposedContentFormat": "MARKDOWN",
                 },
             ],
             "bindingProposals": [
@@ -106,6 +107,7 @@ def invalid_update() -> AgentPlan:
                     "blockId": "77777777-7777-7777-7777-777777777777",
                     "baseBlockVersion": 99,
                     "proposedPlainText": "fabricated",
+                    "proposedContentFormat": "MARKDOWN",
                 }
             ],
             "bindingProposals": [],

@@ -98,6 +98,7 @@ def update_plan() -> dict[str, Any]:
                 "blockId": BLOCK,
                 "baseBlockVersion": 7,
                 "proposedPlainText": "应用现在公开提供新的业务行为。",
+                "proposedContentFormat": "MARKDOWN",
             }
         ],
         "bindingProposals": [],
@@ -254,6 +255,7 @@ def create_document_plan() -> dict[str, Any]:
                 "createdDocumentClientOperationId": "create-1",
                 "proposedBlockType": "PARAGRAPH",
                 "proposedPlainText": "应用通过公开接口提供经过代码验证的业务能力。",
+                "proposedContentFormat": "MARKDOWN",
             },
         ],
         "bindingProposals": [

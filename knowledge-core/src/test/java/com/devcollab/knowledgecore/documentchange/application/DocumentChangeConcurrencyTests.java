@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.application;
 
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentFormat;
+import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateCommand;
@@ -241,6 +243,90 @@ class DocumentChangeConcurrencyTests {
             assertThat(request.rejectionReason())
                     .isEqualTo("concurrent rejection");
         }
+    }
+
+    @Test
+    void addAndUpdateApplyMarkdownWithTheSameStructuredContentSemantics() {
+        TestContext context = setupMemberAndDocument(randomUUID(), randomUUID());
+        String markdown = """
+                ## 文档上下文
+
+                `DocumentBlock` 负责保存一个内容块。
+
+                - 保留排序
+                - 保留版本
+                """;
+        CreateResult created = service.create(
+                context.workspaceId(),
+                context.userId(),
+                new CreateCommand(
+                        "markdown-format-" + randomUUID(),
+                        "Apply Markdown",
+                        "ADD_BLOCK 与 UPDATE_BLOCK 使用同一格式边界",
+                        List.of(
+                                new CreateOperationCommand(
+                                        "update-markdown",
+                                        1,
+                                        OperationType.UPDATE_BLOCK,
+                                        context.documentId(),
+                                        null,
+                                        context.blockId(),
+                                        0L,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        markdown,
+                                        DocumentBlockContentFormat.MARKDOWN,
+                                        null,
+                                        null
+                                ),
+                                new CreateOperationCommand(
+                                        "add-markdown",
+                                        2,
+                                        OperationType.ADD_BLOCK,
+                                        context.documentId(),
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        DocumentBlockType.PARAGRAPH,
+                                        markdown,
+                                        DocumentBlockContentFormat.MARKDOWN,
+                                        null,
+                                        null
+                                )
+                        ),
+                        List.of(),
+                        List.of()
+                )
+        );
+
+        service.apply(
+                context.workspaceId(),
+                created.changeRequestId(),
+                context.userId()
+        );
+
+        List<String> stored = jdbcTemplate.queryForList(
+                """
+                SELECT content_json
+                  FROM document_blocks
+                 WHERE document_id = ?
+                 ORDER BY sort_order
+                """,
+                String.class,
+                context.documentId()
+        );
+        assertThat(stored).hasSize(2);
+        assertThat(stored).allSatisfy(content -> {
+            assertThat(content).contains("\"type\":\"heading\"");
+            assertThat(content).contains("\"type\":\"bulletList\"");
+            assertThat(content).contains("\"type\":\"code\"");
+            assertThat(content).doesNotContain("## 文档上下文");
+        });
     }
 
     private List<Outcome> race(

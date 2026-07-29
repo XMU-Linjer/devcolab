@@ -167,7 +167,9 @@ class McpServerProtocolTests {
                                             "clientOperationId", "create-doc",
                                             "sequenceNumber", 1,
                                             "operationType", "CREATE_DOCUMENT",
-                                            "proposedDocumentTitle", "API Design"
+                                            "proposedDocumentTitle", "API Design",
+                                            "proposedPlainText", "## 面向初学者的说明",
+                                            "proposedContentFormat", "MARKDOWN"
                                     ))
                             )
                     )

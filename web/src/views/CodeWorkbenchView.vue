@@ -824,6 +824,9 @@ function rebuildBindings(
     loadedBlockIds: loadedDocumentBlockDocumentId.value === selectedDocumentId.value
       ? new Set(documentBlocks.value.map(block => block.id))
       : undefined,
+    blockSortOrders: loadedDocumentBlockDocumentId.value === selectedDocumentId.value
+      ? new Map(documentBlocks.value.map(block => [block.id, block.sortOrder]))
+      : undefined,
   };
   const fixture = buildBindingFixture(fixtureInput);
   state.replaceFixture(fixture);
@@ -835,6 +838,7 @@ function rebuildBindings(
     preferredBindingId,
     preferredBlockId,
     selectedFilePath.value,
+    fixtureInput.blockSortOrders,
   );
   if (selected) state.activateLink(`binding-link-${selected.bindingId}`, 'system');
 }

@@ -16,6 +16,7 @@ export interface BuildBindingFixtureInput {
   allowCrossFile?: boolean;
   loadedDocumentId?: string | null;
   loadedBlockIds?: ReadonlySet<string>;
+  blockSortOrders?: ReadonlyMap<string, number>;
 }
 
 export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixture {
@@ -60,7 +61,11 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
 }
 
 export function displayableBindings(input: BuildBindingFixtureInput): CodeBindingQueryItem[] {
-  return sortBindings(input.bindings, input.commitSha).filter((binding) => {
+  return sortBindings(
+    input.bindings,
+    input.commitSha,
+    input.blockSortOrders,
+  ).filter((binding) => {
     const state = classifyBinding(binding, input);
     return state === 'precise' || state === 'weak';
   });
@@ -116,10 +121,21 @@ function validRange(startLine: number | null, endLine: number | null) {
 export function sortBindings(
   bindings: CodeBindingQueryItem[],
   revision: string,
+  blockSortOrders?: ReadonlyMap<string, number>,
 ): CodeBindingQueryItem[] {
   return [...bindings].sort((left, right) => {
-    const scoreDifference = bindingPriority(right, revision) - bindingPriority(left, revision);
-    if (scoreDifference !== 0) return scoreDifference;
+    const revisionDifference = Number(right.revision === revision)
+      - Number(left.revision === revision);
+    if (revisionDifference !== 0) return revisionDifference;
+    const preciseDifference = Number(isPrecise(right)) - Number(isPrecise(left));
+    if (preciseDifference !== 0) return preciseDifference;
+    const startDifference = lineOrder(left.startLine) - lineOrder(right.startLine);
+    if (startDifference !== 0) return startDifference;
+    const endDifference = lineOrder(left.endLine) - lineOrder(right.endLine);
+    if (endDifference !== 0) return endDifference;
+    const blockDifference = blockOrder(left, blockSortOrders)
+      - blockOrder(right, blockSortOrders);
+    if (blockDifference !== 0) return blockDifference;
     return left.bindingId.localeCompare(right.bindingId);
   });
 }
@@ -130,8 +146,9 @@ export function selectDefaultBinding(
   preferredBindingId?: string | null,
   preferredBlockId?: string | null,
   currentFilePath?: string | null,
+  blockSortOrders?: ReadonlyMap<string, number>,
 ): CodeBindingQueryItem | null {
-  const sorted = sortBindings(bindings, revision);
+  const sorted = sortBindings(bindings, revision, blockSortOrders);
   return sorted.find(item => item.bindingId === preferredBindingId)
     ?? (preferredBlockId ? sorted.find(item => item.blockId === preferredBlockId) : undefined)
     ?? sorted.find(item => item.pathPattern === currentFilePath && item.revision === revision)
@@ -160,17 +177,25 @@ export function documentBindingToQueryItem(
   };
 }
 
-function bindingPriority(binding: CodeBindingQueryItem, revision: string) {
-  const exactRevision = binding.revision === revision ? 100 : 0;
-  const blockTarget = binding.blockId ? 20 : 0;
-  const anchorKind = binding.revision === null
-    ? 0
-    : binding.anchorKind === 'SYMBOL'
-      ? 3
-      : binding.anchorKind === 'RANGE'
-        ? 2
-        : 1;
-  return exactRevision + blockTarget + anchorKind;
+function isPrecise(binding: CodeBindingQueryItem) {
+  return binding.blockId !== null
+    && binding.revision !== null
+    && (binding.anchorKind === 'SYMBOL' || binding.anchorKind === 'RANGE')
+    && binding.startLine !== null
+    && binding.endLine !== null;
+}
+
+function lineOrder(line: number | null) {
+  return line ?? Number.MAX_SAFE_INTEGER;
+}
+
+function blockOrder(
+  binding: CodeBindingQueryItem,
+  blockSortOrders?: ReadonlyMap<string, number>,
+) {
+  return binding.blockId === null
+    ? Number.MAX_SAFE_INTEGER
+    : blockSortOrders?.get(binding.blockId) ?? Number.MAX_SAFE_INTEGER - 1;
 }
 
 export function bindingDocumentChoices(

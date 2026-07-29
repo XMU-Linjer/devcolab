@@ -1335,9 +1335,12 @@ h1 {
 }
 
 .tiptap-content p + p {
-  margin-top: 6px;
+  margin-top: 12px;
 }
 
+.tiptap-block.is-paragraph .tiptap-content h1,
+.tiptap-block.is-paragraph .tiptap-content h2,
+.tiptap-block.is-paragraph .tiptap-content h3,
 .tiptap-block.is-heading .tiptap-content h1,
 .tiptap-block.is-heading .tiptap-content h2,
 .tiptap-block.is-heading .tiptap-content h3 {
@@ -1357,6 +1360,70 @@ h1 {
 
 .tiptap-block.is-heading .tiptap-content h3 {
   font-size: 18px;
+}
+
+.tiptap-block.is-paragraph .tiptap-content h1,
+.tiptap-block.is-paragraph .tiptap-content h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.tiptap-block.is-paragraph .tiptap-content h3 {
+  margin: 14px 0 8px;
+  font-size: 15px;
+}
+
+.tiptap-block.is-paragraph .tiptap-content ul,
+.tiptap-block.is-paragraph .tiptap-content ol {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 12px;
+  padding-left: 24px;
+}
+
+.tiptap-block.is-paragraph .tiptap-content li > p {
+  margin: 0;
+}
+
+.tiptap-block.is-paragraph .tiptap-content code {
+  border-radius: 4px;
+  background: #f0f3f8;
+  padding: 2px 5px;
+  color: #344054;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.tiptap-block.is-paragraph .tiptap-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 7px;
+  background: #172033;
+  padding: 12px 14px;
+  color: #e6edf7;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.tiptap-block.is-paragraph .tiptap-content pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.tiptap-block.is-paragraph .tiptap-content blockquote {
+  margin: 12px 0;
+  border-left: 3px solid #9eb9f4;
+  padding: 3px 0 3px 12px;
+  color: #475467;
+}
+
+.tiptap-block.is-paragraph .tiptap-content hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid #e4e9f1;
 }
 
 .tiptap-block.is-code .tiptap-editor-shell {

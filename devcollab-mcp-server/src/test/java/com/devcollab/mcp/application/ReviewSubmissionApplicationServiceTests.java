@@ -59,6 +59,11 @@ class ReviewSubmissionApplicationServiceTests {
                 org.mockito.ArgumentMatchers.argThat(body ->
                         !body.containsKey("workspaceId")
                                 && body.containsKey("clientRequestId")
+                                && ((List<?>) body.get("operations")).stream()
+                                .map(item -> (Map<?, ?>) item)
+                                .anyMatch(item -> "MARKDOWN".equals(
+                                        item.get("proposedContentFormat")
+                                ))
                 ),
                 eq(identity)
         );
@@ -125,7 +130,9 @@ class ReviewSubmissionApplicationServiceTests {
                         "clientOperationId", "create-document",
                         "sequenceNumber", 1,
                         "operationType", "CREATE_DOCUMENT",
-                        "proposedDocumentTitle", "API Design"
+                        "proposedDocumentTitle", "API Design",
+                        "proposedPlainText", "## 入门说明",
+                        "proposedContentFormat", "MARKDOWN"
                 ))
         );
     }

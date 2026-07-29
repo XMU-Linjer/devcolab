@@ -176,6 +176,42 @@ def test_java_candidates_reuse_real_projected_symbols() -> None:
     assert (symbol.startLine, symbol.endLine) == (1, 1)
 
 
+def test_code_candidates_are_ordered_by_path_range_and_put_file_overview_last() -> None:
+    candidates = BindingCandidateBuilder().build(
+        context(
+            code_files=[
+                {
+                    "filePath": "zeta.py",
+                    "language": "Python",
+                    "content": "def later():\n    return 2\n",
+                },
+                {
+                    "filePath": "alpha.py",
+                    "language": "Python",
+                    "content": (
+                        "def first():\n"
+                        "    return 1\n\n"
+                        "def second():\n"
+                        "    return 2\n"
+                    ),
+                },
+            ]
+        ),
+        no_change_plan(),
+    ).code
+    order = [
+        (item.filePath, item.startLine, item.anchorKind.value)
+        for item in candidates
+    ]
+    assert order == [
+        ("alpha.py", 1, "SYMBOL"),
+        ("alpha.py", 4, "SYMBOL"),
+        ("alpha.py", None, "FILE"),
+        ("zeta.py", 1, "SYMBOL"),
+        ("zeta.py", None, "FILE"),
+    ]
+
+
 def test_candidate_limits_previews_and_real_document_block_ids() -> None:
     candidates = BindingCandidateBuilder(
         max_code_candidates=2,
@@ -229,6 +265,7 @@ def test_add_block_candidate_uses_real_client_operation_reference() -> None:
                     "createdDocumentClientOperationId": "create-doc",
                     "proposedBlockType": "PARAGRAPH",
                     "proposedPlainText": "正式正文",
+                    "proposedContentFormat": "MARKDOWN",
                 },
             ],
             "evidence": [],

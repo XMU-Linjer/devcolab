@@ -14,6 +14,7 @@ import com.devcollab.knowledgecore.document.application.CreateDocumentCommand;
 import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
 import com.devcollab.knowledgecore.document.application.DocumentBlockApplicationService;
 import com.devcollab.knowledgecore.document.application.DocumentBlockContentCodec;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentFormat;
 import com.devcollab.knowledgecore.document.application.UpdateDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.domain.DocumentOperationLog;
 import com.devcollab.knowledgecore.document.domain.DocumentOperationLogRepository;
@@ -170,9 +171,35 @@ public class DocumentChangeApplicationService {
             UUID proposedParentDocumentId,
             DocumentBlockType proposedBlockType,
             String proposedPlainText,
+            DocumentBlockContentFormat proposedContentFormat,
             Integer proposedContentSchemaVersion,
             JsonNode proposedContent
     ) {
+        public CreateOperationCommand(
+                String clientOperationId,
+                int sequenceNumber,
+                OperationType operationType,
+                UUID documentId,
+                String createdDocumentClientOperationId,
+                UUID blockId,
+                Long baseBlockVersion,
+                String proposedDocumentTitle,
+                DocumentType proposedDocumentType,
+                UUID proposedParentDocumentId,
+                DocumentBlockType proposedBlockType,
+                String proposedPlainText,
+                Integer proposedContentSchemaVersion,
+                JsonNode proposedContent
+        ) {
+            this(
+                    clientOperationId, sequenceNumber, operationType,
+                    documentId, createdDocumentClientOperationId,
+                    blockId, baseBlockVersion, proposedDocumentTitle,
+                    proposedDocumentType, proposedParentDocumentId,
+                    proposedBlockType, proposedPlainText, null,
+                    proposedContentSchemaVersion, proposedContent
+            );
+        }
     }
 
     public record CreateEvidenceCommand(
@@ -1203,7 +1230,8 @@ public class DocumentChangeApplicationService {
                         input.proposedBlockType(),
                         input.proposedPlainText(),
                         input.proposedContentSchemaVersion(),
-                        input.proposedContent()
+                        input.proposedContent(),
+                        input.proposedContentFormat()
                 );
                 proposedPlainText = normalized.text();
                 proposedSchemaVersion = normalized.schemaVersion();
@@ -1229,7 +1257,8 @@ public class DocumentChangeApplicationService {
                         block.type(),
                         input.proposedPlainText(),
                         input.proposedContentSchemaVersion(),
-                        input.proposedContent()
+                        input.proposedContent(),
+                        input.proposedContentFormat()
                 );
                 proposedPlainText = normalized.text();
                 proposedSchemaVersion = normalized.schemaVersion();

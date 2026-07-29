@@ -400,6 +400,12 @@ class AgentPlanValidator:
                         path,
                         issues,
                     )
+                self._validate_unsupported_external_claims(
+                    body,
+                    source_text,
+                    path,
+                    issues,
+                )
 
             title = self._operation_target_title(operation, create_operations, documents)
             if title and not self._role_matches_document(role, title):
@@ -483,6 +489,118 @@ class AgentPlanValidator:
                     "FRAGMENTED_DOCUMENT",
                     "too many short Blocks form a fragmented document",
                 )
+            major_symbol_count = self._major_symbol_count(context)
+            if major_symbol_count >= 2 and len(content_operations) <= 1:
+                self._issue(
+                    issues,
+                    f"operations[{create_index}]",
+                    "GIANT_DOCUMENT_BLOCK",
+                    (
+                        "a file with multiple major symbols requires a module overview "
+                        "and separate symbol Blocks"
+                    ),
+                )
+            if chinese_required and major_symbol_count >= 2 and content_operations:
+                self._validate_beginner_document_depth(
+                    create_index,
+                    content_operations,
+                    issues,
+                )
+
+    def _validate_beginner_document_depth(
+        self,
+        create_index: int,
+        content_operations: list[tuple[int, Any]],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        overview_index, overview = content_operations[0]
+        overview_body = self._operation_body(overview).strip()
+        if (
+            len(overview_body) < 320
+            or not self._contains_any(
+                overview_body,
+                ("为什么", "没有", "解决", "避免", "原因", "为了"),
+            )
+            or not self._contains_any(
+                overview_body,
+                ("数据流", "流程", "输入", "输出", "上游", "下游", "传递"),
+            )
+        ):
+            self._issue(
+                issues,
+                f"operations[{overview_index}]",
+                "BEGINNER_OVERVIEW_TOO_SHALLOW",
+                (
+                    "module overview must explain why the module exists and its "
+                    "verifiable input-to-output data flow in at least 320 characters"
+                ),
+            )
+
+        misconception_blocks = 0
+        for block_index, operation in content_operations[1:]:
+            body = self._operation_body(operation).strip()
+            facets = sum(
+                (
+                    self._contains_any(
+                        body,
+                        ("为什么", "解决", "避免", "原因", "为了", "作用", "职责"),
+                    ),
+                    self._contains_any(
+                        body,
+                        (
+                            "语法", "枚举", "StrEnum", "dataclass", "frozen",
+                            "tuple", "classmethod", "Iterable", "装饰器",
+                        ),
+                    ),
+                    self._contains_any(
+                        body,
+                        (
+                            "数据流", "流程", "输入", "输出", "调用方", "传入",
+                            "传给", "汇总", "包含", "协作", "关系",
+                        ),
+                    ),
+                )
+            )
+            has_maintenance = bool(
+                re.search(
+                    r"(?:修改|新增|删除|重命名|调整).{0,24}"
+                    r"(?:需要|应当|必须|影响|检查|同步)",
+                    body,
+                )
+                or self._contains_any(body, ("同步检查", "维护时", "修改影响"))
+            )
+            has_misconception = self._contains_any(
+                body,
+                ("容易误解", "不要理解为", "不是", "并不", "不等于", "区别"),
+            )
+            if has_misconception:
+                misconception_blocks += 1
+            if len(body) < 220 or facets < 2 or not has_maintenance:
+                self._issue(
+                    issues,
+                    f"operations[{block_index}]",
+                    "BEGINNER_SYMBOL_BLOCK_TOO_SHALLOW",
+                    (
+                        "each major symbol Block needs sufficient beginner-oriented "
+                        "purpose, syntax or data-flow explanation plus concrete "
+                        "maintenance impact"
+                    ),
+                )
+
+        if len(content_operations) >= 5 and misconception_blocks < 2:
+            self._issue(
+                issues,
+                f"operations[{create_index}]",
+                "BEGINNER_MISCONCEPTIONS_MISSING",
+                (
+                    "a multi-symbol beginner document must explain at least two "
+                    "realistic misconceptions"
+                ),
+            )
+
+    @staticmethod
+    def _contains_any(body: str, markers: tuple[str, ...]) -> bool:
+        return any(marker in body for marker in markers)
 
     def _validate_frontend_client_content(
         self,
@@ -535,6 +653,69 @@ class AgentPlanValidator:
                 path,
                 "FRONTEND_BACKEND_SCOPE_POLLUTION",
                 "frontend API Client documentation invents server-side behavior",
+            )
+
+    def _validate_unsupported_external_claims(
+        self,
+        body: str,
+        source_text: str,
+        path: str,
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        unsupported_terms = (
+            "数据库",
+            "前端",
+            "规则引擎",
+            "报告生成器",
+            "API 响应",
+            "消息队列",
+            "渲染器",
+            "校验器",
+        )
+        hedges = (
+            "当前代码未",
+            "从当前文件无法",
+            "无法确认",
+            "不能确认",
+            "需要先检查",
+            "应先检查",
+            "是否",
+            "可能",
+        )
+        for sentence in re.split(r"[。！？\n]", body):
+            if not sentence.strip():
+                continue
+            if any(term in sentence and term not in source_text for term in unsupported_terms):
+                if not self._contains_any(sentence, hedges):
+                    self._issue(
+                        issues,
+                        path,
+                        "UNSUPPORTED_EXTERNAL_RELATION",
+                        (
+                            "document content asserts an external component or "
+                            "integration that is absent from the selected code context"
+                        ),
+                    )
+                    break
+
+        unsupported_semantics = (
+            r"BLOCKER.{0,24}(?:必须|一定|阻断|不能通过)",
+            r"(?:唯一标识|唯一\s*ID)",
+            r"(?:不会|没有|不产生).{0,8}(?:额外)?开销",
+        )
+        if any(
+            re.search(pattern, body, flags=re.IGNORECASE)
+            and not re.search(pattern, source_text, flags=re.IGNORECASE)
+            for pattern in unsupported_semantics
+        ):
+            self._issue(
+                issues,
+                path,
+                "UNSUPPORTED_INFERRED_SEMANTICS",
+                (
+                    "document content infers constraints, business meaning, or "
+                    "performance guarantees that are absent from selected code"
+                ),
             )
 
     @staticmethod
@@ -638,6 +819,22 @@ class AgentPlanValidator:
     def _requires_chinese(context: dict[str, Any]) -> bool:
         instruction = str(context.get("task", {}).get("userInstruction") or "")
         return not bool(re.search(r"(?:英文|英语|\bEnglish\b)", instruction, re.IGNORECASE))
+
+    @staticmethod
+    def _major_symbol_count(context: dict[str, Any]) -> int:
+        identities: set[tuple[str, str]] = set()
+        for code_file in context.get("codeFiles", []):
+            file_path = str(code_file.get("filePath") or "")
+            for symbol in code_file.get("symbols", []):
+                identity = str(
+                    symbol.get("symbolKey")
+                    or symbol.get("qualifiedName")
+                    or symbol.get("simpleName")
+                    or ""
+                ).strip()
+                if identity:
+                    identities.add((file_path, identity))
+        return len(identities)
 
     def _validate_counts_and_sequences(
         self, plan: AgentPlan, issues: list[PlanValidationIssue]

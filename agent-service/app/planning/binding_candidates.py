@@ -85,7 +85,11 @@ class BindingCandidateBuilder:
                 ]
             )
         code_candidates: list[CodeCandidate] = []
-        for item in context.get("codeFiles", []):
+        code_files = sorted(
+            context.get("codeFiles", []),
+            key=lambda item: str(item.get("filePath") or ""),
+        )
+        for item in code_files:
             if len(code_candidates) >= self._max_code_candidates:
                 break
             code_candidates.extend(
@@ -97,8 +101,9 @@ class BindingCandidateBuilder:
                 )
             )
         document_candidates = self._document_candidates(context, plan)
+        ordered_code = sorted(code_candidates, key=_candidate_source_key)
         return BindingCandidateSet(
-            tuple(code_candidates[: self._max_code_candidates]),
+            tuple(ordered_code[: self._max_code_candidates]),
             tuple(document_candidates[: self._max_document_candidates]),
         )
 
@@ -159,7 +164,11 @@ class BindingCandidateBuilder:
                         end_line=end,
                     )
                 )
-        return result[:remaining]
+        file_candidate, *symbol_candidates = result
+        return [
+            file_candidate,
+            *sorted(symbol_candidates, key=_candidate_source_key),
+        ][:remaining]
 
     def _python_candidates(
         self,
@@ -402,7 +411,14 @@ class BindingPlanExpander:
             for item in evidence
         }
         sequence = len(plan.operations)
-        for index, selection in enumerate(binding_plan.selections, start=1):
+        ordered_selections = sorted(
+            binding_plan.selections,
+            key=lambda selection: _selection_source_key(
+                code_by_id[selection.codeCandidateId],
+                document_by_id[selection.documentAnchorCandidateId],
+            ),
+        )
+        for index, selection in enumerate(ordered_selections, start=1):
             code = code_by_id[selection.codeCandidateId]
             document = document_by_id[selection.documentAnchorCandidateId]
             sequence += 1
@@ -465,6 +481,34 @@ class BindingPlanExpander:
 
 def _opaque_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_urlsafe(12)}"
+
+
+def _candidate_source_key(candidate: CodeCandidate) -> tuple[Any, ...]:
+    precise_rank = 0 if candidate.startLine is not None else 1
+    return (
+        candidate.filePath,
+        precise_rank,
+        candidate.startLine if candidate.startLine is not None else 2**31 - 1,
+        candidate.endLine if candidate.endLine is not None else 2**31 - 1,
+        candidate.symbolKey or "",
+        candidate.candidateId,
+    )
+
+
+def _selection_source_key(
+    code: CodeCandidate,
+    document: DocumentAnchorCandidate,
+) -> tuple[Any, ...]:
+    precise_rank = 0 if code.startLine is not None else 1
+    return (
+        code.filePath,
+        precise_rank,
+        code.startLine if code.startLine is not None else 2**31 - 1,
+        code.endLine if code.endLine is not None else 2**31 - 1,
+        document.sortOrder if document.sortOrder is not None else 2**31 - 1,
+        code.candidateId,
+        document.candidateId,
+    )
 
 
 def _positive_int(value: Any) -> int | None:

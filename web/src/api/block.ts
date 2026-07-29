@@ -6,6 +6,7 @@ export interface TiptapNode {
   type: string;
   text?: string;
   attrs?: Record<string, unknown>;
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
   content?: TiptapNode[];
 }
 

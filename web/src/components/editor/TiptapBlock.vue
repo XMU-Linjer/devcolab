@@ -203,20 +203,15 @@ let clickTimer: number | null = null;
 
 const editorExtensions = [
   StarterKit.configure({
-    blockquote: false,
-    bold: false,
-    bulletList: false,
-    code: false,
-    codeBlock: props.block.type === 'CODE' ? {} : false,
+    codeBlock: props.block.type === 'PARAGRAPH' || props.block.type === 'CODE'
+      ? {}
+      : false,
     dropcursor: false,
     gapcursor: false,
-    heading: props.block.type === 'HEADING' ? { levels: [1, 2, 3] } : false,
-    horizontalRule: false,
-    italic: false,
+    heading: props.block.type === 'PARAGRAPH' || props.block.type === 'HEADING'
+      ? { levels: [1, 2, 3] }
+      : false,
     link: false,
-    listItem: false,
-    listKeymap: false,
-    orderedList: false,
     strike: false,
     trailingNode: false,
     underline: false,
@@ -451,11 +446,26 @@ function textDocument(text: string) {
 
 function structuredDocument(block: DocumentBlock): TiptapNode {
   const document = block.content.document;
-  const expectedType = expectedRootNodeType(block.type);
-  if (document?.content?.every((node) => node.type === expectedType)) {
+  if (document && validContractDocument(document, block.type)) {
     return normalizeContractDocument(document);
   }
   return typedTextDocument(block.type, block.content.text);
+}
+
+function validContractDocument(document: TiptapNode, type: DocumentBlockType) {
+  if (document.type !== 'doc' || !document.content?.length) return false;
+  if (type === 'PARAGRAPH') {
+    return document.content.every(node => [
+      'paragraph',
+      'heading',
+      'codeBlock',
+      'bulletList',
+      'orderedList',
+      'blockquote',
+      'horizontalRule',
+    ].includes(node.type));
+  }
+  return document.content.every(node => node.type === expectedRootNodeType(type));
 }
 
 /**
@@ -472,6 +482,9 @@ function normalizeContractDocument(node: TiptapNode): TiptapNode {
     normalized.attrs = { level: node.attrs.level };
   } else if (node.type === 'taskItem' && node.attrs?.checked !== undefined) {
     normalized.attrs = { checked: node.attrs.checked };
+  }
+  if (node.marks !== undefined) {
+    normalized.marks = node.marks.map(mark => ({ type: mark.type }));
   }
   if (node.content !== undefined) {
     normalized.content = node.content.map(normalizeContractDocument);
@@ -546,17 +559,17 @@ function blockShapeGuard(type: DocumentBlockType) {
 }
 
 function validDocumentShape(document: ProseMirrorNode, type: DocumentBlockType) {
-  const expectedType = expectedRootNodeType(type);
   if (document.childCount === 0) {
     return false;
   }
+  if (type === 'PARAGRAPH') {
+    return true;
+  }
+  const expectedType = expectedRootNodeType(type);
   for (let index = 0; index < document.childCount; index += 1) {
     if (document.child(index).type.name !== expectedType) {
       return false;
     }
-  }
-  if (type === 'PARAGRAPH') {
-    return true;
   }
   if (document.childCount !== 1) {
     return false;

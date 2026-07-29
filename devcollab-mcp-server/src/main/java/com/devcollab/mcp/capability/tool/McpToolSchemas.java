@@ -559,6 +559,14 @@ final class McpToolSchemas {
                 "proposedPlainText",
                 nullableStringProperty(1, limits.maxProposedCharacters())
         );
+        operationProperties.put("proposedContentFormat", Map.of(
+                "type", "string",
+                "enum", List.of(
+                        "MARKDOWN",
+                        "TIPTAP_JSON",
+                        "PLAIN_TEXT"
+                )
+        ));
         operationProperties.put("proposedContent", Map.of(
                 "oneOf", List.of(content, Map.of("type", "null"))
         ));

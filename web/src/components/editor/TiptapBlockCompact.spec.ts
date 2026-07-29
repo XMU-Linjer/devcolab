@@ -54,6 +54,18 @@ describe('TiptapBlock compact linked reading', () => {
     expect(wrapper.emitted('save-intent')).toEqual([['stay'], ['finish']]);
     expect(wrapper.emitted('cancel-request')).toHaveLength(1);
   });
+
+  it('renders structured Markdown semantics without raw markers', async () => {
+    const wrapper = mountBlock({ block: structuredMarkdownBlock() });
+    await flushPromises();
+
+    expect(wrapper.get('h2').text()).toBe('DocumentType');
+    expect(wrapper.findAll('li').map(item => item.text())).toEqual(['API 文档', 'ADR 决策']);
+    expect(wrapper.get('.tiptap-content p code').text()).toBe('DocumentType');
+    expect(wrapper.get('pre').text()).toContain('enum DocumentType');
+    expect(wrapper.text()).not.toContain('##');
+    expect(wrapper.text()).not.toContain('`DocumentType`');
+  });
 });
 
 function mountBlock(overrides: Record<string, unknown> = {}) {
@@ -104,5 +116,56 @@ function documentBlock(): DocumentBlock {
     createdBy: 'user-a',
     createdAt: '2026-07-29T00:00:00Z',
     updatedAt: '2026-07-29T00:00:00Z',
+  };
+}
+
+function structuredMarkdownBlock(): DocumentBlock {
+  return {
+    ...documentBlock(),
+    content: {
+      text: 'DocumentType\nAPI 文档\nADR 决策\nenum DocumentType { API, ADR }',
+      schemaVersion: 1,
+      document: {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'DocumentType' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{
+              type: 'text',
+              text: 'DocumentType',
+              marks: [{ type: 'code' }],
+            }],
+          },
+          {
+            type: 'bulletList',
+            content: [
+              {
+                type: 'listItem',
+                content: [{
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'API 文档' }],
+                }],
+              },
+              {
+                type: 'listItem',
+                content: [{
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'ADR 决策' }],
+                }],
+              },
+            ],
+          },
+          {
+            type: 'codeBlock',
+            content: [{ type: 'text', text: 'enum DocumentType { API, ADR }' }],
+          },
+        ],
+      },
+    },
   };
 }

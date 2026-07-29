@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class DocumentBlockContentCodec {
@@ -24,17 +25,35 @@ public class DocumentBlockContentCodec {
     public static final int MAX_DEPTH = 8;
 
     private static final Set<String> ALLOWED_FIELDS = Set.of(
-            "type", "content", "text", "attrs"
+            "type", "content", "text", "attrs", "marks"
     );
     private static final Set<String> ALLOWED_NODE_TYPES = Set.of(
             "doc", "paragraph", "heading", "codeBlock", "taskList",
-            "taskItem", "text", "hardBreak"
+            "taskItem", "bulletList", "orderedList", "listItem",
+            "blockquote", "horizontalRule", "text", "hardBreak"
+    );
+    private static final Set<String> ALLOWED_MARK_TYPES = Set.of(
+            "bold", "italic", "code"
+    );
+    private static final Pattern MARKDOWN_HEADING = Pattern.compile(
+            "(?m)^#{2,3}\\s+\\S+"
+    );
+    private static final Pattern MARKDOWN_LIST_ITEM = Pattern.compile(
+            "(?m)^(?:\\s*[-*+]\\s+|\\s*\\d+[.)]\\s+)\\S+"
+    );
+    private static final Pattern MARKDOWN_FENCE = Pattern.compile(
+            "(?m)^```[^\\r\\n]*$"
     );
 
     private final ObjectMapper objectMapper;
+    private final MarkdownToTiptapConverter markdownConverter;
 
-    public DocumentBlockContentCodec(ObjectMapper objectMapper) {
+    public DocumentBlockContentCodec(
+            ObjectMapper objectMapper,
+            MarkdownToTiptapConverter markdownConverter
+    ) {
         this.objectMapper = objectMapper;
+        this.markdownConverter = markdownConverter;
     }
 
     public NormalizedContent normalize(
@@ -43,6 +62,54 @@ public class DocumentBlockContentCodec {
             Integer schemaVersion,
             JsonNode document
     ) {
+        DocumentBlockContentFormat inferred = document == null || document.isNull()
+                ? DocumentBlockContentFormat.PLAIN_TEXT
+                : DocumentBlockContentFormat.TIPTAP_JSON;
+        return normalize(blockType, legacyText, schemaVersion, document, inferred);
+    }
+
+    public NormalizedContent normalize(
+            DocumentBlockType blockType,
+            String legacyText,
+            Integer schemaVersion,
+            JsonNode document,
+            DocumentBlockContentFormat contentFormat
+    ) {
+        DocumentBlockContentFormat format = contentFormat == null
+                ? document == null || document.isNull()
+                ? DocumentBlockContentFormat.PLAIN_TEXT
+                : DocumentBlockContentFormat.TIPTAP_JSON
+                : contentFormat;
+        if (format == DocumentBlockContentFormat.MARKDOWN) {
+            if (blockType != DocumentBlockType.PARAGRAPH) {
+                throw new IllegalArgumentException(
+                        "Markdown content must use a PARAGRAPH Block"
+                );
+            }
+            if (document != null && !document.isNull()) {
+                throw new IllegalArgumentException(
+                        "Markdown content cannot also provide a Tiptap document"
+                );
+            }
+            String markdown = normalizeText(legacyText);
+            return normalizeStructured(
+                    blockType,
+                    schemaVersion,
+                    markdownConverter.convert(markdown)
+            );
+        }
+        if (format == DocumentBlockContentFormat.PLAIN_TEXT
+                && document != null && !document.isNull()) {
+            throw new IllegalArgumentException(
+                    "Plain text content cannot also provide a Tiptap document"
+            );
+        }
+        if (format == DocumentBlockContentFormat.TIPTAP_JSON
+                && (document == null || document.isNull())) {
+            throw new IllegalArgumentException(
+                    "Tiptap JSON content requires a document"
+            );
+        }
         if (document == null || document.isNull()) {
             String text = normalizeText(legacyText);
             JsonNode synthesized = textDocument(blockType, text);
@@ -53,6 +120,14 @@ public class DocumentBlockContentCodec {
                     synthesized
             );
         }
+        return normalizeStructured(blockType, schemaVersion, document);
+    }
+
+    private NormalizedContent normalizeStructured(
+            DocumentBlockType blockType,
+            Integer schemaVersion,
+            JsonNode document
+    ) {
         int requestedVersion = schemaVersion == null
                 ? CURRENT_SCHEMA_VERSION
                 : schemaVersion;
@@ -88,6 +163,9 @@ public class DocumentBlockContentCodec {
             if (isLegacyParagraphShape(block.type(), stored)) {
                 return textDocument(block.type(), block.text());
             }
+            if (isConservativeLegacyAgentMarkdown(block, stored)) {
+                return markdownConverter.convert(block.text());
+            }
             return stored;
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
@@ -95,6 +173,55 @@ public class DocumentBlockContentCodec {
                     exception
             );
         }
+    }
+
+    private boolean isConservativeLegacyAgentMarkdown(
+            DocumentBlock block,
+            JsonNode document
+    ) {
+        if (block.type() != DocumentBlockType.PARAGRAPH
+                || !isPlainParagraphDocument(document)) {
+            return false;
+        }
+        String text = block.text();
+        if (text == null || !MARKDOWN_HEADING.matcher(text).find()) {
+            return false;
+        }
+        long listItems = MARKDOWN_LIST_ITEM.matcher(text).results().count();
+        long headings = MARKDOWN_HEADING.matcher(text).results().count();
+        return listItems >= 2
+                || headings >= 2
+                || MARKDOWN_FENCE.matcher(text).results().count() >= 2;
+    }
+
+    private boolean isPlainParagraphDocument(JsonNode document) {
+        if (!"doc".equals(document.path("type").asText())) {
+            return false;
+        }
+        JsonNode blocks = document.get("content");
+        if (blocks == null || !blocks.isArray() || blocks.isEmpty()) {
+            return false;
+        }
+        for (JsonNode block : blocks) {
+            if (!"paragraph".equals(block.path("type").asText())) {
+                return false;
+            }
+            JsonNode content = block.get("content");
+            if (content == null) {
+                continue;
+            }
+            if (!content.isArray()) {
+                return false;
+            }
+            for (JsonNode inline : content) {
+                if (!Set.of("text", "hardBreak")
+                        .contains(inline.path("type").asText())
+                        || inline.has("marks")) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private boolean isLegacyParagraphShape(
@@ -167,16 +294,24 @@ public class DocumentBlockContentCodec {
                 throw new IllegalArgumentException("Text nodes cannot contain child nodes");
             }
             requiredText(node, "text");
+            validateMarks(node);
             return;
+        }
+        if (node.has("marks")) {
+            throw new IllegalArgumentException(
+                    "Only text nodes may contain marks"
+            );
         }
         if (node.has("text")) {
             throw new IllegalArgumentException(
                     "Only text nodes may contain the text field"
             );
         }
-        if ("hardBreak".equals(type)) {
+        if (Set.of("hardBreak", "horizontalRule").contains(type)) {
             if (content != null) {
-                throw new IllegalArgumentException("hardBreak cannot contain child nodes");
+                throw new IllegalArgumentException(
+                        type + " cannot contain child nodes"
+                );
             }
             return;
         }
@@ -190,7 +325,8 @@ public class DocumentBlockContentCodec {
         for (JsonNode child : content) {
             String childType = child.path("type").asText();
             if (root && !Set.of(
-                    "paragraph", "heading", "codeBlock", "taskList"
+                    "paragraph", "heading", "codeBlock", "taskList",
+                    "bulletList", "orderedList", "blockquote", "horizontalRule"
             ).contains(childType)) {
                 throw new IllegalArgumentException(
                         "doc contains an unsupported top-level node"
@@ -212,6 +348,28 @@ public class DocumentBlockContentCodec {
                         "taskList may contain taskItem nodes only"
                 );
             }
+            if (Set.of("bulletList", "orderedList").contains(type)
+                    && !"listItem".equals(childType)) {
+                throw new IllegalArgumentException(
+                        type + " may contain listItem nodes only"
+                );
+            }
+            if ("listItem".equals(type)
+                    && !Set.of("paragraph", "bulletList", "orderedList")
+                    .contains(childType)) {
+                throw new IllegalArgumentException(
+                        "listItem may contain paragraphs or nested lists only"
+                );
+            }
+            if ("blockquote".equals(type)
+                    && !Set.of(
+                    "paragraph", "heading", "codeBlock",
+                    "bulletList", "orderedList", "blockquote"
+            ).contains(childType)) {
+                throw new IllegalArgumentException(
+                        "blockquote contains an unsupported block node"
+                );
+            }
             if ("taskItem".equals(type) && !"paragraph".equals(childType)) {
                 throw new IllegalArgumentException(
                         "taskItem may contain one paragraph node only"
@@ -230,16 +388,18 @@ public class DocumentBlockContentCodec {
             throw new IllegalArgumentException("Block document must contain content");
         }
         String requiredType = switch (blockType) {
-            case PARAGRAPH -> "paragraph";
+            case PARAGRAPH -> null;
             case HEADING -> "heading";
             case CODE -> "codeBlock";
             case TODO -> "taskList";
         };
-        for (JsonNode child : content) {
-            if (!requiredType.equals(child.path("type").asText())) {
-                throw new IllegalArgumentException(
-                        blockType + " Block must contain " + requiredType + " nodes"
-                );
+        if (requiredType != null) {
+            for (JsonNode child : content) {
+                if (!requiredType.equals(child.path("type").asText())) {
+                    throw new IllegalArgumentException(
+                            blockType + " Block must contain " + requiredType + " nodes"
+                    );
+                }
             }
         }
         if (blockType != DocumentBlockType.PARAGRAPH && content.size() != 1) {
@@ -299,6 +459,24 @@ public class DocumentBlockContentCodec {
         }
     }
 
+    private void validateMarks(JsonNode node) {
+        JsonNode marks = node.get("marks");
+        if (marks == null) {
+            return;
+        }
+        if (!marks.isArray()) {
+            throw new IllegalArgumentException("text marks must be an array");
+        }
+        for (JsonNode mark : marks) {
+            if (!mark.isObject() || mark.size() != 1
+                    || !ALLOWED_MARK_TYPES.contains(mark.path("type").asText())) {
+                throw new IllegalArgumentException(
+                        "Unsupported Block content mark"
+                );
+            }
+        }
+    }
+
     private String extractDocumentText(JsonNode document) {
         StringBuilder result = new StringBuilder();
         ArrayNode blocks = (ArrayNode) document.get("content");
@@ -325,7 +503,10 @@ public class DocumentBlockContentCodec {
         if (content == null || !content.isArray()) {
             return;
         }
-        boolean separateChildren = Set.of("taskList", "taskItem").contains(type);
+        boolean separateChildren = Set.of(
+                "taskList", "taskItem", "bulletList", "orderedList",
+                "listItem", "blockquote"
+        ).contains(type);
         for (int index = 0; index < content.size(); index++) {
             if (separateChildren && index > 0) {
                 result.append('\n');

@@ -8,6 +8,7 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Ope
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
 import com.devcollab.knowledgecore.document.domain.DocumentType;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.application.DocumentBlockContentFormat;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -175,6 +176,7 @@ public class DocumentChangeController {
             UUID proposedParentDocumentId,
             DocumentBlockType proposedBlockType,
             @Size(max = 20_000) String proposedPlainText,
+            DocumentBlockContentFormat proposedContentFormat,
             @Valid BlockContentRequest proposedContent
     ) {
         CreateOperationCommand toCommand() {
@@ -191,6 +193,7 @@ public class DocumentChangeController {
                     proposedParentDocumentId,
                     proposedBlockType,
                     proposedPlainText,
+                    proposedContentFormat,
                     proposedContent == null ? null
                             : proposedContent.schemaVersion(),
                     proposedContent == null ? null : proposedContent.document()

@@ -55,11 +55,10 @@ describe('linkedWorkbenchBindings', () => {
     const fixture = buildBindingFixture(input(source('src/A.java'), bindings));
 
     expect(fixture.links).toHaveLength(3);
-    expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['SYMBOL', 'RANGE', 'FILE']);
+    expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['RANGE', 'SYMBOL', 'FILE']);
     expect(fixture.codeAnchors[0]).toMatchObject({
-      symbolName: 'JAVA:A.run',
-      startLine: 6,
-      endLine: 8,
+      startLine: 2,
+      endLine: 4,
     });
   });
 
@@ -86,6 +85,52 @@ describe('linkedWorkbenchBindings', () => {
     expect(selectDefaultBinding([first, second], 'revision', 'b')?.bindingId).toBe('b');
     expect(selectDefaultBinding([first, second], 'revision', 'missing', 'block-a')?.bindingId)
       .toBe('a');
+  });
+
+  it('orders precise bindings by code range, block order and stable id while keeping FILE last', () => {
+    const bindings = [
+      binding('file', 'document-a', 'src/A.java'),
+      {
+        ...binding('late', 'document-a', 'src/A.java'),
+        anchorKind: 'RANGE' as const,
+        blockId: 'block-late',
+        startLine: 20,
+        endLine: 22,
+      },
+      {
+        ...binding('same-b', 'document-a', 'src/A.java'),
+        anchorKind: 'RANGE' as const,
+        blockId: 'block-b',
+        startLine: 2,
+        endLine: 4,
+      },
+      {
+        ...binding('same-a', 'document-a', 'src/A.java'),
+        anchorKind: 'RANGE' as const,
+        blockId: 'block-a',
+        startLine: 2,
+        endLine: 4,
+      },
+    ];
+    const fixture = buildBindingFixture({
+      ...input(source('src/A.java'), bindings),
+      blockSortOrders: new Map([
+        ['block-a', 2],
+        ['block-b', 1],
+        ['block-late', 3],
+      ]),
+    });
+
+    expect(fixture.links.map(item => item.bindingId))
+      .toEqual(['same-b', 'same-a', 'late', 'file']);
+    expect(selectDefaultBinding(
+      bindings,
+      'revision',
+      'late',
+      null,
+      'src/A.java',
+      new Map([['block-late', 3]]),
+    )?.bindingId).toBe('late');
   });
 
   it('deduplicates related documents without merging different document ids', () => {

@@ -121,6 +121,7 @@ def create_plan(
                 "createdDocumentClientOperationId": "create-1",
                 "proposedBlockType": "PARAGRAPH",
                 "proposedPlainText": body,
+                "proposedContentFormat": "MARKDOWN",
             }
         )
         plan_evidence.append(evidence(operation_id, path))
@@ -159,6 +160,7 @@ def update_plan(body: str = "应用模块通过 `run()` 执行经过验证的核
                 "blockId": BLOCK,
                 "baseBlockVersion": 3,
                 "proposedPlainText": body,
+                "proposedContentFormat": "MARKDOWN",
             }
         ],
         "bindingProposals": [],
@@ -231,6 +233,113 @@ def test_create_document_with_title_only_is_rejected() -> None:
     raw["bindingProposals"][0]["sequenceNumber"] = 2
     raw["evidence"] = raw["evidence"][:1]
     assert "CREATE_DOCUMENT_BODY_REQUIRED" in issue_codes(raw)
+
+
+def test_multiple_indexed_symbols_cannot_collapse_into_one_giant_block() -> None:
+    context = code_context()
+    context["codeFiles"][0]["symbols"] = [
+        {
+            "symbolKey": "src/App.java#run()",
+            "qualifiedName": "App#run",
+            "startLine": 1,
+            "endLine": 1,
+        },
+        {
+            "symbolKey": "src/App.java#stop()",
+            "qualifiedName": "App#stop",
+            "startLine": 2,
+            "endLine": 2,
+        },
+    ]
+    assert "GIANT_DOCUMENT_BLOCK" in issue_codes(
+        create_plan(bodies=["## 应用模块\n\n这个 Block 把两个主要符号混在一起说明。"]),
+        context,
+    )
+
+
+def test_multi_symbol_beginner_document_rejects_shallow_field_lists() -> None:
+    context = code_context()
+    context["codeFiles"][0]["symbols"] = [
+        {
+            "symbolKey": "src/App.java#Mode",
+            "qualifiedName": "Mode",
+            "startLine": 1,
+            "endLine": 4,
+        },
+        {
+            "symbolKey": "src/App.java#Context",
+            "qualifiedName": "Context",
+            "startLine": 6,
+            "endLine": 12,
+        },
+    ]
+    shallow = create_plan(
+        bodies=[
+            "## 模块概览\n\n本模块定义两个类型，用于统一保存数据。",
+            (
+                "## Mode\n\nMode 是一个枚举。它包含 A 和 B 两个值，"
+                "字段用于表示当前模式。"
+            ),
+        ]
+    )
+
+    codes = issue_codes(shallow, context)
+
+    assert "BEGINNER_OVERVIEW_TOO_SHALLOW" in codes
+    assert "BEGINNER_SYMBOL_BLOCK_TOO_SHALLOW" in codes
+
+
+def test_document_prompt_requires_beginner_oriented_symbol_explanations() -> None:
+    prompt = Path("app/prompts/document_sync_v1.md").read_text(encoding="utf-8")
+    assert "代码初学者讲解要求" in prompt
+    assert "`@dataclass(frozen=True)`" in prompt
+    assert "`tuple[T, ...]`" in prompt
+    assert "不得补全想象中的 Controller" in prompt
+    assert "不得只生成一个正文 Block" in prompt
+    assert "字段叫 `id` 不等于代码已经保证唯一" in prompt
+    assert "数据库、前端、规则引擎、报告生成器" in prompt
+
+
+def test_document_rejects_external_relations_absent_from_selected_code() -> None:
+    raw = create_plan(
+        bodies=[
+            (
+                "## 模块概览\n\n"
+                + "为了避免数据概念散落，本模块统一表达输入、输出和数据流。"
+                + "调用方传入对象，流程随后输出结果。"
+                + "这里解释真实职责、语法、协作关系和维护边界。" * 12
+            ),
+            (
+                "## Mode\n\n"
+                + "这个枚举解决任意字符串容易拼错的问题，并解释枚举语法。"
+                + "它参与输入和输出的数据流。修改时需要检查真实引用。"
+                + "数据库和前端都必须同步更新。" * 8
+            ),
+        ]
+    )
+
+    assert "UNSUPPORTED_EXTERNAL_RELATION" in issue_codes(raw)
+
+
+def test_document_rejects_constraints_inferred_only_from_names() -> None:
+    raw = create_plan(
+        bodies=[
+            (
+                "## 模块概览\n\n"
+                + "为了避免数据概念散落，本模块统一表达输入、输出和数据流。"
+                + "调用方传入对象，流程随后输出结果。"
+                + "这里解释真实职责、语法、协作关系和维护边界。" * 12
+            ),
+            (
+                "## Mode\n\n"
+                + "这个枚举解决任意字符串容易拼错的问题，并解释枚举语法。"
+                + "它参与输入和输出的数据流。修改时需要检查真实引用。"
+                + "BLOCKER 表示必须修复才能通过。" * 8
+            ),
+        ]
+    )
+
+    assert "UNSUPPORTED_INFERRED_SEMANTICS" in issue_codes(raw)
 
 
 def test_empty_block_is_rejected() -> None:

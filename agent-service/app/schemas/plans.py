@@ -26,6 +26,12 @@ class BindingAction(StrEnum):
     REMOVE_BINDING = "REMOVE_BINDING"
 
 
+class ContentFormat(StrEnum):
+    MARKDOWN = "MARKDOWN"
+    TIPTAP_JSON = "TIPTAP_JSON"
+    PLAIN_TEXT = "PLAIN_TEXT"
+
+
 DocumentType = Literal[
     "REQUIREMENT",
     "API",
@@ -58,7 +64,25 @@ class DocumentOperation(StrictModel):
     proposedParentDocumentId: UUID | None = None
     proposedBlockType: BlockType | None = None
     proposedPlainText: str | None = Field(default=None, max_length=20_000)
+    proposedContentFormat: ContentFormat | None = None
     proposedContent: BlockContent | None = None
+
+    @model_validator(mode="after")
+    def explicit_content_format(self) -> "DocumentOperation":
+        has_text = self.proposedPlainText is not None
+        has_document = self.proposedContent is not None
+        if has_text and has_document:
+            raise ValueError("operation cannot contain plain text and Tiptap JSON together")
+        if has_text and self.proposedContentFormat not in {
+            ContentFormat.MARKDOWN,
+            ContentFormat.PLAIN_TEXT,
+        }:
+            raise ValueError("plain text content requires MARKDOWN or PLAIN_TEXT")
+        if has_document and self.proposedContentFormat != ContentFormat.TIPTAP_JSON:
+            raise ValueError("structured content requires TIPTAP_JSON")
+        if not has_text and not has_document and self.proposedContentFormat is not None:
+            raise ValueError("content format requires proposed content")
+        return self
 
 
 class BindingProposal(StrictModel):
