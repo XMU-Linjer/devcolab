@@ -15,6 +15,7 @@ import com.devcollab.knowledgecore.git.application.exception.GitRepositoryFileNo
 import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.git.application.exception.CodeBindingNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.DuplicateCodeBindingException;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.GitChange;
 import com.devcollab.knowledgecore.git.domain.GitFileDiff;
@@ -26,6 +27,7 @@ import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationSer
 import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +46,8 @@ import java.util.UUID;
 
 @Service
 public class GitKnowledgeApplicationService {
+
+    private static final int DEFAULT_MAX_BINDINGS_PER_FILE = 1000;
 
     private final GitKnowledgeRepository gitRepository;
     private final WorkspaceApplicationService workspaceService;
@@ -240,6 +244,26 @@ public class GitKnowledgeApplicationService {
             UUID currentUserId,
             List<String> filePaths
     ) {
+        return queryBindingsBatch(
+                workspaceId,
+                repositoryId,
+                currentUserId,
+                filePaths,
+                null,
+                true,
+                null
+        );
+    }
+
+    public CodeBindingBatchQueryResult queryBindingsBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            List<String> filePaths,
+            String revision,
+            boolean includeLegacy,
+            Integer maxBindings
+    ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
         requireRepository(repositoryId, workspaceId);
         if (filePaths == null || filePaths.isEmpty() || filePaths.size() > 100) {
@@ -250,28 +274,26 @@ public class GitKnowledgeApplicationService {
                 .distinct()
                 .sorted()
                 .toList();
+        String normalizedRevision = normalizeOptionalRevision(revision);
         List<CodeDocumentBinding> bindings =
                 gitRepository.findBindingsByRepositoryId(repositoryId);
         List<CodeBindingBatchQueryResult.FileBindings> files = normalizedPaths.stream()
-                .map(path -> new CodeBindingBatchQueryResult.FileBindings(
-                        path,
-                        bindings.stream()
-                                .filter(binding -> matches(binding.pathPattern(), path))
-                                .distinct()
-                                .sorted(Comparator
-                                        .comparing(CodeDocumentBinding::documentId)
-                                        .thenComparing(CodeDocumentBinding::id))
-                                .map(binding -> new CodeBindingBatchQueryResult.Binding(
-                                        binding.id(), binding.repositoryId(),
-                                        binding.documentId(),
-                                        documentRepository.findById(binding.documentId())
-                                                .map(Document::title)
-                                                .orElse(null),
-                                        binding.blockId(),
-                                        binding.pathPattern()
-                                ))
-                                .toList()
-                ))
+                .map(path -> {
+                    BindingSelection selection = selectBindings(
+                            bindings,
+                            path,
+                            normalizedRevision,
+                            includeLegacy,
+                            maxBindings
+                    );
+                    return new CodeBindingBatchQueryResult.FileBindings(
+                            path,
+                            selection.fileHasBindings(),
+                            selection.bindings(),
+                            selection.isTruncated(),
+                            selection.omittedBindingCount()
+                    );
+                })
                 .toList();
         return new CodeBindingBatchQueryResult(workspaceId, repositoryId, files);
     }
@@ -457,27 +479,71 @@ public class GitKnowledgeApplicationService {
             }
         }
         String pattern = normalizePattern(command.pathPattern());
-        boolean duplicate = gitRepository.findBindingsByDocumentId(documentId)
-                .stream()
-                .anyMatch(binding -> binding.repositoryId().equals(command.repositoryId())
-                        && java.util.Objects.equals(binding.blockId(), command.blockId())
-                        && binding.pathPattern().equals(pattern));
-        if (duplicate) {
+        CodeBindingAnchorValidator.ValidatedAnchor anchor =
+                CodeBindingAnchorValidator.validate(
+                        command.revision(),
+                        command.anchorKind(),
+                        command.symbolKey(),
+                        command.startLine(),
+                        command.endLine()
+                );
+        if (gitRepository.findExactBinding(
+                command.repositoryId(),
+                documentId,
+                command.blockId(),
+                pattern,
+                anchor.revision(),
+                anchor.anchorKind(),
+                anchor.symbolKey(),
+                anchor.startLine(),
+                anchor.endLine()
+        ).isPresent()) {
             throw new DuplicateCodeBindingException();
         }
-        return gitRepository.saveBinding(new CodeDocumentBinding(
-                UUID.randomUUID(), document.workspaceId(), command.repositoryId(),
-                documentId, command.blockId(), pattern, currentUserId, Instant.now()
-        ));
+        String targetKey = command.blockId() == null
+                ? "DOCUMENT"
+                : command.blockId().toString();
+        try {
+            return gitRepository.saveBinding(new CodeDocumentBinding(
+                    UUID.randomUUID(), document.workspaceId(),
+                    command.repositoryId(), documentId, command.blockId(),
+                    targetKey, pattern, anchor.revision(),
+                    anchor.anchorKind(), anchor.symbolKey(),
+                    anchor.startLine(), anchor.endLine(),
+                    currentUserId, Instant.now()
+            ));
+        } catch (DataIntegrityViolationException exception) {
+            // The database identity is the final guard for concurrent requests
+            // that pass the optimistic duplicate check at the same time.
+            throw new DuplicateCodeBindingException();
+        }
     }
 
     public List<CodeDocumentBinding> listBindings(
             UUID documentId,
             UUID currentUserId
     ) {
+        return listBindings(documentId, currentUserId, null, true, null);
+    }
+
+    public List<CodeDocumentBinding> listBindings(
+            UUID documentId,
+            UUID currentUserId,
+            String revision,
+            boolean includeLegacy,
+            UUID blockId
+    ) {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(document.workspaceId(), currentUserId);
-        return gitRepository.findBindingsByDocumentId(documentId);
+        String normalizedRevision = normalizeOptionalRevision(revision);
+        return gitRepository.findBindingsByDocumentId(documentId).stream()
+                .filter(binding -> blockId == null
+                        || java.util.Objects.equals(blockId, binding.blockId()))
+                .filter(binding -> matchesRevision(
+                        binding, normalizedRevision, includeLegacy
+                ))
+                .sorted(bindingComparator(normalizedRevision))
+                .toList();
     }
 
     public java.util.Optional<CodeDocumentBinding> findExactBinding(
@@ -489,11 +555,24 @@ public class GitKnowledgeApplicationService {
         workspaceService.requireMembership(document.workspaceId(), currentUserId);
         requireRepository(command.repositoryId(), document.workspaceId());
         String pattern = normalizePattern(command.pathPattern());
+        CodeBindingAnchorValidator.ValidatedAnchor anchor =
+                CodeBindingAnchorValidator.validate(
+                        command.revision(),
+                        command.anchorKind(),
+                        command.symbolKey(),
+                        command.startLine(),
+                        command.endLine()
+                );
         return gitRepository.findExactBinding(
                 command.repositoryId(),
                 documentId,
                 command.blockId(),
-                pattern
+                pattern,
+                anchor.revision(),
+                anchor.anchorKind(),
+                anchor.symbolKey(),
+                anchor.startLine(),
+                anchor.endLine()
         );
     }
 
@@ -514,62 +593,49 @@ public class GitKnowledgeApplicationService {
             String filePath,
             Integer maxBindings
     ) {
+        return queryBindings(
+                workspaceId,
+                repositoryId,
+                currentUserId,
+                filePath,
+                null,
+                true,
+                maxBindings
+        );
+    }
+
+    public CodeBindingQueryResult queryBindings(
+            UUID workspaceId,
+            UUID repositoryId,
+            UUID currentUserId,
+            String filePath,
+            String revision,
+            boolean includeLegacy,
+            Integer maxBindings
+    ) {
         workspaceService.requireMembership(workspaceId, currentUserId);
-        GitRepository repository = requireRepository(repositoryId, workspaceId);
+        requireRepository(repositoryId, workspaceId);
 
         String normalizedPath = normalizePath(filePath);
+        String normalizedRevision = normalizeOptionalRevision(revision);
 
         List<CodeDocumentBinding> allRepoBindings = gitRepository.findBindingsByRepositoryId(repositoryId);
-
-        java.util.Set<UUID> seenBindingIds = new java.util.HashSet<>();
-        List<CodeBindingQueryItem> result = new java.util.ArrayList<>();
-
-        for (CodeDocumentBinding binding : allRepoBindings) {
-            if (!matches(binding.pathPattern(), normalizedPath)) {
-                continue;
-            }
-
-            if (!seenBindingIds.add(binding.id())) {
-                continue;
-            }
-
-            Document document = documentRepository.findById(binding.documentId())
-                    .orElse(null);
-            String documentTitle = document != null ? document.title() : null;
-
-            result.add(new CodeBindingQueryItem(
-                    binding.id(),
-                    binding.documentId(),
-                    binding.blockId(),
-                    binding.pathPattern(),
-                    documentTitle
-            ));
-        }
-
-        result.sort(java.util.Comparator
-                .comparing(CodeBindingQueryItem::documentTitle, java.util.Comparator.nullsLast(String::compareToIgnoreCase))
-                .thenComparing(CodeBindingQueryItem::documentId)
-                .thenComparing(CodeBindingQueryItem::blockId, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
-                .thenComparing(CodeBindingQueryItem::bindingId));
-
-        boolean fileHasBindings = !result.isEmpty();
-        boolean isTruncated = false;
-        int omittedBindingCount = 0;
-        int effectiveMax = maxBindings != null && maxBindings > 0 ? maxBindings : Integer.MAX_VALUE;
-        if (result.size() > effectiveMax) {
-            omittedBindingCount = result.size() - effectiveMax;
-            result = result.subList(0, effectiveMax);
-            isTruncated = true;
-        }
+        BindingSelection selection = selectBindings(
+                allRepoBindings,
+                normalizedPath,
+                normalizedRevision,
+                includeLegacy,
+                maxBindings
+        );
 
         return new CodeBindingQueryResult(
                 workspaceId,
                 repositoryId,
                 filePath,
-                fileHasBindings,
-                result,
-                isTruncated,
-                omittedBindingCount
+                selection.fileHasBindings(),
+                selection.bindings(),
+                selection.isTruncated(),
+                selection.omittedBindingCount()
         );
     }
 
@@ -733,8 +799,145 @@ public class GitKnowledgeApplicationService {
         return pattern.equals(path);
     }
 
+    private BindingSelection selectBindings(
+            List<CodeDocumentBinding> bindings,
+            String normalizedPath,
+            String revision,
+            boolean includeLegacy,
+            Integer maxBindings
+    ) {
+        java.util.Set<UUID> seenBindingIds = new java.util.HashSet<>();
+        List<CodeDocumentBinding> matching = bindings.stream()
+                .filter(binding -> matches(binding.pathPattern(), normalizedPath))
+                .filter(binding -> matchesRevision(binding, revision, includeLegacy))
+                .filter(binding -> seenBindingIds.add(binding.id()))
+                .toList();
+        List<CodeBindingQueryItem> ordered = matching.stream()
+                .map(this::toQueryItem)
+                .sorted(queryItemComparator(revision))
+                .toList();
+
+        if (maxBindings != null
+                && (maxBindings < 1
+                || maxBindings > DEFAULT_MAX_BINDINGS_PER_FILE)) {
+            throw new InvalidCodeBindingException(
+                    "maxBindings 必须在 1 到 1000 之间"
+            );
+        }
+        int effectiveMax = maxBindings == null
+                ? DEFAULT_MAX_BINDINGS_PER_FILE
+                : maxBindings;
+        boolean truncated = ordered.size() > effectiveMax;
+        int omittedBindingCount = truncated ? ordered.size() - effectiveMax : 0;
+        List<CodeBindingQueryItem> result = truncated
+                ? ordered.subList(0, effectiveMax)
+                : ordered;
+        return new BindingSelection(
+                !matching.isEmpty(),
+                result,
+                truncated,
+                omittedBindingCount
+        );
+    }
+
+    private CodeBindingQueryItem toQueryItem(CodeDocumentBinding binding) {
+        String documentTitle = documentRepository.findById(binding.documentId())
+                .map(Document::title)
+                .orElse(null);
+        return new CodeBindingQueryItem(
+                binding.id(),
+                binding.workspaceId(),
+                binding.repositoryId(),
+                binding.revision(),
+                binding.anchorKind(),
+                binding.symbolKey(),
+                binding.startLine(),
+                binding.endLine(),
+                binding.documentId(),
+                binding.blockId(),
+                binding.targetKey(),
+                binding.pathPattern(),
+                documentTitle
+        );
+    }
+
+    private boolean matchesRevision(
+            CodeDocumentBinding binding,
+            String revision,
+            boolean includeLegacy
+    ) {
+        if (revision != null) {
+            return revision.equals(binding.revision())
+                    || (includeLegacy && binding.revision() == null);
+        }
+        return includeLegacy || binding.revision() != null;
+    }
+
+    private Comparator<CodeDocumentBinding> bindingComparator(String revision) {
+        return Comparator
+                .comparingInt((CodeDocumentBinding binding) -> {
+                    if (revision != null && revision.equals(binding.revision())) {
+                        return 0;
+                    }
+                    return binding.revision() == null ? 1 : 0;
+                })
+                .thenComparingInt(binding -> binding.blockId() == null ? 1 : 0)
+                .thenComparingInt(binding -> switch (binding.anchorKind()) {
+                    case SYMBOL -> 0;
+                    case RANGE -> 1;
+                    case FILE -> 2;
+                })
+                .thenComparing(CodeDocumentBinding::createdAt)
+                .thenComparing(CodeDocumentBinding::id);
+    }
+
+    private Comparator<CodeBindingQueryItem> queryItemComparator(String revision) {
+        return Comparator
+                .comparingInt((CodeBindingQueryItem item) -> {
+                    if (revision != null && revision.equals(item.revision())) {
+                        return 0;
+                    }
+                    return item.revision() == null ? 1 : 0;
+                })
+                .thenComparingInt(item -> item.blockId() == null ? 1 : 0)
+                .thenComparingInt(item -> switch (item.anchorKind()) {
+                    case SYMBOL -> 0;
+                    case RANGE -> 1;
+                    case FILE -> 2;
+                })
+                .thenComparing(
+                        CodeBindingQueryItem::documentTitle,
+                        Comparator.nullsLast(String::compareToIgnoreCase)
+                )
+                .thenComparing(CodeBindingQueryItem::documentId)
+                .thenComparing(
+                        CodeBindingQueryItem::blockId,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                )
+                .thenComparing(CodeBindingQueryItem::bindingId);
+    }
+
+    private String normalizeOptionalRevision(String revision) {
+        if (revision == null) {
+            return null;
+        }
+        String normalized = revision.trim();
+        if (normalized.isEmpty()) {
+            throw new InvalidCodeBindingException("revision 不能为空白字符串");
+        }
+        return normalized;
+    }
+
     private String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private record BindingSelection(
+            boolean fileHasBindings,
+            List<CodeBindingQueryItem> bindings,
+            boolean isTruncated,
+            int omittedBindingCount
+    ) {
     }
 
     private void publishSyncRequest(GitRepository repository) {

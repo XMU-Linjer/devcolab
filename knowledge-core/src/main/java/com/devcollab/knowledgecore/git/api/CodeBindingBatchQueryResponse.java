@@ -15,26 +15,22 @@ public record CodeBindingBatchQueryResponse(
                 result.workspaceId(), result.repositoryId(),
                 result.files().stream().map(file -> new FileBindings(
                         file.filePath(),
-                        file.bindings().stream().map(binding -> new Binding(
-                                binding.bindingId(), binding.repositoryId(),
-                                binding.documentId(), binding.documentTitle(),
-                                binding.blockId(),
-                                binding.pathPattern()
-                        )).toList()
+                        file.fileHasBindings(),
+                        file.bindings().stream()
+                                .map(CodeBindingQueryItemResponse::from)
+                                .toList(),
+                        file.isTruncated(),
+                        file.omittedBindingCount()
                 )).toList()
         );
     }
 
-    public record FileBindings(String filePath, List<Binding> bindings) {
-    }
-
-    public record Binding(
-            UUID bindingId,
-            UUID repositoryId,
-            UUID documentId,
-            String documentTitle,
-            UUID blockId,
-            String pathPattern
+    public record FileBindings(
+            String filePath,
+            boolean fileHasBindings,
+            List<CodeBindingQueryItemResponse> bindings,
+            boolean truncated,
+            int omittedBindingCount
     ) {
     }
 }

@@ -10,17 +10,10 @@ public record CodeBindingBatchQueryResult(
 ) {
     public record FileBindings(
             String filePath,
-            List<Binding> bindings
-    ) {
-    }
-
-    public record Binding(
-            UUID bindingId,
-            UUID repositoryId,
-            UUID documentId,
-            String documentTitle,
-            UUID blockId,
-            String pathPattern
+            boolean fileHasBindings,
+            List<CodeBindingQueryItem> bindings,
+            boolean isTruncated,
+            int omittedBindingCount
     ) {
     }
 }

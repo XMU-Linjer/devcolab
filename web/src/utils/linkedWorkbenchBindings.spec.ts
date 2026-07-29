@@ -62,8 +62,16 @@ function binding(
 ): CodeBindingQueryItem {
   return {
     bindingId,
+    workspaceId: 'workspace',
+    repositoryId: 'repository',
+    revision: 'revision',
+    anchorKind: 'FILE',
+    symbolKey: null,
+    startLine: null,
+    endLine: null,
     documentId,
     blockId: null,
+    targetKey: 'DOCUMENT',
     pathPattern,
     documentTitle: documentId,
   };

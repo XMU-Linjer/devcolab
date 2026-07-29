@@ -157,7 +157,13 @@ public class GitKnowledgeController {
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return CodeBindingBatchQueryResponse.from(service.queryBindingsBatch(
-                workspaceId, repositoryId, currentUser.userId(), request.filePaths()
+                workspaceId,
+                repositoryId,
+                currentUser.userId(),
+                request.filePaths(),
+                request.revision(),
+                request.includeLegacyOrDefault(),
+                request.maxBindings()
         ));
     }
 
@@ -258,7 +264,14 @@ public class GitKnowledgeController {
         return CodeDocumentBindingResponse.from(service.createBinding(
                 documentId, currentUser.userId(),
                 new CreateCodeBindingCommand(
-                        request.repositoryId(), request.blockId(), request.pathPattern()
+                        request.repositoryId(),
+                        request.blockId(),
+                        request.pathPattern(),
+                        request.revision(),
+                        request.anchorKind(),
+                        request.symbolKey(),
+                        request.startLine(),
+                        request.endLine()
                 )
         ));
     }
@@ -266,9 +279,18 @@ public class GitKnowledgeController {
     @GetMapping("/api/v1/documents/{documentId}/code-bindings")
     public List<CodeDocumentBindingResponse> listBindings(
             @PathVariable UUID documentId,
+            @RequestParam(required = false) String revision,
+            @RequestParam(defaultValue = "true") boolean includeLegacy,
+            @RequestParam(required = false) UUID blockId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return service.listBindings(documentId, currentUser.userId())
+        return service.listBindings(
+                        documentId,
+                        currentUser.userId(),
+                        revision,
+                        includeLegacy,
+                        blockId
+                )
                 .stream().map(CodeDocumentBindingResponse::from).toList();
     }
 
@@ -277,11 +299,19 @@ public class GitKnowledgeController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
             @RequestParam String filePath,
+            @RequestParam(required = false) String revision,
+            @RequestParam(defaultValue = "true") boolean includeLegacy,
             @RequestParam(required = false) Integer maxBindings,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return CodeBindingQueryResponse.from(service.queryBindings(
-                workspaceId, repositoryId, currentUser.userId(), filePath, maxBindings
+                workspaceId,
+                repositoryId,
+                currentUser.userId(),
+                filePath,
+                revision,
+                includeLegacy,
+                maxBindings
         ));
     }
 

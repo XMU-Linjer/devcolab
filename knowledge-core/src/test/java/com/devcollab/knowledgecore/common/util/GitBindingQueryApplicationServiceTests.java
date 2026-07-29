@@ -133,13 +133,114 @@ class GitBindingQueryApplicationServiceTests {
         assertThat(json.has("truncated")).isTrue();
         assertThat(json.has("isTruncated")).isFalse();
         assertThat(json.path("bindings").get(0).path("documentTitle").isNull()).isTrue();
+        assertThat(json.path("bindings").get(0).path("anchorKind").asText())
+                .isEqualTo("FILE");
+        assertThat(json.path("bindings").get(0).path("revision").isNull()).isTrue();
         assertThat(json.path("bindings").get(0).has("createdAt")).isFalse();
+    }
+
+    @Test
+    void filtersExactRevisionAndOptionalLegacyBeforeLimiting() {
+        UUID documentId = UUID.randomUUID();
+        CodeDocumentBinding legacy = preciseBinding(
+                UUID.randomUUID(), documentId, null, null, CodeAnchorKind.FILE,
+                null, null, null
+        );
+        CodeDocumentBinding revisionA = preciseBinding(
+                UUID.randomUUID(), documentId, UUID.randomUUID(), "A",
+                CodeAnchorKind.RANGE, null, 3, 8
+        );
+        CodeDocumentBinding revisionB = preciseBinding(
+                UUID.randomUUID(), documentId, UUID.randomUUID(), "B",
+                CodeAnchorKind.RANGE, null, 10, 12
+        );
+        when(gitRepository.findBindingsByRepositoryId(repositoryId))
+                .thenReturn(List.of(legacy, revisionB, revisionA));
+        when(documentRepository.findById(documentId))
+                .thenReturn(Optional.of(document(documentId, "API")));
+
+        CodeBindingQueryResult withLegacy = service.queryBindings(
+                workspaceId, repositoryId, userId, "src/App.java",
+                "A", true, 10
+        );
+        CodeBindingQueryResult withoutLegacy = service.queryBindings(
+                workspaceId, repositoryId, userId, "src/App.java",
+                "A", false, 10
+        );
+
+        assertThat(withLegacy.bindings()).extracting(CodeBindingQueryItem::bindingId)
+                .containsExactly(revisionA.id(), legacy.id());
+        assertThat(withLegacy.bindings()).extracting(CodeBindingQueryItem::revision)
+                .containsExactly("A", null);
+        assertThat(withoutLegacy.bindings()).extracting(CodeBindingQueryItem::bindingId)
+                .containsExactly(revisionA.id());
+    }
+
+    @Test
+    void batchUsesSameRevisionFilteringOrderingAndLimit() {
+        UUID documentId = UUID.randomUUID();
+        CodeDocumentBinding legacy = preciseBinding(
+                UUID.randomUUID(), documentId, null, null, CodeAnchorKind.FILE,
+                null, null, null
+        );
+        CodeDocumentBinding exact = preciseBinding(
+                UUID.randomUUID(), documentId, UUID.randomUUID(), "A",
+                CodeAnchorKind.SYMBOL, "java:demo.App", 1, 20
+        );
+        CodeDocumentBinding other = preciseBinding(
+                UUID.randomUUID(), documentId, null, "B", CodeAnchorKind.FILE,
+                null, null, null
+        );
+        when(gitRepository.findBindingsByRepositoryId(repositoryId))
+                .thenReturn(List.of(legacy, other, exact));
+        when(documentRepository.findById(documentId))
+                .thenReturn(Optional.of(document(documentId, "API")));
+
+        CodeBindingBatchQueryResult result = service.queryBindingsBatch(
+                workspaceId, repositoryId, userId, List.of("src/App.java"),
+                "A", true, 1
+        );
+
+        var file = result.files().getFirst();
+        assertThat(file.fileHasBindings()).isTrue();
+        assertThat(file.bindings()).extracting(CodeBindingQueryItem::bindingId)
+                .containsExactly(exact.id());
+        assertThat(file.isTruncated()).isTrue();
+        assertThat(file.omittedBindingCount()).isOne();
     }
 
     private CodeDocumentBinding binding(UUID bindingId, UUID documentId, UUID blockId) {
         return new CodeDocumentBinding(
                 bindingId, workspaceId, repositoryId, documentId, blockId,
                 "src/App.java", userId, Instant.parse("2026-07-26T00:00:00Z")
+        );
+    }
+
+    private CodeDocumentBinding preciseBinding(
+            UUID bindingId,
+            UUID documentId,
+            UUID blockId,
+            String revision,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine
+    ) {
+        return new CodeDocumentBinding(
+                bindingId,
+                workspaceId,
+                repositoryId,
+                documentId,
+                blockId,
+                blockId == null ? "DOCUMENT" : blockId.toString(),
+                "src/App.java",
+                revision,
+                anchorKind,
+                symbolKey,
+                startLine,
+                endLine,
+                userId,
+                Instant.parse("2026-07-26T00:00:00Z")
         );
     }
 

@@ -64,7 +64,12 @@ public interface GitKnowledgeRepository {
             UUID repositoryId,
             UUID documentId,
             UUID blockId,
-            String pathPattern
+            String pathPattern,
+            String revision,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine
     );
 
     List<CodeDocumentBinding> findBindingsByDocumentId(UUID documentId);

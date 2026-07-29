@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.git.api;
 
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -11,13 +12,23 @@ public record CodeDocumentBindingResponse(
         UUID repositoryId,
         UUID documentId,
         UUID blockId,
+        String targetKey,
         String pathPattern,
+        String revision,
+        CodeAnchorKind anchorKind,
+        String symbolKey,
+        Integer startLine,
+        Integer endLine,
+        UUID createdBy,
         Instant createdAt
 ) {
     public static CodeDocumentBindingResponse from(CodeDocumentBinding binding) {
         return new CodeDocumentBindingResponse(
                 binding.id(), binding.workspaceId(), binding.repositoryId(),
-                binding.documentId(), binding.blockId(), binding.pathPattern(),
+                binding.documentId(), binding.blockId(), binding.targetKey(),
+                binding.pathPattern(), binding.revision(), binding.anchorKind(),
+                binding.symbolKey(), binding.startLine(), binding.endLine(),
+                binding.createdBy(),
                 binding.createdAt()
         );
     }

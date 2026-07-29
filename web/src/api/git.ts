@@ -3,6 +3,7 @@ import { http } from './http';
 export type GitProvider = 'GITHUB' | 'GITLAB' | 'GITEE' | 'GENERIC';
 export type GitChangeType = 'COMMIT' | 'PULL_REQUEST';
 export type GitFileChangeType = 'ADDED' | 'MODIFIED' | 'DELETED' | 'RENAMED';
+export type CodeAnchorKind = 'FILE' | 'RANGE' | 'SYMBOL';
 
 export interface GitRepository {
   id: string;
@@ -90,14 +91,29 @@ export interface CodeDocumentBinding {
   repositoryId: string;
   documentId: string;
   blockId: string | null;
+  targetKey: string;
   pathPattern: string;
+  revision: string | null;
+  anchorKind: CodeAnchorKind;
+  symbolKey: string | null;
+  startLine: number | null;
+  endLine: number | null;
+  createdBy: string;
   createdAt: string;
 }
 
 export interface CodeBindingQueryItem {
   bindingId: string;
+  workspaceId: string;
+  repositoryId: string;
+  revision: string | null;
+  anchorKind: CodeAnchorKind;
+  symbolKey: string | null;
+  startLine: number | null;
+  endLine: number | null;
   documentId: string;
   blockId: string | null;
+  targetKey: string;
   pathPattern: string;
   documentTitle: string | null;
 }
@@ -224,16 +240,33 @@ export async function ingestGitChange(
   return data;
 }
 
-export async function listCodeBindings(documentId: string) {
+export async function listCodeBindings(
+  documentId: string,
+  options?: {
+    revision?: string;
+    includeLegacy?: boolean;
+    blockId?: string;
+  },
+) {
   const { data } = await http.get<CodeDocumentBinding[]>(
     `/documents/${documentId}/code-bindings`,
+    { params: options },
   );
   return data;
 }
 
 export async function createCodeBinding(
   documentId: string,
-  payload: { repositoryId: string; blockId?: string | null; pathPattern: string },
+  payload: {
+    repositoryId: string;
+    blockId?: string | null;
+    pathPattern: string;
+    revision?: string | null;
+    anchorKind?: CodeAnchorKind;
+    symbolKey?: string | null;
+    startLine?: number | null;
+    endLine?: number | null;
+  },
 ) {
   const { data } = await http.post<CodeDocumentBinding>(
     `/documents/${documentId}/code-bindings`,
@@ -249,12 +282,14 @@ export async function deleteCodeBinding(bindingId: string) {
 export async function queryCodeBindings(
   workspaceId: string,
   repositoryId: string,
-  revision: string,
+  revision: string | undefined,
   filePath: string,
+  includeLegacy = true,
+  maxBindings?: number,
 ) {
   const { data } = await http.get<CodeBindingQueryResult>(
     `/workspaces/${workspaceId}/repositories/${repositoryId}/code-bindings`,
-    { params: { revision, filePath } },
+    { params: { revision, filePath, includeLegacy, maxBindings } },
   );
   return data;
 }

@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.git.infrastructure;
 
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.CodeFileDependency;
 import com.devcollab.knowledgecore.git.domain.CodeSymbol;
 import com.devcollab.knowledgecore.git.domain.CodeSymbolDependency;
@@ -131,7 +132,13 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getObject("repository_id", UUID.class),
                     rs.getObject("document_id", UUID.class),
                     rs.getObject("block_id", UUID.class),
+                    rs.getString("target_key"),
                     rs.getString("path_pattern"),
+                    rs.getString("revision"),
+                    CodeAnchorKind.valueOf(rs.getString("anchor_kind")),
+                    rs.getString("symbol_key"),
+                    (Integer) rs.getObject("start_line"),
+                    (Integer) rs.getObject("end_line"),
                     rs.getObject("created_by", UUID.class),
                     rs.getTimestamp("created_at").toInstant()
             );
@@ -370,13 +377,20 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
         jdbcTemplate.update("""
                         INSERT INTO code_document_bindings
                             (id, workspace_id, repository_id, document_id,
-                             block_id, target_key, path_pattern, created_by, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             block_id, target_key, path_pattern, revision,
+                             anchor_kind, symbol_key, start_line, end_line,
+                             revision_key, symbol_key_identity, start_line_key,
+                             end_line_key, created_by, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 binding.id(), binding.workspaceId(), binding.repositoryId(),
-                binding.documentId(), binding.blockId(),
-                binding.blockId() == null ? "DOCUMENT" : binding.blockId().toString(),
-                binding.pathPattern(),
+                binding.documentId(), binding.blockId(), binding.targetKey(),
+                binding.pathPattern(), binding.revision(), binding.anchorKind().name(),
+                binding.symbolKey(), binding.startLine(), binding.endLine(),
+                binding.revision() == null ? "" : binding.revision(),
+                binding.symbolKey() == null ? "" : binding.symbolKey(),
+                binding.startLine() == null ? 0 : binding.startLine(),
+                binding.endLine() == null ? 0 : binding.endLine(),
                 binding.createdBy(), Timestamp.from(binding.createdAt()));
         return binding;
     }
@@ -404,7 +418,12 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
             UUID repositoryId,
             UUID documentId,
             UUID blockId,
-            String pathPattern
+            String pathPattern,
+            String revision,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine
     ) {
         String targetKey = blockId == null ? "DOCUMENT" : blockId.toString();
         return jdbcTemplate.query("""
@@ -413,28 +432,38 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                            AND document_id = ?
                            AND target_key = ?
                            AND path_pattern = ?
+                           AND revision_key = ?
+                           AND anchor_kind = ?
+                           AND symbol_key_identity = ?
+                           AND start_line_key = ?
+                           AND end_line_key = ?
                         """,
                 BINDING_MAPPER,
                 repositoryId,
                 documentId,
                 targetKey,
-                pathPattern
+                pathPattern,
+                revision == null ? "" : revision,
+                anchorKind.name(),
+                symbolKey == null ? "" : symbolKey,
+                startLine == null ? 0 : startLine,
+                endLine == null ? 0 : endLine
         ).stream().findFirst();
     }
 
     @Override
     public List<CodeDocumentBinding> findBindingsByDocumentId(UUID documentId) {
-        return jdbcTemplate.query("""
+                return jdbcTemplate.query("""
                         SELECT * FROM code_document_bindings
-                         WHERE document_id = ? ORDER BY created_at DESC
+                         WHERE document_id = ? ORDER BY created_at DESC, id
                         """, BINDING_MAPPER, documentId);
     }
 
     @Override
     public List<CodeDocumentBinding> findBindingsByRepositoryId(UUID repositoryId) {
-        return jdbcTemplate.query("""
+                return jdbcTemplate.query("""
                         SELECT * FROM code_document_bindings
-                         WHERE repository_id = ? ORDER BY created_at DESC
+                         WHERE repository_id = ? ORDER BY created_at DESC, id
                         """, BINDING_MAPPER, repositoryId);
     }
 

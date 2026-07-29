@@ -9,8 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -21,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -241,6 +244,283 @@ class GitKnowledgeIntegrationTests {
     }
 
     @Test
+    void shouldCreateAndQueryLegacyRangeAndSymbolBindings() throws Exception {
+        AuthSession admin = register();
+        String workspaceId = createWorkspace(admin.token());
+        String documentId = createDocument(admin.token(), workspaceId);
+        String blockId = createBlock(admin.token(), documentId);
+        String repositoryId = registerRepository(admin.token(), workspaceId);
+        String path = "src/main/java/demo/OrderService.java";
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "pathPattern":"%s"
+                }
+                """.formatted(repositoryId, path))
+                .andExpect(jsonPath("$.anchorKind").value("FILE"))
+                .andExpect(jsonPath("$.revision").isEmpty())
+                .andExpect(jsonPath("$.blockId").isEmpty());
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"FILE"
+                }
+                """.formatted(repositoryId, path))
+                .andExpect(jsonPath("$.revision").value("A"));
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"RANGE",
+                  "startLine":10,
+                  "endLine":20
+                }
+                """.formatted(repositoryId, path))
+                .andExpect(jsonPath("$.targetKey").value("DOCUMENT"));
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "blockId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"RANGE",
+                  "startLine":10,
+                  "endLine":20
+                }
+                """.formatted(repositoryId, blockId, path))
+                .andExpect(jsonPath("$.blockId").value(blockId));
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "blockId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"RANGE",
+                  "startLine":21,
+                  "endLine":30
+                }
+                """.formatted(repositoryId, blockId, path))
+                .andExpect(status().isCreated());
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "blockId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"SYMBOL",
+                  "symbolKey":"java:demo.OrderService#create",
+                  "startLine":31,
+                  "endLine":45
+                }
+                """.formatted(repositoryId, blockId, path))
+                .andExpect(status().isCreated());
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "blockId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"SYMBOL",
+                  "symbolKey":"java:demo.OrderService#cancel"
+                }
+                """.formatted(repositoryId, blockId, path))
+                .andExpect(status().isCreated());
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"B",
+                  "anchorKind":"FILE"
+                }
+                """.formatted(repositoryId, path))
+                .andExpect(status().isCreated());
+
+        MvcResult withLegacy = mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token()))
+                        .queryParam("filePath", path)
+                        .queryParam("revision", "A")
+                        .queryParam("includeLegacy", "true")
+                        .queryParam("maxBindings", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bindings[0].revision").value("A"))
+                .andReturn();
+        JsonNode withLegacyJson = responseJson(withLegacy);
+        assertThat(withLegacyJson.get("bindings")).hasSize(7);
+        assertThat(withLegacyJson.get("bindings").findValuesAsText("revision"))
+                .allMatch(value -> value.equals("null") || value.equals("A"));
+
+        MvcResult exactOnly = mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token()))
+                        .queryParam("filePath", path)
+                        .queryParam("revision", "A")
+                        .queryParam("includeLegacy", "false"))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(responseJson(exactOnly).get("bindings")).hasSize(6);
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings/batch",
+                        workspaceId, repositoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "filePaths":["%s"],
+                                  "revision":"A",
+                                  "includeLegacy":false,
+                                  "maxBindings":2
+                                }
+                                """.formatted(path)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.files[0].bindings.length()").value(2))
+                .andExpect(jsonPath("$.files[0].bindings[0].revision").value("A"))
+                .andExpect(jsonPath("$.files[0].truncated").value(true))
+                .andExpect(jsonPath("$.files[0].omittedBindingCount").value(4));
+
+        mockMvc.perform(get("/api/v1/documents/{documentId}/code-bindings", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin.token()))
+                        .queryParam("revision", "A")
+                        .queryParam("includeLegacy", "false")
+                        .queryParam("blockId", blockId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].repositoryId").value(repositoryId))
+                .andExpect(jsonPath("$[0].blockId").value(blockId))
+                .andExpect(jsonPath("$[0].anchorKind").exists())
+                .andExpect(jsonPath("$[0].targetKey").value(blockId));
+
+        createBinding(admin.token(), documentId, """
+                {
+                  "repositoryId":"%s",
+                  "blockId":"%s",
+                  "pathPattern":"%s",
+                  "revision":"A",
+                  "anchorKind":"RANGE",
+                  "startLine":10,
+                  "endLine":20
+                }
+                """.formatted(repositoryId, blockId, path))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("GIT_BINDING_INVALID"));
+    }
+
+    @Test
+    void shouldRejectStructurallyInvalidPreciseAnchors() throws Exception {
+        AuthSession admin = register();
+        String workspaceId = createWorkspace(admin.token());
+        String documentId = createDocument(admin.token(), workspaceId);
+        String repositoryId = registerRepository(admin.token(), workspaceId);
+        String prefix = """
+                {"repositoryId":"%s","pathPattern":"src/App.java",
+                """.formatted(repositoryId);
+        String[] invalidTails = {
+                "\"anchorKind\":\"FILE\",\"symbolKey\":\"x\"}",
+                "\"anchorKind\":\"FILE\",\"startLine\":1,\"endLine\":2}",
+                "\"anchorKind\":\"RANGE\",\"startLine\":1,\"endLine\":2}",
+                "\"revision\":\"A\",\"anchorKind\":\"RANGE\"}",
+                "\"revision\":\"A\",\"anchorKind\":\"RANGE\",\"startLine\":1}",
+                "\"revision\":\"A\",\"anchorKind\":\"RANGE\",\"startLine\":0,\"endLine\":2}",
+                "\"revision\":\"A\",\"anchorKind\":\"RANGE\",\"startLine\":3,\"endLine\":2}",
+                "\"revision\":\"A\",\"anchorKind\":\"RANGE\",\"symbolKey\":\"x\",\"startLine\":1,\"endLine\":2}",
+                "\"anchorKind\":\"SYMBOL\",\"symbolKey\":\"x\"}",
+                "\"revision\":\"A\",\"anchorKind\":\"SYMBOL\"}",
+                "\"revision\":\"A\",\"anchorKind\":\"SYMBOL\",\"symbolKey\":\"x\",\"startLine\":1}",
+                "\"revision\":\"A\",\"anchorKind\":\"SYMBOL\",\"symbolKey\":\"x\",\"startLine\":0,\"endLine\":1}",
+                "\"revision\":\"A\",\"anchorKind\":\"SYMBOL\",\"symbolKey\":\"x\",\"startLine\":2,\"endLine\":1}"
+        };
+
+        for (String invalidTail : invalidTails) {
+            createBinding(admin.token(), documentId, prefix + invalidTail)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("GIT_BINDING_INVALID"));
+        }
+    }
+
+    @Test
+    void databaseConstraintsProtectLegacyDefaultsAndPreciseIdentity() throws Exception {
+        AuthSession admin = register();
+        String workspaceId = createWorkspace(admin.token());
+        String documentId = createDocument(admin.token(), workspaceId);
+        String repositoryId = registerRepository(admin.token(), workspaceId);
+        UUID createdBy = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_accounts WHERE username = ?",
+                UUID.class,
+                admin.username()
+        );
+        UUID legacyId = UUID.randomUUID();
+
+        jdbcTemplate.update("""
+                INSERT INTO code_document_bindings
+                    (id, workspace_id, repository_id, document_id, block_id,
+                     target_key, path_pattern, created_by, created_at)
+                VALUES (?, ?, ?, ?, NULL, 'DOCUMENT', 'src/Legacy.java', ?, ?)
+                """,
+                legacyId,
+                UUID.fromString(workspaceId),
+                UUID.fromString(repositoryId),
+                UUID.fromString(documentId),
+                createdBy,
+                Instant.now()
+        );
+
+        var legacy = jdbcTemplate.queryForMap(
+                "SELECT revision, anchor_kind, symbol_key, start_line, end_line "
+                        + "FROM code_document_bindings WHERE id = ?",
+                legacyId
+        );
+        assertThat(legacy.get("revision")).isNull();
+        assertThat(legacy.get("anchor_kind")).isEqualTo("FILE");
+        assertThat(legacy.get("symbol_key")).isNull();
+        assertThat(legacy.get("start_line")).isNull();
+        assertThat(legacy.get("end_line")).isNull();
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO code_document_bindings
+                    (id, workspace_id, repository_id, document_id, block_id,
+                     target_key, path_pattern, revision, anchor_kind,
+                     start_line, end_line, revision_key, start_line_key,
+                     end_line_key, created_by, created_at)
+                VALUES (?, ?, ?, ?, NULL, 'DOCUMENT', 'src/Invalid.java',
+                        'A', 'FILE', 1, 2, 'A', 1, 2, ?, ?)
+                """,
+                UUID.randomUUID(),
+                UUID.fromString(workspaceId),
+                UUID.fromString(repositoryId),
+                UUID.fromString(documentId),
+                createdBy,
+                Instant.now()
+        )).isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO code_document_bindings
+                    (id, workspace_id, repository_id, document_id, block_id,
+                     target_key, path_pattern, created_by, created_at)
+                VALUES (?, ?, ?, ?, NULL, 'DOCUMENT', 'src/Legacy.java', ?, ?)
+                """,
+                UUID.randomUUID(),
+                UUID.fromString(workspaceId),
+                UUID.fromString(repositoryId),
+                UUID.fromString(documentId),
+                createdBy,
+                Instant.now()
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void shouldQueueGithubSyncExposeFilesAndQueueDeletion() throws Exception {
         AuthSession admin = register();
         String workspaceId = createWorkspace(admin.token());
@@ -320,6 +600,17 @@ class GitKnowledgeIntegrationTests {
                 .andExpect(jsonPath("$.files[0].binaryFile").value(false))
                 .andReturn();
         return responseJson(result);
+    }
+
+    private ResultActions createBinding(
+            String token,
+            String documentId,
+            String body
+    ) throws Exception {
+        return mockMvc.perform(post("/api/v1/documents/{id}/code-bindings", documentId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
     }
 
     private String changeBody() {
