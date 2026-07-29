@@ -132,7 +132,7 @@
             @click="confirmProjectScan"
           >检查整个项目</el-button>
           <NotificationCenter />
-          <el-button size="small" @click="router.push('/workspaces')">返回列表</el-button>
+          <el-button size="small" @click="handleReturnToWorkspaces">返回列表</el-button>
           <el-button
             v-if="workspace.currentUserRole === 'ADMIN' && activeRepository"
             size="small"
@@ -259,6 +259,8 @@ import { readableError } from '@/utils/error';
 import {
   bindingDocumentChoices,
   buildBindingFixture,
+  classifyBinding,
+  displayableBindings,
   documentBindingToQueryItem,
   selectDefaultBinding,
   sortBindings,
@@ -281,6 +283,7 @@ const document = ref<DocumentSummary | null>(null);
 const versions = ref<DocumentVersion[]>([]);
 const selectedSource = ref<GitRepositorySource | null>(null);
 const selectedFileBindings = ref<CodeBindingQueryItem[]>([]);
+const loadedDocumentBlockDocumentId = ref<string | null>(null);
 const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
@@ -343,8 +346,8 @@ const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
 const pendingReviewCount = ref(0);
 const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
   ? {
-      [selectedFilePath.value]: selectedFileBindings.value.filter(
-        item => normalizeRepositoryPath(item.pathPattern) === normalizeRepositoryPath(selectedFilePath.value),
+      [selectedFilePath.value]: links.value.filter(
+        item => normalizeRepositoryPath(item.filePath ?? '') === normalizeRepositoryPath(selectedFilePath.value),
       ).length,
     }
   : {});
@@ -580,6 +583,7 @@ async function loadDocumentBundle() {
 }
 
 async function handleRepositoryChange(repositoryId: string) {
+  if (!(await confirmDocumentLeave())) return;
   isRestoringNavigation.value = false;
   sourceRequestSequence += 1;
   state.selectedRepositoryId.value = repositoryId;
@@ -587,6 +591,7 @@ async function handleRepositoryChange(repositoryId: string) {
   state.selectDocument('');
   selectedSource.value = null;
   selectedFileBindings.value = [];
+  loadedDocumentBlockDocumentId.value = null;
   reverseBindingContext.value = null;
   await router.replace({ query: { ...route.query, repositoryId } });
   try { contextLoading.value = true; await loadRepositoryDetails('navigate'); }
@@ -595,6 +600,7 @@ async function handleRepositoryChange(repositoryId: string) {
 }
 
 async function openSourceByPath(path: string) {
+  if (path !== selectedFilePath.value && !(await confirmDocumentLeave())) return;
   isRestoringNavigation.value = false;
   reverseBindingContext.value = null;
   const file = files.value.find(item => item.path === path);
@@ -613,6 +619,7 @@ async function openSource(
   sourceLoading.value = true;
   state.selectFile(file.path);
   selectedFileBindings.value = [];
+  loadedDocumentBlockDocumentId.value = null;
   state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   try {
     const source = await getGitRepositorySource(
@@ -636,27 +643,41 @@ async function openSource(
       || repositoryId !== selectedRepositoryId.value
       || file.path !== selectedFilePath.value) return;
     selectedSource.value = source;
-    selectedFileBindings.value = sortBindings(bindings, revision);
+    const bindingContextInput = {
+      repositoryId,
+      branch: activeRepository.value?.defaultBranch ?? '',
+      commitSha: revision,
+      source,
+      bindings,
+      allowCrossFile: bindingContext !== null,
+    };
+    selectedFileBindings.value = sortBindings(bindings, revision)
+      .filter(binding => classifyBinding(binding, bindingContextInput) !== 'invalid');
     rebuildBindings(navigationTarget?.bindingId, navigationTarget?.blockId);
     const targetLink = activeLink.value;
     const targetDocumentId = targetLink?.documentId
       ?? navigationTarget?.documentId
       ?? '';
-    const boundDocumentIds = new Set(bindings.map(item => item.documentId));
-    if (bindings.length === 0) {
+    const boundDocumentIds = new Set(selectedFileBindings.value.map(item => item.documentId));
+    if (selectedFileBindings.value.length === 0) {
       state.selectDocument('');
       state.replaceDocumentBlocks([]);
+      loadedDocumentBlockDocumentId.value = null;
       document.value = null;
       versions.value = [];
       documentRequestSequence += 1;
     } else if (targetDocumentId && boundDocumentIds.has(targetDocumentId)) {
       const documentChanged = selectedDocumentId.value !== targetDocumentId;
       state.selectDocument(targetDocumentId);
-      if (documentChanged) state.replaceDocumentBlocks([]);
+      if (documentChanged) {
+        state.replaceDocumentBlocks([]);
+        loadedDocumentBlockDocumentId.value = null;
+      }
       if (document.value?.id !== targetDocumentId) await loadDocumentBundle();
     } else if (!boundDocumentIds.has(selectedDocumentId.value)) {
-      state.selectDocument(activeLink.value?.documentId || bindings[0].documentId);
+      state.selectDocument(activeLink.value?.documentId || selectedFileBindings.value[0].documentId);
       state.replaceDocumentBlocks([]);
+      loadedDocumentBlockDocumentId.value = null;
       await router.replace({
         query: { ...route.query, repositoryId, documentId: selectedDocumentId.value },
       });
@@ -689,8 +710,10 @@ async function openSource(
 async function handleDocumentChange(documentId: string) {
   isRestoringNavigation.value = false;
   if (documentId === selectedDocumentId.value) return;
+  if (!(await confirmDocumentLeave())) return;
   state.selectDocument(documentId);
   documentBlocks.value = [];
+  loadedDocumentBlockDocumentId.value = null;
   state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   await router.replace({ query: { ...route.query, documentId } });
   await loadDocumentBundle();
@@ -759,11 +782,13 @@ async function restoreReadingTarget(snapshot: LinkedWorkbenchSnapshot) {
 }
 
 async function handleHistoryBack() {
+  if (!(await confirmDocumentLeave())) return;
   const target = linkedNavigation.goBack();
   if (target) await restoreReadingTarget(target);
 }
 
 async function handleHistoryForward() {
+  if (!(await confirmDocumentLeave())) return;
   const target = linkedNavigation.goForward();
   if (target) await restoreReadingTarget(target);
 }
@@ -775,6 +800,7 @@ function historyTargetTitle(action: string, target: LinkedWorkbenchSnapshot | nu
 
 function handleBlocksLoaded(blocks: DocumentBlock[]) {
   state.replaceDocumentBlocks(blocks);
+  loadedDocumentBlockDocumentId.value = selectedDocumentId.value;
   rebuildBindings(activeLink.value?.bindingId, activeLink.value?.blockId);
   void nextTick(() => focusActiveLink('system'));
 }
@@ -787,17 +813,24 @@ function rebuildBindings(
     state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
     return;
   }
-  const fixture = buildBindingFixture({
+  const fixtureInput = {
     repositoryId: activeRepository.value.id,
     branch: activeRepository.value.defaultBranch,
     commitSha: selectedSource.value.commitSha || activeRepository.value.lastSyncedCommit || 'working-tree',
     source: selectedSource.value,
     bindings: selectedFileBindings.value,
-  });
+    allowCrossFile: reverseBindingContext.value !== null,
+    loadedDocumentId: loadedDocumentBlockDocumentId.value,
+    loadedBlockIds: loadedDocumentBlockDocumentId.value === selectedDocumentId.value
+      ? new Set(documentBlocks.value.map(block => block.id))
+      : undefined,
+  };
+  const fixture = buildBindingFixture(fixtureInput);
   state.replaceFixture(fixture);
   const revision = selectedSource.value.commitSha || activeRepository.value.lastSyncedCommit || '';
+  const visibleBindings = displayableBindings(fixtureInput);
   const selected = selectDefaultBinding(
-    selectedFileBindings.value,
+    visibleBindings,
     revision,
     preferredBindingId,
     preferredBlockId,
@@ -821,8 +854,10 @@ async function handleActivate(linkId: string, source: LinkActivationSource) {
     return;
   }
   if (link.documentId !== selectedDocumentId.value) {
+    if (!(await confirmDocumentLeave())) return;
     state.selectDocument(link.documentId);
     state.replaceDocumentBlocks([]);
+    loadedDocumentBlockDocumentId.value = null;
     await loadDocumentBundle();
   }
   persistReadingTarget('restore');
@@ -919,6 +954,14 @@ async function handleWorkspaceNavigation() {
   });
   await nextTick();
   focusActiveLink('system');
+}
+
+async function handleReturnToWorkspaces() {
+  if (await confirmDocumentLeave()) await router.push('/workspaces');
+}
+
+function confirmDocumentLeave() {
+  return workbenchShellRef.value?.confirmDocumentLeave?.() ?? Promise.resolve(true);
 }
 
 async function handleReviewNavigation() {

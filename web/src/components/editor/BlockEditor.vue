@@ -1,6 +1,6 @@
 <template>
   <section ref="editorRoot" class="block-editor">
-    <header class="block-editor-header">
+    <header v-if="!compactReading" class="block-editor-header">
       <div>
         <p class="eyebrow">Tiptap Blocks</p>
         <h3>内容编辑区</h3>
@@ -85,11 +85,15 @@
       <TiptapBlock
         v-for="(block, index) in blocks"
         :key="block.id"
+        :ref="component => bindBlockComponent(block.id, component)"
         :block="block"
         :is-first="index === 0"
         :is-last="index === blocks.length - 1"
         :busy="busyBlockId === block.id"
         :readonly="readonly"
+        :compact-reading="compactReading"
+        :editing="editingBlockId === block.id"
+        :save-error="editingBlockId === block.id ? editingSaveError : ''"
         :editing-users="editingUsersByBlock(block.id)"
         :class="{
           'is-focused': focusedBlockId === block.id,
@@ -103,6 +107,10 @@
         @editing-start="emit('editing-start', block.id)"
         @editing-stop="emit('editing-stop', block.id)"
         @select="emit('select-block', block.id)"
+        @edit-request="requestEditBlock(block.id)"
+        @save-intent="handleSaveIntent(block.id, $event)"
+        @cancel-request="requestCancelEditing(block.id)"
+        @dirty-change="handleDirtyChange"
       />
     </div>
   </section>
@@ -111,7 +119,15 @@
 <script setup lang="ts">
 import { Plus } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { nextTick, onMounted, ref, watch } from 'vue';
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type ComponentPublicInstance,
+} from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
 
 import {
   createBlock,
@@ -141,6 +157,7 @@ const props = defineProps<{
     block: DocumentBlock,
     content: DocumentBlockContent,
   ) => Promise<DocumentBlock>;
+  compactReading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -156,8 +173,12 @@ const loading = ref(false);
 const creating = ref(false);
 const busyBlockId = ref<string | null>(null);
 const focusedBlockId = ref<string | null>(null);
+const editingBlockId = ref<string | null>(null);
+const dirtyByBlock = ref<Record<string, boolean>>({});
+const editingSaveError = ref('');
 const conflictMessage = ref('');
 const errorMessage = ref('');
+const blockComponents = new Map<string, InstanceType<typeof TiptapBlock>>();
 
 const initialText: Record<DocumentBlockType, string> = {
   PARAGRAPH: '新的段落',
@@ -213,12 +234,22 @@ function initialDocument(type: DocumentBlockType, text: string) {
 }
 
 onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload);
   void loadBlocks();
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload);
+});
+
+onBeforeRouteLeave(async () => confirmLeave());
 
 watch(
   () => props.documentId,
   () => {
+    editingBlockId.value = null;
+    dirtyByBlock.value = {};
+    editingSaveError.value = '';
     void loadBlocks();
   },
 );
@@ -326,9 +357,10 @@ async function handleCreate(type: DocumentBlockType) {
 
 async function handleSave(block: DocumentBlock, content: DocumentBlockContent) {
   if (props.readonly) {
-    return;
+    return false;
   }
   busyBlockId.value = block.id;
+  editingSaveError.value = '';
   conflictMessage.value = '';
   try {
     const updated = props.saveViaCollaboration
@@ -338,7 +370,10 @@ async function handleSave(block: DocumentBlock, content: DocumentBlockContent) {
           expectedVersion: block.version,
         });
     replaceBlock(updated);
+    dirtyByBlock.value = { ...dirtyByBlock.value, [block.id]: false };
+    return true;
   } catch (error) {
+    editingSaveError.value = readableError(error, '内容块保存失败');
     if (
       isConflictError(error)
       || (error instanceof CollaborationOperationError && error.status === 'CONFLICT')
@@ -346,8 +381,145 @@ async function handleSave(block: DocumentBlock, content: DocumentBlockContent) {
       conflictMessage.value = '当前内容块已被其他成员修改，请刷新内容后再继续编辑。';
     }
     ElMessage.error(readableError(error, '内容块保存失败'));
+    return false;
   } finally {
     busyBlockId.value = null;
+  }
+}
+
+function bindBlockComponent(
+  blockId: string,
+  component: Element | ComponentPublicInstance | null,
+) {
+  if (component) {
+    blockComponents.set(blockId, component as InstanceType<typeof TiptapBlock>);
+  } else {
+    blockComponents.delete(blockId);
+  }
+}
+
+function handleDirtyChange(blockId: string, value: boolean) {
+  dirtyByBlock.value = { ...dirtyByBlock.value, [blockId]: value };
+  if (editingBlockId.value === blockId && value) editingSaveError.value = '';
+}
+
+async function requestEditBlock(blockId: string) {
+  if (props.readonly || !props.compactReading || editingBlockId.value === blockId) return;
+  const current = editingBlockId.value;
+  if (!current || !dirtyByBlock.value[current]) {
+    activateEditingBlock(blockId);
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '当前 Block 有未保存修改。请选择保存后切换，或放弃修改后切换。',
+      '切换编辑 Block',
+      {
+        confirmButtonText: '保存并编辑新 Block',
+        cancelButtonText: '放弃并编辑新 Block',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+      },
+    );
+    if (await saveEditingBlock(current, 'stay')) activateEditingBlock(blockId);
+  } catch (action) {
+    if (action === 'cancel') {
+      discardEditingBlock(current);
+      activateEditingBlock(blockId);
+    }
+  }
+}
+
+function activateEditingBlock(blockId: string) {
+  const previous = editingBlockId.value;
+  if (previous && previous !== blockId) emit('editing-stop', previous);
+  editingBlockId.value = blockId;
+  editingSaveError.value = '';
+  emit('editing-start', blockId);
+  void nextTick(() => blockComponents.get(blockId)?.focusEditor());
+}
+
+async function handleSaveIntent(blockId: string, intent: 'stay' | 'finish') {
+  if (editingBlockId.value !== blockId) return;
+  await saveEditingBlock(blockId, intent);
+}
+
+async function saveEditingBlock(blockId: string, intent: 'stay' | 'finish') {
+  const payload = blockComponents.get(blockId)?.getSavePayload();
+  if (!payload) {
+    if (intent === 'finish') exitEditingBlock(blockId);
+    return true;
+  }
+  const saved = await handleSave(payload.block, payload.content);
+  if (saved && intent === 'finish') exitEditingBlock(blockId);
+  return saved;
+}
+
+async function requestCancelEditing(blockId: string) {
+  if (editingBlockId.value !== blockId) return;
+  if (!dirtyByBlock.value[blockId]) {
+    exitEditingBlock(blockId);
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '当前 Block 有未保存修改。',
+      '放弃修改',
+      {
+        confirmButtonText: '放弃修改',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+      },
+    );
+    discardEditingBlock(blockId);
+    exitEditingBlock(blockId);
+  } catch {
+    // Keep the explicit editing state and draft.
+  }
+}
+
+function discardEditingBlock(blockId: string) {
+  blockComponents.get(blockId)?.discardDraft();
+  dirtyByBlock.value = { ...dirtyByBlock.value, [blockId]: false };
+  editingSaveError.value = '';
+}
+
+function exitEditingBlock(blockId: string) {
+  if (editingBlockId.value !== blockId) return;
+  editingBlockId.value = null;
+  editingSaveError.value = '';
+  emit('editing-stop', blockId);
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+function hasUnsavedChanges() {
+  const blockId = editingBlockId.value;
+  return Boolean(blockId && dirtyByBlock.value[blockId]);
+}
+
+async function confirmLeave() {
+  const blockId = editingBlockId.value;
+  if (!blockId || !dirtyByBlock.value[blockId]) return true;
+  try {
+    await ElMessageBox.confirm(
+      '当前 Block 有未保存修改，离开后这些修改会丢失。',
+      '离开联动对照',
+      {
+        confirmButtonText: '放弃修改并离开',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+      },
+    );
+    discardEditingBlock(blockId);
+    exitEditingBlock(blockId);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -407,5 +579,10 @@ function editingUsersByBlock(blockId: string) {
   return (props.editingStates ?? []).filter((state) => state.blockId === blockId);
 }
 
-defineExpose({ focusBlock, clearBlockFocus });
+defineExpose({
+  focusBlock,
+  clearBlockFocus,
+  confirmLeave,
+  editingBlockId,
+});
 </script>

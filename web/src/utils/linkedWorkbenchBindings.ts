@@ -4,17 +4,22 @@ import type {
   GitRepositorySource,
 } from '@/api/git';
 import type { LinkedDocumentChoice, LinkedFixture } from '@/types/linkedWorkbench';
+import type { BindingDisplayState } from '@/types/linkedWorkbench';
+import { normalizeRepositoryPath } from '@/utils/repositoryTree';
 
-interface BuildBindingFixtureInput {
+export interface BuildBindingFixtureInput {
   repositoryId: string;
   branch: string;
   commitSha: string;
   source: GitRepositorySource;
   bindings: CodeBindingQueryItem[];
+  allowCrossFile?: boolean;
+  loadedDocumentId?: string | null;
+  loadedBlockIds?: ReadonlySet<string>;
 }
 
 export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixture {
-  const selectedBindings = sortBindings(input.bindings, input.commitSha);
+  const selectedBindings = displayableBindings(input);
   const codeAnchors = selectedBindings.map(binding => ({
     id: `binding-anchor-${binding.bindingId}`,
     bindingId: binding.bindingId,
@@ -32,6 +37,7 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     startLine: binding.revision === null ? null : binding.startLine,
     endLine: binding.revision === null ? null : binding.endLine,
     status: 'VALID' as const,
+    bindingDisplayState: classifyBinding(binding, input) as 'precise' | 'weak',
   }));
   const links = selectedBindings.map((binding, index) => ({
     id: `binding-link-${binding.bindingId}`,
@@ -48,8 +54,63 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     startLine: binding.revision === null ? null : binding.startLine,
     endLine: binding.revision === null ? null : binding.endLine,
     relationType: 'DESCRIBES' as const,
+    bindingDisplayState: classifyBinding(binding, input) as 'precise' | 'weak',
   }));
   return { codeAnchors, links, issues: [], evidence: [] };
+}
+
+export function displayableBindings(input: BuildBindingFixtureInput): CodeBindingQueryItem[] {
+  return sortBindings(input.bindings, input.commitSha).filter((binding) => {
+    const state = classifyBinding(binding, input);
+    return state === 'precise' || state === 'weak';
+  });
+}
+
+export function classifyBinding(
+  binding: CodeBindingQueryItem,
+  input: BuildBindingFixtureInput,
+): BindingDisplayState {
+  if (!binding.bindingId?.trim()
+    || !binding.repositoryId?.trim()
+    || !binding.documentId?.trim()
+    || !binding.pathPattern?.trim()) {
+    return 'invalid';
+  }
+  if (binding.repositoryId !== input.repositoryId) return 'invalid';
+  if (!input.allowCrossFile
+    && normalizeRepositoryPath(binding.pathPattern)
+      !== normalizeRepositoryPath(input.source.path)) {
+    return 'invalid';
+  }
+  if (binding.revision !== null && binding.revision !== input.commitSha) {
+    return 'invalid';
+  }
+
+  const hasRange = validRange(binding.startLine, binding.endLine);
+  if (binding.anchorKind === 'RANGE' && !hasRange) return 'invalid';
+  if (binding.anchorKind === 'SYMBOL' && !binding.symbolKey?.trim()) return 'invalid';
+
+  if (binding.blockId) {
+    if (input.loadedDocumentId !== binding.documentId || input.loadedBlockIds === undefined) {
+      return 'loading';
+    }
+    if (!input.loadedBlockIds.has(binding.blockId)) return 'invalid';
+  }
+
+  return binding.blockId
+    && hasRange
+    && (binding.anchorKind === 'RANGE' || binding.anchorKind === 'SYMBOL')
+    ? 'precise'
+    : 'weak';
+}
+
+function validRange(startLine: number | null, endLine: number | null) {
+  return startLine !== null
+    && endLine !== null
+    && Number.isInteger(startLine)
+    && Number.isInteger(endLine)
+    && startLine >= 1
+    && endLine >= startLine;
 }
 
 export function sortBindings(

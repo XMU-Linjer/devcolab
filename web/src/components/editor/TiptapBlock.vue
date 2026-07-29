@@ -3,12 +3,50 @@
     class="paragraph-block tiptap-block"
     :class="[
       `is-${block.type.toLowerCase()}`,
-      { 'is-dirty': dirty, 'has-remote-update': remotePending },
+      {
+        'is-dirty': dirty,
+        'has-remote-update': remotePending,
+        'is-compact-reading': compactReading,
+        'is-editing': editing,
+      },
     ]"
-    @click="emit('select', block)"
-    @focusin="emit('select', block)"
+    @click="handleBlockClick"
+    @dblclick="handleBlockDoubleClick"
+    @focusin="handleFocusIn"
   >
-    <div class="block-toolbar">
+    <div v-if="compactReading && editing" class="compact-edit-toolbar">
+      <span class="compact-edit-state">
+        {{ saveError || (busy ? '保存中…' : dirty ? '有未保存修改' : '正在编辑') }}
+      </span>
+      <div class="compact-edit-actions">
+        <el-button size="small" :disabled="busy || !dirty" @click.stop="emit('save-intent', 'stay')">
+          保存
+        </el-button>
+        <el-button size="small" :disabled="busy" @click.stop="emit('cancel-request')">
+          取消
+        </el-button>
+        <el-button
+          size="small"
+          type="primary"
+          :loading="busy"
+          @click.stop="emit('save-intent', 'finish')"
+        >
+          保存并完成
+        </el-button>
+        <el-dropdown trigger="click" @command="handleCompactCommand">
+          <el-button size="small" text @click.stop>更多</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="move-up" :disabled="isFirst || busy">上移</el-dropdown-item>
+              <el-dropdown-item command="move-down" :disabled="isLast || busy">下移</el-dropdown-item>
+              <el-dropdown-item command="delete" divided :disabled="busy">删除</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </div>
+
+    <div v-else-if="!compactReading" class="block-toolbar">
       <div class="block-identity">
         <span class="block-index">#{{ block.sortOrder + 1 }}</span>
         <span class="block-version">版本 {{ baseVersion }}</span>
@@ -61,7 +99,7 @@
       </div>
     </div>
 
-    <div v-if="block.type !== 'PARAGRAPH'" class="block-semantic-toolbar">
+    <div v-if="block.type !== 'PARAGRAPH' && (!compactReading || editing)" class="block-semantic-toolbar">
       <template v-if="block.type === 'HEADING'">
         <span>标题级别</span>
         <el-button-group>
@@ -85,11 +123,14 @@
       </span>
     </div>
 
-    <div class="tiptap-editor-shell" :class="{ 'is-disabled': busy || readonly }">
+    <div
+      class="tiptap-editor-shell"
+      :class="{ 'is-disabled': busy || readonly, 'is-reading': compactReading && !editing }"
+    >
       <editor-content :editor="editor" />
     </div>
 
-    <div class="block-footer">
+    <div v-if="!compactReading" class="block-footer">
       <span :class="statusClass">{{ statusText }}</span>
       <button
         class="block-save-button"
@@ -113,7 +154,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plugin } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import type {
   DocumentBlock,
@@ -130,6 +171,9 @@ const props = withDefaults(defineProps<{
   busy?: boolean;
   readonly?: boolean;
   editingUsers?: EditingState[];
+  compactReading?: boolean;
+  editing?: boolean;
+  saveError?: string;
 }>(), {
   editingUsers: () => [],
 });
@@ -142,6 +186,10 @@ const emit = defineEmits<{
   'editing-start': [block: DocumentBlock];
   'editing-stop': [block: DocumentBlock];
   select: [block: DocumentBlock];
+  'edit-request': [block: DocumentBlock];
+  'save-intent': [intent: 'stay' | 'finish'];
+  'cancel-request': [];
+  'dirty-change': [blockId: string, dirty: boolean];
 }>();
 
 const persistedText = ref(props.block.content.text);
@@ -151,6 +199,7 @@ const draftDocument = ref<TiptapNode>(structuredDocument(props.block));
 const baseVersion = ref(props.block.version);
 const remotePending = ref(false);
 const headingLevels = [1, 2, 3] as const;
+let clickTimer: number | null = null;
 
 const editorExtensions = [
   StarterKit.configure({
@@ -180,7 +229,7 @@ const editorExtensions = [
 
 const editor = useEditor({
   content: structuredDocument(props.block),
-  editable: !props.busy && !props.readonly,
+  editable: canEdit(),
   extensions: editorExtensions,
   editorProps: {
     attributes: {
@@ -191,6 +240,23 @@ const editor = useEditor({
     },
     transformPastedHTML: (html) => plainTextHtml(html, props.block.type),
     handleKeyDown: (_view, event) => {
+      if (props.compactReading && props.editing) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          emit('save-intent', 'stay');
+          return true;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault();
+          emit('save-intent', 'finish');
+          return true;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          emit('cancel-request');
+          return true;
+        }
+      }
       if (props.block.type === 'HEADING' && event.key === 'Enter') {
         editor.value?.chain().focus().setHardBreak().run();
         return true;
@@ -205,11 +271,13 @@ const editor = useEditor({
     );
   },
   onFocus: () => {
+    if (props.compactReading) return;
     if (!props.busy && !props.readonly) {
       emit('editing-start', props.block);
     }
   },
   onBlur: () => {
+    if (props.compactReading) return;
     save();
     if (!props.readonly) {
       emit('editing-stop', props.block);
@@ -220,6 +288,7 @@ const editor = useEditor({
 const dirty = computed(() => (
   JSON.stringify(draftDocument.value) !== JSON.stringify(persistedDocument.value)
 ));
+watch(dirty, value => emit('dirty-change', props.block.id, value), { immediate: true });
 const blockTypeText = computed(() => blockTypeLabels[props.block.type]);
 const statusText = computed(() => {
   if (props.readonly) {
@@ -238,9 +307,12 @@ const statusClass = computed(() => (
 ));
 
 watch(
-  () => [props.busy, props.readonly] as const,
-  ([busy, readonly]) => {
-    editor.value?.setEditable(!busy && !readonly);
+  () => [props.busy, props.readonly, props.compactReading, props.editing] as const,
+  () => {
+    editor.value?.setEditable(canEdit());
+    if (props.compactReading && !props.editing && dirty.value) {
+      applyServerBlock(props.block);
+    }
   },
 );
 
@@ -281,6 +353,73 @@ function save() {
     document: draftDocument.value,
   });
 }
+
+function canEdit() {
+  return !props.busy && !props.readonly && (!props.compactReading || props.editing);
+}
+
+function handleBlockClick() {
+  if (!props.compactReading) {
+    emit('select', props.block);
+    return;
+  }
+  if (clickTimer !== null) window.clearTimeout(clickTimer);
+  clickTimer = window.setTimeout(() => {
+    clickTimer = null;
+    emit('select', props.block);
+  }, 180);
+}
+
+function handleBlockDoubleClick() {
+  if (!props.compactReading || props.readonly) return;
+  if (clickTimer !== null) {
+    window.clearTimeout(clickTimer);
+    clickTimer = null;
+  }
+  emit('edit-request', props.block);
+}
+
+function handleFocusIn() {
+  if (!props.compactReading) emit('select', props.block);
+}
+
+function handleCompactCommand(command: string) {
+  if (command === 'move-up') emit('move-up', props.block);
+  if (command === 'move-down') emit('move-down', props.block);
+  if (command === 'delete') emit('delete', props.block);
+}
+
+function getSavePayload() {
+  if (!dirty.value) return null;
+  return {
+    block: {
+      ...props.block,
+      version: baseVersion.value,
+      content: {
+        text: persistedText.value,
+        schemaVersion: props.block.content.schemaVersion,
+        document: persistedDocument.value,
+      },
+    },
+    content: {
+      text: draftText.value,
+      schemaVersion: 1,
+      document: draftDocument.value,
+    },
+  };
+}
+
+function discardDraft() {
+  applyServerBlock(props.block);
+}
+
+function focusEditor() {
+  editor.value?.commands.focus('end');
+}
+
+onBeforeUnmount(() => {
+  if (clickTimer !== null) window.clearTimeout(clickTimer);
+});
 
 function applyServerBlock(block: DocumentBlock) {
   persistedText.value = block.content.text;
@@ -471,4 +610,6 @@ const blockTypeLabels: Record<DocumentBlockType, string> = {
   CODE: '代码',
   TODO: '待办',
 };
+
+defineExpose({ getSavePayload, discardDraft, focusEditor });
 </script>

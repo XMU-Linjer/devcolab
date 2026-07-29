@@ -4,6 +4,7 @@ import type { CodeBindingQueryItem, GitRepositorySource } from '@/api/git';
 import {
   bindingDocumentChoices,
   buildBindingFixture,
+  classifyBinding,
   selectDefaultBinding,
 } from './linkedWorkbenchBindings';
 
@@ -100,6 +101,69 @@ describe('linkedWorkbenchBindings', () => {
     expect(choices.map(item => item.id)).toEqual(['document-a', 'document-b']);
     expect(choices.map(item => item.title)).toEqual(['文档 A', '文档 B']);
   });
+  it('filters identity, repository, revision, path and missing Block mismatches', () => {
+    const valid = {
+      ...binding('valid', 'document-a', 'src/A.java'),
+      anchorKind: 'RANGE' as const,
+      blockId: 'block-a',
+      startLine: 2,
+      endLine: 4,
+    };
+    const invalid = [
+      { ...valid, bindingId: '' },
+      { ...valid, bindingId: 'wrong-repository', repositoryId: 'other' },
+      { ...valid, bindingId: 'wrong-revision', revision: 'old-revision' },
+      { ...valid, bindingId: 'wrong-path', pathPattern: 'src/B.java' },
+      { ...valid, bindingId: 'missing-block', blockId: 'block-missing' },
+    ];
+    const fixture = buildBindingFixture({
+      ...input(source('src/A.java'), [valid, ...invalid]),
+      loadedDocumentId: 'document-a',
+      loadedBlockIds: new Set(['block-a']),
+    });
+
+    expect(fixture.links.map(item => item.bindingId)).toEqual(['valid']);
+    expect(fixture.links[0].bindingDisplayState).toBe('precise');
+  });
+
+  it('keeps unresolved Block targets loading until the document has loaded', () => {
+    const precise = {
+      ...binding('precise', 'document-a', 'src/A.java'),
+      anchorKind: 'RANGE' as const,
+      blockId: 'block-a',
+      startLine: 2,
+      endLine: 4,
+    };
+    const loadingInput = {
+      repositoryId: 'repository',
+      branch: 'main',
+      commitSha: 'revision',
+      source: source('src/A.java'),
+      bindings: [precise],
+    };
+
+    expect(classifyBinding(precise, loadingInput)).toBe('loading');
+    expect(buildBindingFixture(loadingInput).links).toEqual([]);
+  });
+
+  it('labels legacy file targets and symbols without ranges as weak', () => {
+    const legacy = { ...binding('legacy', 'document-a', 'src/A.java'), revision: null };
+    const symbol = {
+      ...binding('symbol', 'document-a', 'src/A.java'),
+      anchorKind: 'SYMBOL' as const,
+      symbolKey: 'JAVA:A.run',
+      blockId: 'block-a',
+    };
+    const fixture = buildBindingFixture({
+      ...input(source('src/A.java'), [legacy, symbol]),
+      loadedDocumentId: 'document-a',
+      loadedBlockIds: new Set(['block-a']),
+    });
+
+    expect(fixture.links).toHaveLength(2);
+    expect(fixture.links.every(item => item.bindingDisplayState === 'weak')).toBe(true);
+    expect(fixture.codeAnchors.every(item => item.startLine === null)).toBe(true);
+  });
 });
 
 function binding(
@@ -148,5 +212,7 @@ function input(
     commitSha: 'revision',
     source: sourceValue,
     bindings,
+    loadedDocumentId: bindings.find(item => item.blockId)?.documentId,
+    loadedBlockIds: new Set(bindings.flatMap(item => item.blockId ? [item.blockId] : [])),
   };
 }

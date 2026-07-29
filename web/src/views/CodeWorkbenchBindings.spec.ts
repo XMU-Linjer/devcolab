@@ -406,12 +406,26 @@ function mountView() {
           `,
         },
         LinkedWorkbenchShell: {
-          props: ['sourcePath'],
-          emits: ['select-block'],
+          props: ['sourcePath', 'document'],
+          emits: ['select-block', 'blocks-loaded'],
           methods: {
             focusAnchor: vi.fn(),
             focusBlock: vi.fn(),
             clearBlockFocus: vi.fn(),
+            confirmDocumentLeave: vi.fn().mockResolvedValue(true),
+          },
+          watch: {
+            document: {
+              immediate: true,
+              handler(value: { id?: string } | null) {
+                if (!value?.id) return;
+                this.$emit('blocks-loaded', [
+                  block('block-a', value.id),
+                  block('block-b', value.id),
+                  block('block-overview', value.id),
+                ]);
+              },
+            },
           },
           template: '<section><span data-test="source-path">{{ sourcePath }}</span><button data-test="select-block" @click="$emit(\'select-block\', \'block-a\')" /><slot name="header-actions" /></section>',
         },
@@ -507,6 +521,27 @@ function file(path: string) {
     sizeBytes: 10,
     language: 'Java',
     readable: true,
+  };
+}
+
+function block(id: string, documentId: string) {
+  return {
+    id,
+    documentId,
+    type: 'PARAGRAPH' as const,
+    content: {
+      text: id,
+      schemaVersion: 1,
+      document: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: id }] }],
+      },
+    },
+    sortOrder: id === 'block-a' ? 0 : 1,
+    version: 1,
+    createdBy: 'user-a',
+    createdAt: '2026-07-29T00:00:00Z',
+    updatedAt: '2026-07-29T00:00:00Z',
   };
 }
 

@@ -128,6 +128,11 @@ const activeAnchor = computed(() => props.anchors.find(anchor => anchor.id === a
 const activeAnchorLabel = computed(() => {
   const anchor = activeAnchor.value;
   if (!anchor) return '';
+  if (activeLink.value?.bindingDisplayState === 'weak') {
+    if (anchor.anchorKind === 'SYMBOL') return '符号关联（无行范围）';
+    if (activeLink.value.blockId) return '文件 → 段落';
+    return '文件 → 文档';
+  }
   if (hasLineRange(anchor)) {
     const symbol = anchor.anchorKind === 'SYMBOL' && anchor.symbolName
       ? `${anchor.symbolName} · `
@@ -388,9 +393,9 @@ defineExpose({ focusAnchor });
 .agent-dialog-content p { overflow-wrap: anywhere; margin: 0; color: #475467; }
 .code-lines { min-width: 0; overflow: auto; padding: 8px 0 24px; background: #fbfcfe; }
 .code-line { display: grid; width: 100%; min-width: max-content; grid-template-columns: 48px 22px minmax(0, 1fr); border: 0; border-left: 3px solid transparent; padding: 0 14px 0 0; background: transparent; color: #344054; text-align: left; cursor: default; }
-.code-line code { min-height: 22px; font: 12px/22px Consolas, 'Cascadia Code', monospace; white-space: pre; }
-.line-number { padding-right: 10px; color: #98a2b3; font: 11px/22px Consolas, monospace; text-align: right; user-select: none; }
-.line-marker { color: #528bff; font: 700 12px/22px sans-serif; text-align: center; }
+.code-line code { min-height: 23px; font: 13px/23px 'Cascadia Code', Consolas, monospace; white-space: pre; }
+.line-number { padding-right: 10px; color: #98a2b3; font: 11px/23px Consolas, monospace; text-align: right; user-select: none; }
+.line-marker { color: #528bff; font: 700 12px/23px sans-serif; text-align: center; }
 .code-line.is-linked { border-left-color: #b8ccff; background: #f4f7ff; cursor: pointer; }
 .code-line.is-linked:hover { background: #eaf1ff; }
 .code-line.is-active { border-left-color: #155eef; background: #dfeaff; box-shadow: inset 0 1px #c4d7ff, inset 0 -1px #c4d7ff; }

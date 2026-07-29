@@ -18,6 +18,7 @@
         :document-id="document.id"
         :active-block-id="activeBlockId"
         :readonly="readonly"
+        compact-reading
         :remote-block="remoteBlock"
         :editing-states="editingStates"
         :save-via-collaboration="saveViaCollaboration"
@@ -64,7 +65,10 @@ function focusBlock(blockId: string) {
 function clearBlockFocus() {
   blockEditorRef.value?.clearBlockFocus();
 }
-defineExpose({ focusBlock, clearBlockFocus });
+function confirmLeave() {
+  return blockEditorRef.value?.confirmLeave() ?? Promise.resolve(true);
+}
+defineExpose({ focusBlock, clearBlockFocus, confirmLeave });
 </script>
 
 <style scoped>
@@ -73,8 +77,66 @@ defineExpose({ focusBlock, clearBlockFocus });
 .document-pane-header > div { display: grid; min-width: 0; gap: 3px; }
 .document-pane-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .document-pane-header span { color: #667085; font-size: 11px; }
-.document-editor-scroll { min-width: 0; min-height: 0; overflow: auto; padding: 14px; }
+.document-editor-scroll { min-width: 0; min-height: 0; overflow: auto; padding: 20px 22px 32px; }
 .document-editor-scroll :deep(.block-editor-header) { align-items: flex-start; }
 .document-editor-scroll :deep(.section-hint) { display: none; }
-.document-editor-scroll :deep(.paragraph-block.is-linked-active) { border-color: #155eef; background: #f4f7ff; box-shadow: 0 0 0 3px #dfeaff; }
+.document-editor-scroll :deep(.block-editor) { border-top: 0; padding-top: 0; }
+.document-editor-scroll :deep(.block-list) { gap: 20px; }
+.document-editor-scroll :deep(.paragraph-block.is-compact-reading) {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 10px 12px 10px 15px;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.document-editor-scroll :deep(.paragraph-block.is-compact-reading:hover) {
+  border-color: #e5eaf1;
+  background: #fafbfc;
+}
+.document-editor-scroll :deep(.paragraph-block.is-compact-reading.is-linked-active) {
+  border-color: #b9ceff;
+  background: #f2f6ff;
+  box-shadow: none;
+}
+.document-editor-scroll :deep(.paragraph-block.is-compact-reading.is-linked-active::before) {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: #155eef;
+  content: '';
+}
+.document-editor-scroll :deep(.is-compact-reading .tiptap-editor-shell) {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.document-editor-scroll :deep(.is-compact-reading.is-editing .tiptap-editor-shell) {
+  border: 1px solid #9eb9f4;
+  background: #fff;
+  cursor: text;
+}
+.document-editor-scroll :deep(.is-compact-reading .tiptap-content) {
+  min-height: 0;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.78;
+}
+.document-editor-scroll :deep(.is-compact-reading.is-editing .tiptap-content) {
+  min-height: 96px;
+  padding: 12px 14px;
+}
+.document-editor-scroll :deep(.compact-edit-toolbar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.document-editor-scroll :deep(.compact-edit-state) { color: #667085; font-size: 12px; }
+.document-editor-scroll :deep(.compact-edit-actions) { display: flex; align-items: center; gap: 6px; }
 </style>

@@ -63,7 +63,10 @@ const statusProps = computed(() => ({ collaborationConnected: props.collaboratio
 function focusAnchor(anchorId: string) { contentRef.value?.focusAnchor(anchorId); }
 function focusBlock(blockId: string) { contentRef.value?.focusBlock(blockId); }
 function clearBlockFocus() { contentRef.value?.clearBlockFocus(); }
-defineExpose({ focusAnchor, focusBlock, clearBlockFocus });
+function confirmDocumentLeave() {
+  return contentRef.value?.confirmDocumentLeave() ?? Promise.resolve(true);
+}
+defineExpose({ focusAnchor, focusBlock, clearBlockFocus, confirmDocumentLeave });
 </script>
 
 <style scoped>

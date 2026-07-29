@@ -14,6 +14,8 @@ export type LinkActivationSource =
   | 'inspector'
   | 'system';
 
+export type BindingDisplayState = 'loading' | 'precise' | 'weak' | 'invalid';
+
 export interface CodeAnchor {
   id: string;
   bindingId?: string;
@@ -30,6 +32,7 @@ export interface CodeAnchor {
   endLine: number | null;
   contentHash?: string;
   status: 'VALID' | 'DRIFTED' | 'BROKEN';
+  bindingDisplayState?: Exclude<BindingDisplayState, 'loading' | 'invalid'>;
 }
 
 export interface CodeDocumentLink {
@@ -52,6 +55,7 @@ export interface CodeDocumentLink {
     | 'TESTS'
     | 'EVIDENCE'
     | 'CONFLICTS_WITH';
+  bindingDisplayState?: Exclude<BindingDisplayState, 'loading' | 'invalid'>;
 }
 
 export interface EngineeringIssue {
