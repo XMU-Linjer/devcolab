@@ -164,13 +164,68 @@
           </span>
         </section>
 
-        <el-skeleton v-if="detailLoading" :rows="12" animated />
+        <el-skeleton v-if="detailViewState === 'loading'" :rows="12" animated />
         <el-empty
-          v-else-if="!detail || !activeOperation"
-          description="评审请求不存在或没有 Operation"
+          v-else-if="detailViewState === 'not-found'"
+          description="评审请求不存在"
         />
+        <el-empty
+          v-else-if="detailViewState === 'failed'"
+          description="评审请求加载失败，请重试"
+        />
+        <section
+          v-else-if="detailViewState === 'empty-operations' && detail"
+          class="review-empty-operations"
+          data-test="review-empty-operations"
+        >
+          <header>
+            <div>
+              <span :class="`is-${detail.request.status.toLowerCase()}`">
+                {{ reviewStatusLabels[detail.request.status] }}
+              </span>
+              <h2>{{ detail.request.summary }}</h2>
+              <p>{{ detail.request.rationale || '该评审没有补充说明。' }}</p>
+            </div>
+            <dl>
+              <div><dt>仓库</dt><dd>{{ activeRepository?.name || '未指定仓库' }}</dd></div>
+              <div><dt>Revision</dt><dd>{{ shortCommit }}</dd></div>
+              <div><dt>提交人</dt><dd>{{ detail.request.submittedBy.displayName }}</dd></div>
+              <div><dt>创建时间</dt><dd>{{ formatDate(detail.request.createdAt) }}</dd></div>
+            </dl>
+          </header>
+          <el-alert
+            title="该评审当前没有可执行 Operation"
+            description="评审请求仍然存在，以下 Evidence 可继续用于核对上下文；当前不能执行批准应用。"
+            type="info"
+            show-icon
+            :closable="false"
+          />
+          <section class="review-request-evidence">
+            <div class="review-request-evidence-title">
+              <strong>Request Evidence</strong>
+              <span>{{ detail.requestEvidence.length }}</span>
+            </div>
+            <article
+              v-for="evidence in detail.requestEvidence"
+              :key="evidence.id"
+            >
+              <strong>{{ evidence.filePath }}</strong>
+              <small>
+                {{ evidence.repository.name }} · {{ evidence.commitHash.slice(0, 10) }}
+                <template v-if="evidence.startLine != null">
+                  · L{{ evidence.startLine }}–{{ evidence.endLine ?? evidence.startLine }}
+                </template>
+              </small>
+              <p>{{ evidence.description || evidence.excerptText || '该 Evidence 没有补充描述。' }}</p>
+            </article>
+            <el-empty
+              v-if="detail.requestEvidence.length === 0"
+              description="该评审当前没有 Request Evidence"
+            />
+          </section>
+        </section>
         <div
-          v-else
+          v-else-if="detailViewState === 'ready' && detail && activeOperation"
           class="review-four-area"
           :class="{ 'is-inspector-collapsed': !inspectorOpen }"
         >
@@ -249,6 +304,7 @@
 </template>
 
 <script setup lang="ts">
+import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -296,6 +352,12 @@ import {
 import { buildRepositoryTree } from '@/utils/repositoryTree';
 
 type ReviewRouteStatus = 'pending' | 'applied' | 'rejected' | 'stale';
+type ReviewDetailViewState =
+  | 'loading'
+  | 'not-found'
+  | 'failed'
+  | 'empty-operations'
+  | 'ready';
 
 const route = useRoute();
 const router = useRouter();
@@ -316,7 +378,9 @@ const selectedFilePath = ref('');
 const manualSource = ref<GitRepositorySource | null>(null);
 const repositoryLoading = ref(false);
 const loading = ref(false);
-const detailLoading = ref(false);
+const detailLoading = ref(Boolean(requestId.value));
+const detailNotFound = ref(false);
+const detailLoadFailed = ref(false);
 const documentLoading = ref(false);
 const decisionLoading = ref(false);
 const errorMessage = ref('');
@@ -375,6 +439,13 @@ const filteredItems = computed(() => {
   ].some(value => value.toLocaleLowerCase().includes(keyword)));
 });
 const statusHeading = computed(() => reviewStatusLabels[apiStatus.value]);
+const detailViewState = computed<ReviewDetailViewState>(() => {
+  if (detailLoading.value) return 'loading';
+  if (detailNotFound.value) return 'not-found';
+  if (detailLoadFailed.value || !detail.value) return 'failed';
+  if (detail.value.operations.length === 0) return 'empty-operations';
+  return 'ready';
+});
 const shortCommit = computed(() => (
   activeEvidence.value?.commitHash
   || activeRepository.value?.lastSyncedCommit
@@ -399,6 +470,8 @@ watch(
     if (!workspaceChanged && !statusChanged && !requestChanged) return;
 
     errorMessage.value = '';
+    detailNotFound.value = false;
+    detailLoadFailed.value = false;
     appliedTargetGeneration++;
     appliedNavigationTargets.value = [];
     appliedTargetsLoading.value = false;
@@ -407,6 +480,8 @@ watch(
       detailRequestGeneration++;
       operationDocumentGeneration++;
       detail.value = null;
+      detailNotFound.value = false;
+      detailLoadFailed.value = false;
       documentBlocks.value = [];
       files.value = [];
       selectedRepositoryId.value = '';
@@ -421,6 +496,8 @@ watch(
       if (requestChanged) void loadDetail();
     } else {
       detail.value = null;
+      detailNotFound.value = false;
+      detailLoadFailed.value = false;
       void loadListAndCounts();
     }
   },
@@ -505,6 +582,8 @@ async function loadDetail() {
   const currentGeneration = ++detailRequestGeneration;
   
   detailLoading.value = true;
+  detailNotFound.value = false;
+  detailLoadFailed.value = false;
   errorMessage.value = '';
   try {
     const result = await getDocumentChange(workspaceId.value, requestId.value);
@@ -515,7 +594,12 @@ async function loadDetail() {
   } catch (error) {
     if (currentGeneration !== detailRequestGeneration) return;
     detail.value = null;
-    errorMessage.value = readableError(error, '评审请求详情加载失败');
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      detailNotFound.value = true;
+    } else {
+      detailLoadFailed.value = true;
+      errorMessage.value = readableError(error, '评审请求详情加载失败');
+    }
   } finally {
     if (currentGeneration === detailRequestGeneration) {
       detailLoading.value = false;
@@ -1087,6 +1171,89 @@ function formatDate(value: string) {
   text-align: right;
 }
 
+.review-empty-operations {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding: 20px;
+}
+
+.review-empty-operations > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, .7fr);
+  gap: 24px;
+}
+
+.review-empty-operations h2 {
+  margin: 8px 0 6px;
+  color: #101828;
+  font-size: 22px;
+}
+
+.review-empty-operations p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.65;
+}
+
+.review-empty-operations dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin: 0;
+}
+
+.review-empty-operations dl div {
+  min-width: 0;
+}
+
+.review-empty-operations dt {
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.review-empty-operations dd {
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: #344054;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-request-evidence {
+  display: grid;
+  gap: 10px;
+}
+
+.review-request-evidence-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #344054;
+}
+
+.review-request-evidence-title span {
+  color: #667085;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-request-evidence article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  padding: 13px 15px;
+  background: #fff;
+}
+
+.review-request-evidence article strong {
+  color: #101828;
+}
+
+.review-request-evidence article small {
+  color: #667085;
+}
+
 .review-four-area {
   display: grid;
   min-width: 0;
@@ -1113,6 +1280,10 @@ function formatDate(value: string) {
 
   .review-list-tools {
     width: 100%;
+  }
+
+  .review-empty-operations > header {
+    grid-template-columns: 1fr;
   }
 
   .review-four-area {

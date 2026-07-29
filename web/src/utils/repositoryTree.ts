@@ -6,6 +6,19 @@ const repositoryNodeCollator = new Intl.Collator(undefined, {
   sensitivity: 'base',
 });
 
+export function normalizeRepositoryPath(path: string): string {
+  return path
+    .replaceAll('\\', '/')
+    .split('/')
+    .filter(Boolean)
+    .join('/');
+}
+
+export function repositoryFileAncestorKeys(path: string): string[] {
+  const parts = normalizeRepositoryPath(path).split('/').filter(Boolean);
+  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join('/'));
+}
+
 export function isDirectoryNode(node: LinkedFileTreeNode): boolean {
   return node.kind === 'directory';
 }
@@ -56,7 +69,7 @@ export function buildRepositoryTree(
 
   for (const file of files) {
     let level = root;
-    const parts = file.path.split('/').filter(Boolean);
+    const parts = normalizeRepositoryPath(file.path).split('/').filter(Boolean);
 
     parts.forEach((part, index) => {
       const key = parts.slice(0, index + 1).join('/');

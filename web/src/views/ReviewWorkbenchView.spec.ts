@@ -93,11 +93,129 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     return wrapper;
   };
 
-  const mockRequestDetail = (id: string, ops: any[] = []) => ({
-    request: { id, status: 'PENDING', summary: 'Test Request' },
+  const mockRequestDetail = (id: string, ops: any[] = [], requestEvidence: any[] = []) => ({
+    request: {
+      id,
+      workspaceId: 'w1',
+      status: 'PENDING',
+      summary: 'Test Request',
+      rationale: 'Review rationale',
+      sourceType: 'MCP',
+      submittedBy: { id: 'user-1', displayName: 'Reviewer' },
+      createdAt: '2026-07-29T08:00:00Z',
+      reviewedBy: null,
+      reviewedAt: null,
+      rejectionReason: null,
+    },
     operations: ops,
     bindingProposals: [],
-    requestEvidence: [],
+    requestEvidence,
+    replayed: false,
+  });
+
+  it('distinguishes a missing request from an existing request without operations', async () => {
+    vi.mocked(documentChangeApi.getDocumentChange).mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 404 },
+    });
+
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/missing-request');
+
+    expect(wrapper.text()).toContain('评审请求不存在');
+    expect(wrapper.text()).not.toContain('没有可执行 Operation');
+  });
+
+  it('shows request metadata and Evidence when an existing request has no operations', async () => {
+    const requestEvidence = [{
+      id: 'evidence-1',
+      repository: { id: 'repository-1', name: 'Repository' },
+      filePath: 'agent-service/app/context/budget.py',
+      commitHash: 'revision-1234567890',
+      startLine: 10,
+      endLine: 20,
+      description: '预算上下文证据',
+      excerptText: 'context budget',
+    }];
+    vi.mocked(gitApi.listGitRepositories).mockResolvedValue([{
+      id: 'repository-1',
+      name: 'Repository',
+      defaultBranch: 'main',
+      lastSyncedCommit: 'revision-1234567890',
+    }] as any);
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('request-empty', [], requestEvidence) as any,
+    );
+
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/request-empty');
+    const emptyState = wrapper.get('[data-test="review-empty-operations"]');
+
+    expect(emptyState.text()).toContain('Test Request');
+    expect(emptyState.text()).toContain('该评审当前没有可执行 Operation');
+    expect(emptyState.text()).toContain('agent-service/app/context/budget.py');
+    expect(emptyState.text()).toContain('预算上下文证据');
+    expect(wrapper.text()).not.toContain('评审请求不存在');
+
+    await (wrapper.vm as any).loadDetail();
+    await flushPromises();
+    expect((wrapper.vm as any).detail.request.id).toBe('request-empty');
+    expect((wrapper.vm as any).detail.request.status).toBe('PENDING');
+    expect(documentChangeApi.applyDocumentChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the normal approval surface for a request with operations', async () => {
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('request-ready', [{
+        operationId: 'operation-1',
+        clientOperationId: 'client-1',
+        sequenceNumber: 1,
+        operationType: 'CREATE_DOCUMENT',
+        target: { documentId: null },
+        proposal: {},
+        conflict: { conflicted: false },
+        evidence: [],
+      }]) as any,
+    );
+
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/request-ready');
+
+    expect(wrapper.find('.review-four-area').exists()).toBe(true);
+    expect(wrapper.find('[data-test="review-empty-operations"]').exists()).toBe(false);
+  });
+
+  it('passes the list item id unchanged through the route to the detail API', async () => {
+    vi.mocked(documentChangeApi.listDocumentChanges).mockResolvedValue({
+      items: [{
+        id: 'request-from-list',
+        summary: 'List request',
+        status: 'PENDING',
+        sourceType: 'MCP',
+        submittedByDisplayName: 'Reviewer',
+        createdAt: '2026-07-29T08:00:00Z',
+        reviewedAt: null,
+        operationCount: 0,
+        bindingProposalCount: 0,
+        evidenceCount: 3,
+        affectedDocumentTitles: [],
+      }],
+      totalElements: 1,
+      page: 0,
+      size: 20,
+      totalPages: 1,
+    });
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('request-from-list') as any,
+    );
+    const wrapper = await mountView('/workspaces/w1/reviews/pending');
+
+    await wrapper.get('.review-request-item').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.params.requestId).toBe('request-from-list');
+    expect(documentChangeApi.getDocumentChange).toHaveBeenCalledWith(
+      'w1',
+      'request-from-list',
+    );
+    expect((wrapper.vm as any).detail.request.status).toBe('PENDING');
   });
 
   it('1. 详情请求乱序: B arrives before A, page should show B', async () => {

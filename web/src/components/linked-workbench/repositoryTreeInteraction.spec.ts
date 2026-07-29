@@ -24,6 +24,11 @@ const sourceFiles = [
   file('src/agents/rule2.py'),
   file('src/agents/rule10.py'),
 ];
+const restorationFiles = [
+  file('.mvn/wrapper/maven-wrapper.properties'),
+  file('agent-service/app/context/budget.py'),
+  file('web/src/main.ts'),
+];
 
 const baseProps = {
   repositories: [],
@@ -152,5 +157,106 @@ describe('repository tree interaction', () => {
     }
     expect(repositoryContextSource).toMatch(/\.linked-repository-tree \{[^}]*overflow: hidden/);
     expect(repositoryContextSource).toMatch(/\.linked-tree-node \{[^}]*width: auto[^}]*flex: 1 1 auto[^}]*overflow: hidden/);
+  });
+
+  it('restores budget.py ancestors without expanding the first .mvn directory', async () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        filesCount: restorationFiles.length,
+        fileTree: buildRepositoryTree(restorationFiles),
+        selectedFilePath: 'agent-service/app/context/budget.py',
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+    await flushPromises();
+    await nextTick();
+
+    expect(wrapper.find('.linked-tree-node[title=".mvn"]').exists()).toBe(true);
+    expect(wrapper.find(
+      '.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title=".mvn"]',
+    ).exists()).toBe(false);
+    for (const key of [
+      'agent-service',
+      'agent-service/app',
+      'agent-service/app/context',
+    ]) {
+      expect(wrapper.find(
+        `.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title="${key}"]`,
+      ).exists()).toBe(true);
+    }
+    expect(wrapper.get('.el-tree-node.is-current').text()).toContain('budget.py');
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it('does not reopen an unrelated .mvn directory when the user clicks another directory', async () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        filesCount: restorationFiles.length,
+        fileTree: buildRepositoryTree(restorationFiles),
+        selectedFilePath: 'agent-service/app/context/budget.py',
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+    await flushPromises();
+
+    const webRow = wrapper.get('.linked-tree-node[title="web"]');
+    await webRow.element.parentElement?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(wrapper.find(
+      '.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title=".mvn"]',
+    ).exists()).toBe(false);
+    expect(wrapper.emitted('select-file')).toBeUndefined();
+  });
+
+  it('removes obsolete automatic ancestors when the selected file changes', async () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        filesCount: restorationFiles.length,
+        fileTree: buildRepositoryTree(restorationFiles),
+        selectedFilePath: '.mvn/wrapper/maven-wrapper.properties',
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+    await flushPromises();
+    expect(wrapper.find(
+      '.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title=".mvn"]',
+    ).exists()).toBe(true);
+
+    await wrapper.setProps({ selectedFilePath: 'agent-service/app/context/budget.py' });
+    await flushPromises();
+    await nextTick();
+
+    expect(wrapper.find(
+      '.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title=".mvn"]',
+    ).exists()).toBe(false);
+    expect(wrapper.get('.el-tree-node.is-current').text()).toContain('budget.py');
+  });
+
+  it('restores and locates the selected file after the loading skeleton is removed', async () => {
+    const wrapper = mount(LinkedRepositoryContext, {
+      props: {
+        ...baseProps,
+        filesCount: restorationFiles.length,
+        fileTree: buildRepositoryTree(restorationFiles),
+        selectedFilePath: 'agent-service/app/context/budget.py',
+        loading: true,
+      },
+      global: { stubs: { ElSelect: true, ElOption: true, ElSkeleton: true } },
+    });
+    expect(wrapper.find('.el-tree-node').exists()).toBe(false);
+
+    await wrapper.setProps({ loading: false });
+    await flushPromises();
+    await nextTick();
+
+    expect(wrapper.get('.el-tree-node.is-current').text()).toContain('budget.py');
+    expect(wrapper.find(
+      '.el-tree-node.is-expanded > .el-tree-node__content .linked-tree-node[title=".mvn"]',
+    ).exists()).toBe(false);
+    expect(scrollIntoView).toHaveBeenCalled();
   });
 });

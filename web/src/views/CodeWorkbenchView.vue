@@ -242,7 +242,10 @@ import type { LinkedDocumentChoice, LinkActivationSource, WorkbenchMode } from '
 import { readableError } from '@/utils/error';
 import { bindingDocumentChoices, buildBindingFixture } from '@/utils/linkedWorkbenchBindings';
 import { focusPlan, linkIdForBlock } from '@/utils/linkedWorkbenchInteraction';
-import { buildRepositoryTree } from '@/utils/repositoryTree';
+import {
+  buildRepositoryTree,
+  normalizeRepositoryPath,
+} from '@/utils/repositoryTree';
 
 const route = useRoute();
 const router = useRouter();
@@ -259,6 +262,7 @@ const selectedFileBindings = ref<CodeBindingQueryItem[]>([]);
 const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
+const isRestoringNavigation = ref(false);
 const syncing = ref(false);
 const projectScanStarting = ref(false);
 const projectScanJob = ref<AgentJob | null>(null);
@@ -394,8 +398,13 @@ onBeforeUnmount(() => {
 });
 
 async function initializeWorkbench() {
-  await loadWorkbench();
-  restoreProjectScan();
+  isRestoringNavigation.value = true;
+  try {
+    await loadWorkbench();
+    restoreProjectScan();
+  } finally {
+    isRestoringNavigation.value = false;
+  }
 }
 
 async function loadWorkbench() {
@@ -415,13 +424,10 @@ async function loadWorkbench() {
     state.selectedRepositoryId.value = repositories.value.some(item => item.id === queryRepositoryId)
       ? queryRepositoryId
       : lastRepository?.id || repositories.value[0]?.id || '';
-    const restored = linkedNavigation.restoreCurrent();
-    const queryFilePath = typeof route.query.filePath === 'string' ? route.query.filePath : '';
-    const queryDocumentId = typeof route.query.documentId === 'string' ? route.query.documentId : '';
-    state.selectFile(restored?.filePath || queryFilePath);
-    state.selectDocument(restored?.documentId
-      || (documentChoices.value.some(item => item.id === queryDocumentId) ? queryDocumentId : ''));
-    await loadRepositoryDetails('restore');
+    const navigationIntent = resolveNavigationIntent();
+    state.selectFile(navigationIntent?.filePath || '');
+    state.selectDocument(navigationIntent?.documentId || '');
+    await loadRepositoryDetails('restore', navigationIntent);
   } catch (error) {
     errorMessage.value = readableError(error, '关联工作台加载失败');
   } finally {
@@ -429,7 +435,48 @@ async function loadWorkbench() {
   }
 }
 
-async function loadRepositoryDetails(historyMode: 'navigate' | 'restore' = 'restore') {
+function resolveNavigationIntent(): LinkedWorkbenchSnapshot | null {
+  const scope = linkedNavigationScope.value;
+  if (!scope) return null;
+  const queryFilePath = typeof route.query.filePath === 'string'
+    ? normalizeRepositoryPath(route.query.filePath)
+    : '';
+  const queryDocumentId = typeof route.query.documentId === 'string'
+    ? route.query.documentId
+    : '';
+  if (queryFilePath) {
+    return createLinkedWorkbenchSnapshot(
+      scope,
+      queryFilePath,
+      documentChoices.value.some(item => item.id === queryDocumentId) ? queryDocumentId : null,
+    );
+  }
+  return linkedNavigation.restoreCurrent(scope);
+}
+
+function findRepositoryFile(path: string | null | undefined) {
+  if (!path) return null;
+  const normalizedTarget = normalizeRepositoryPath(path);
+  return files.value.find(file =>
+    normalizeRepositoryPath(file.path) === normalizedTarget && file.readable) ?? null;
+}
+
+function defaultRepositoryFile() {
+  const readableFiles = files.value.filter(file => file.readable);
+  return readableFiles.find(file =>
+    normalizeRepositoryPath(file.path).toLocaleLowerCase() === 'readme.md')
+    ?? readableFiles.find(file => {
+      const firstSegment = normalizeRepositoryPath(file.path).split('/')[0];
+      return firstSegment && !firstSegment.startsWith('.');
+    })
+    ?? readableFiles[0]
+    ?? files.value[0];
+}
+
+async function loadRepositoryDetails(
+  historyMode: 'navigate' | 'restore' = 'restore',
+  navigationTarget: LinkedWorkbenchSnapshot | null = null,
+) {
   if (!selectedRepositoryId.value) {
     files.value = [];
     gitChanges.value = [];
@@ -443,9 +490,25 @@ async function loadRepositoryDetails(historyMode: 'navigate' | 'restore' = 'rest
     listGitRepositoryFiles(workspaceId.value, selectedRepositoryId.value),
     listGitChanges(workspaceId.value, selectedRepositoryId.value).catch(() => []),
   ]);
-  const current = files.value.find(file => file.path === selectedFilePath.value && file.readable)
-    ?? files.value.find(file => file.readable) ?? files.value[0];
+  const requestedPath = navigationTarget?.filePath || selectedFilePath.value;
+  const requestedFile = findRepositoryFile(requestedPath);
+  const requestedFileInvalid = Boolean(requestedPath && !requestedFile);
+  if (requestedFileInvalid) {
+    state.selectFile('');
+    state.selectDocument('');
+    if (linkedNavigationScope.value) {
+      linkedNavigation.updateCurrent(createLinkedWorkbenchSnapshot(
+        linkedNavigationScope.value,
+        null,
+        null,
+      ));
+    }
+  }
+  const current = requestedFile ?? defaultRepositoryFile();
   if (current) {
+    if (navigationTarget?.documentId && requestedFile) {
+      state.selectDocument(navigationTarget.documentId);
+    }
     await openSource(current, historyMode);
   } else if (linkedNavigationScope.value) {
     state.selectFile('');
@@ -480,6 +543,7 @@ async function loadDocumentBundle() {
 }
 
 async function handleRepositoryChange(repositoryId: string) {
+  isRestoringNavigation.value = false;
   sourceRequestSequence += 1;
   state.selectedRepositoryId.value = repositoryId;
   state.selectFile('');
@@ -493,6 +557,7 @@ async function handleRepositoryChange(repositoryId: string) {
 }
 
 async function openSourceByPath(path: string) {
+  isRestoringNavigation.value = false;
   const file = files.value.find(item => item.path === path);
   if (file) await openSource(file, 'navigate');
 }
@@ -568,6 +633,7 @@ async function openSource(
 }
 
 async function handleDocumentChange(documentId: string) {
+  isRestoringNavigation.value = false;
   if (documentId === selectedDocumentId.value) return;
   state.selectDocument(documentId);
   documentBlocks.value = [];
@@ -606,15 +672,28 @@ async function restoreReadingTarget(snapshot: LinkedWorkbenchSnapshot) {
   const repository = repositories.value.find(item =>
     item.id === snapshot.repositoryId && item.lastSyncedCommit === snapshot.revision);
   if (!repository) return;
-  if (selectedRepositoryId.value !== repository.id) {
-    state.selectedRepositoryId.value = repository.id;
-    await loadRepositoryDetails('restore');
+  isRestoringNavigation.value = true;
+  try {
+    if (selectedRepositoryId.value !== repository.id) {
+      sourceRequestSequence += 1;
+      state.selectedRepositoryId.value = repository.id;
+      state.selectFile('');
+      state.selectDocument(snapshot.documentId || '');
+      selectedSource.value = null;
+      selectedFileBindings.value = [];
+      await loadRepositoryDetails('restore', snapshot);
+      return;
+    }
+    state.selectDocument(snapshot.documentId || '');
+    const file = findRepositoryFile(snapshot.filePath);
+    if (file) {
+      await openSource(file, 'restore');
+      return;
+    }
+    await loadRepositoryDetails('restore', snapshot);
+  } finally {
+    isRestoringNavigation.value = false;
   }
-  state.selectDocument(snapshot.documentId || '');
-  const file = files.value.find(item => item.path === snapshot.filePath && item.readable)
-    ?? files.value.find(item => item.readable)
-    ?? files.value[0];
-  if (file) await openSource(file, 'restore');
 }
 
 async function handleHistoryBack() {

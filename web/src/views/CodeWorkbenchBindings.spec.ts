@@ -12,13 +12,15 @@ import CodeWorkbenchView from './CodeWorkbenchView.vue';
 const mocks = vi.hoisted(() => ({
   getSource: vi.fn(),
   queryBindings: vi.fn(),
+  listFiles: vi.fn(),
   replace: vi.fn(),
+  routeQuery: { repositoryId: 'repository-1' } as Record<string, string>,
 }));
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
     params: { workspaceId: 'workspace-1' },
-    query: { repositoryId: 'repository-1' },
+    query: mocks.routeQuery,
   }),
   useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
 }));
@@ -46,11 +48,7 @@ vi.mock('@/api/git', () => ({
     lastSyncedCommit: 'revision-1',
     syncStatus: 'READY',
   }]),
-  listGitRepositoryFiles: vi.fn().mockResolvedValue([
-    file('src/A.java'),
-    file('src/B.java'),
-    file('src/C.java'),
-  ]),
+  listGitRepositoryFiles: mocks.listFiles,
   listGitChanges: vi.fn().mockResolvedValue([]),
   getGitRepositorySource: mocks.getSource,
   queryCodeBindings: mocks.queryBindings,
@@ -93,6 +91,13 @@ describe('CodeWorkbenchView formal bindings', () => {
     vi.clearAllMocks();
     sessionStorage.clear();
     resetLinkedWorkbenchNavigationMemoryForTests();
+    Object.keys(mocks.routeQuery).forEach(key => delete mocks.routeQuery[key]);
+    mocks.routeQuery.repositoryId = 'repository-1';
+    mocks.listFiles.mockResolvedValue([
+      file('src/A.java'),
+      file('src/B.java'),
+      file('src/C.java'),
+    ]);
     mocks.getSource.mockImplementation(
       (_workspaceId: string, _repositoryId: string, path: string) =>
         Promise.resolve(source(path)),
@@ -223,6 +228,95 @@ describe('CodeWorkbenchView formal bindings', () => {
     });
     wrapper.unmount();
   });
+
+  it('restores the saved current before considering the repository default file', async () => {
+    mocks.listFiles.mockResolvedValue([
+      file('.mvn/wrapper/maven-wrapper.properties'),
+      file('agent-service/app/context/budget.py'),
+    ]);
+    const navigation = testNavigation();
+    navigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      scope,
+      'agent-service/app/context/budget.py',
+      'document-a',
+    ));
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(snapshot(wrapper).sourcePath).toBe('agent-service/app/context/budget.py');
+    expect(mocks.getSource).toHaveBeenCalledTimes(1);
+    expect(mocks.getSource).not.toHaveBeenCalledWith(
+      'workspace-1',
+      'repository-1',
+      '.mvn/wrapper/maven-wrapper.properties',
+    );
+    wrapper.unmount();
+  });
+
+  it('gives an explicit result target priority over an older saved current', async () => {
+    const navigation = testNavigation();
+    navigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      scope,
+      'src/A.java',
+      'document-a',
+    ));
+    mocks.routeQuery.filePath = 'src/C.java';
+    mocks.routeQuery.documentId = 'document-c';
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(snapshot(wrapper)).toEqual({
+      sourcePath: 'src/C.java',
+      documentIds: 'document-c',
+    });
+    expect(mocks.getSource).not.toHaveBeenCalledWith(
+      'workspace-1',
+      'repository-1',
+      'src/A.java',
+    );
+    wrapper.unmount();
+  });
+
+  it('restores current without adding history or clearing the existing forward stack', async () => {
+    const navigation = testNavigation();
+    const snapshotA = createLinkedWorkbenchSnapshot(scope, 'src/A.java', 'document-a');
+    const snapshotC = createLinkedWorkbenchSnapshot(scope, 'src/C.java', 'document-c');
+    navigation.updateCurrent(snapshotA);
+    navigation.navigateTo(snapshotC);
+    navigation.goBack();
+    const before = structuredClone(navigation.state.value);
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(navigation.state.value).toEqual(before);
+    expect(navigation.canGoForward.value).toBe(true);
+    expect(mocks.getSource).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('repairs an invalid saved file without selecting hidden infrastructure first', async () => {
+    mocks.listFiles.mockResolvedValue([
+      file('.mvn/wrapper/maven-wrapper.properties'),
+      file('agent-service/app/context/budget.py'),
+    ]);
+    const navigation = testNavigation();
+    navigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      scope,
+      'deleted/path.py',
+      'document-a',
+    ));
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(snapshot(wrapper).sourcePath).toBe('agent-service/app/context/budget.py');
+    expect(navigation.restoreCurrent()?.filePath).toBe('agent-service/app/context/budget.py');
+    expect(mocks.getSource).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
 });
 
 function mountView() {
@@ -284,7 +378,8 @@ function snapshot(wrapper: ReturnType<typeof mountView>) {
 function bindingResult(path: string) {
   const documentId = path === 'src/A.java'
     ? 'document-a'
-    : path === 'src/C.java' ? 'document-c' : null;
+    : path === 'src/C.java' ? 'document-c'
+      : path === 'agent-service/app/context/budget.py' ? 'document-a' : null;
   return {
     workspaceId: 'workspace-1',
     repositoryId: 'repository-1',

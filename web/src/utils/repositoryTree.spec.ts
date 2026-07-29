@@ -8,6 +8,8 @@ import {
   getRepositoryNodeName,
   isDirectoryNode,
   isFileNode,
+  normalizeRepositoryPath,
+  repositoryFileAncestorKeys,
   sortRepositoryTree,
 } from './repositoryTree';
 
@@ -119,5 +121,28 @@ describe('repository tree sorting', () => {
       'src/agents/rule2.py',
       'src/agents/rule10.py',
     ]);
+  });
+
+  it('normalizes Windows and POSIX paths before calculating file ancestors', () => {
+    expect(repositoryFileAncestorKeys('/agent-service//app/context/budget.py')).toEqual([
+      'agent-service',
+      'agent-service/app',
+      'agent-service/app/context',
+    ]);
+    expect(repositoryFileAncestorKeys('\\agent-service\\app\\context\\budget.py')).toEqual([
+      'agent-service',
+      'agent-service/app',
+      'agent-service/app/context',
+    ]);
+    expect(normalizeRepositoryPath('//src\\\\main///App.java')).toBe('src/main/App.java');
+  });
+
+  it('uses normalized node keys while preserving the API file path', () => {
+    const windowsFile = file('agent-service\\app\\context\\budget.py');
+    const result = buildRepositoryTree([windowsFile]);
+    const budget = result[0].children?.[0].children?.[0].children?.[0];
+
+    expect(budget?.key).toBe('agent-service/app/context/budget.py');
+    expect(budget?.file?.path).toBe('agent-service\\app\\context\\budget.py');
   });
 });

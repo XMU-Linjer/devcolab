@@ -27,7 +27,7 @@
         node-key="key"
         :props="{ label: 'label', children: 'children' }"
         :highlight-current="true"
-        :current-node-key="selectedFilePath"
+        :current-node-key="currentNodeKey"
         @node-click="selectFile"
         @node-expand="rememberExpandedNode"
         @node-collapse="forgetExpandedNode"
@@ -84,7 +84,7 @@
 <script setup lang="ts">
 import { Document, Folder, FolderOpened } from '@element-plus/icons-vue';
 import { ElTree } from 'element-plus';
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import type { GitRepository } from '@/api/git';
 import type {
@@ -92,6 +92,10 @@ import type {
   LinkedDocumentChoice,
   LinkedFileTreeNode,
 } from '@/types/linkedWorkbench';
+import {
+  normalizeRepositoryPath,
+  repositoryFileAncestorKeys,
+} from '@/utils/repositoryTree';
 
 const props = withDefaults(defineProps<{
   repositories: GitRepository[];
@@ -125,14 +129,20 @@ const emit = defineEmits<{
 }>();
 
 const repositoryTreeRef = ref<InstanceType<typeof ElTree> | null>(null);
-const expandedNodeKeys = new Set<string>();
+const manuallyExpandedNodeKeys = new Set<string>();
+let automaticAncestorKeys = new Set<string>();
+let applyingAutomaticExpansion = false;
+const currentNodeKey = computed(() => normalizeRepositoryPath(props.selectedFilePath));
 
 function rememberExpandedNode(node: LinkedFileTreeNode) {
-  if (node.kind === 'directory') expandedNodeKeys.add(node.key);
+  if (!applyingAutomaticExpansion && node.kind === 'directory') {
+    manuallyExpandedNodeKeys.add(node.key);
+  }
 }
 
 function forgetExpandedNode(node: LinkedFileTreeNode) {
-  expandedNodeKeys.delete(node.key);
+  manuallyExpandedNodeKeys.delete(node.key);
+  automaticAncestorKeys.delete(node.key);
 }
 
 async function restoreSelectedFilePosition() {
@@ -140,23 +150,35 @@ async function restoreSelectedFilePosition() {
   const tree = repositoryTreeRef.value;
   if (!tree) return;
 
-  for (const key of expandedNodeKeys) {
-    const expandedNode = tree.getNode(key);
-    if (expandedNode) expandedNode.expanded = true;
+  const nextAutomaticAncestors = new Set(
+    repositoryFileAncestorKeys(props.selectedFilePath),
+  );
+  applyingAutomaticExpansion = true;
+  try {
+    for (const key of automaticAncestorKeys) {
+      if (nextAutomaticAncestors.has(key) || manuallyExpandedNodeKeys.has(key)) continue;
+      const previousAncestor = tree.getNode(key);
+      if (previousAncestor) previousAncestor.expanded = false;
+    }
+    for (const key of manuallyExpandedNodeKeys) {
+      const manualNode = tree.getNode(key);
+      if (manualNode) manualNode.expanded = true;
+    }
+    for (const key of nextAutomaticAncestors) {
+      const ancestorNode = tree.getNode(key);
+      if (ancestorNode) ancestorNode.expanded = true;
+    }
+    automaticAncestorKeys = nextAutomaticAncestors;
+  } finally {
+    applyingAutomaticExpansion = false;
   }
 
-  if (!props.selectedFilePath) return;
-  const selectedNode = tree.getNode(props.selectedFilePath);
+  if (!currentNodeKey.value) return;
+  const selectedNode = tree.getNode(currentNodeKey.value);
   if (!selectedNode) return;
 
-  let parent = selectedNode.parent;
-  while (parent && parent.level > 0) {
-    parent.expanded = true;
-    expandedNodeKeys.add(String(parent.key));
-    parent = parent.parent;
-  }
-
-  tree.setCurrentKey(props.selectedFilePath);
+  tree.setCurrentKey(currentNodeKey.value);
+  await nextTick();
   await nextTick();
   const currentElement = (tree.$el as HTMLElement).querySelector<HTMLElement>(
     '.el-tree-node.is-current > .el-tree-node__content',
@@ -168,19 +190,29 @@ async function restoreSelectedFilePosition() {
       behavior: 'auto',
     });
   }
+  const scrollContainer = currentElement?.closest<HTMLElement>('.linked-context-scroller');
+  if (scrollContainer && currentElement) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const currentRect = currentElement.getBoundingClientRect();
+    if (currentRect.top < containerRect.top || currentRect.bottom > containerRect.bottom) {
+      scrollContainer.scrollTop += currentRect.top
+        - containerRect.top
+        - Math.max(0, (scrollContainer.clientHeight - currentRect.height) / 2);
+    }
+  }
 }
 
 function selectFile(node: LinkedFileTreeNode) {
   if (node.kind === 'file' && node.file) {
     emit('select-file', node.file.path);
-    return;
   }
-  void restoreSelectedFilePosition();
 }
 
 watch(
-  [() => props.selectedFilePath, () => props.fileTree],
-  () => { void restoreSelectedFilePosition(); },
+  [() => props.selectedFilePath, () => props.fileTree, () => props.loading],
+  () => {
+    if (!props.loading) void restoreSelectedFilePosition();
+  },
   { immediate: true, flush: 'post' },
 );
 </script>
