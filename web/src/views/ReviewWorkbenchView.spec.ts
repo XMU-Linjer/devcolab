@@ -2,12 +2,18 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { createRouter, createMemoryHistory, type Router } from 'vue-router';
 import ElementPlus from 'element-plus';
+import { ref } from 'vue';
 
 import ReviewWorkbenchView from './ReviewWorkbenchView.vue';
 import * as documentChangeApi from '@/api/documentChange';
 import * as blockApi from '@/api/block';
 import * as gitApi from '@/api/git';
 import * as workspaceApi from '@/api/workspace';
+import {
+  createLinkedWorkbenchSnapshot,
+  resetLinkedWorkbenchNavigationMemoryForTests,
+  useLinkedWorkbenchNavigation,
+} from '@/composables/useLinkedWorkbenchNavigation';
 
 // Mock dependencies
 vi.mock('@/api/documentChange');
@@ -35,6 +41,8 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    sessionStorage.clear();
+    resetLinkedWorkbenchNavigationMemoryForTests();
     
     // Default successful mocks
     vi.mocked(workspaceApi.getWorkspace).mockResolvedValue({ id: 'w1', name: 'Workspace 1' } as any);
@@ -49,7 +57,12 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
           path: '/workspaces/:workspaceId/reviews/:status/:requestId?',
           name: 'workspace-review-detail',
           component: ReviewWorkbenchView,
-        }
+        },
+        {
+          path: '/workspaces/:workspaceId/code',
+          name: 'workspace-code',
+          component: { template: '<div>Code</div>' },
+        },
       ]
     });
     
@@ -83,7 +96,8 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
   const mockRequestDetail = (id: string, ops: any[] = []) => ({
     request: { id, status: 'PENDING', summary: 'Test Request' },
     operations: ops,
-    requestEvidence: []
+    bindingProposals: [],
+    requestEvidence: [],
   });
 
   it('1. 详情请求乱序: B arrives before A, page should show B', async () => {
@@ -244,5 +258,108 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     await flushPromises();
 
     expect((wrapper.vm as any).documentBlocks[0].id).toBe('block3');
+  });
+
+  it('keeps A during apply and only navigates to B after explicit view-result action', async () => {
+    const scope = {
+      workspaceId: 'w1',
+      repositoryId: 'repository-1',
+      revision: 'revision-1',
+    };
+    const navigation = useLinkedWorkbenchNavigation(ref(scope));
+    const snapshotA = createLinkedWorkbenchSnapshot(scope, 'src/A.java', 'document-a');
+    navigation.updateCurrent(snapshotA);
+
+    vi.mocked(gitApi.listGitRepositories).mockResolvedValue([{
+      id: 'repository-1',
+      name: 'repository',
+      defaultBranch: 'main',
+      lastSyncedCommit: 'revision-1',
+    }] as any);
+    vi.mocked(gitApi.queryCodeBindings).mockResolvedValue({
+      workspaceId: 'w1',
+      repositoryId: 'repository-1',
+      filePath: 'src/B.java',
+      fileHasBindings: true,
+      bindings: [{
+        bindingId: 'binding-b',
+        documentId: 'document-b',
+        blockId: null,
+        pathPattern: 'src/B.java',
+        documentTitle: 'Document B',
+      }],
+      truncated: false,
+      omittedBindingCount: 0,
+    });
+    const applied = {
+      ...mockRequestDetail('r1', [{
+        operationId: 'operation-1',
+        operationType: 'UPDATE_BLOCK',
+        target: { documentId: 'document-b' },
+      }]),
+      request: {
+        id: 'r1',
+        status: 'APPLIED',
+        summary: 'Applied request',
+      },
+      bindingProposals: [{
+        bindingProposalId: 'proposal-1',
+        clientBindingProposalId: 'client-1',
+        sequenceNumber: 1,
+        action: 'UPSERT_BINDING',
+        repository: { id: 'repository-1', name: 'repository' },
+        filePath: 'src/B.java',
+        documentTarget: {
+          documentId: 'document-b',
+          documentTitle: 'Document B',
+          blockId: null,
+          blockType: null,
+        },
+        bindingId: null,
+        reason: '',
+      }],
+    } as any;
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(applied);
+    vi.mocked(documentChangeApi.applyDocumentChange).mockResolvedValue(applied);
+    vi.mocked(blockApi.listBlocks).mockResolvedValue([]);
+
+    const wrapper = await mountView('/workspaces/w1/reviews/applied/r1');
+    expect(navigation.restoreCurrent()).toEqual(snapshotA);
+    expect((wrapper.vm as any).appliedNavigationTargets).toHaveLength(1);
+
+    await (wrapper.vm as any).applyRequest();
+    expect(navigation.restoreCurrent()).toEqual(snapshotA);
+
+    await (wrapper.vm as any).viewAppliedTarget(
+      (wrapper.vm as any).appliedNavigationTargets[0],
+    );
+    expect(navigation.restoreCurrent()).toEqual(createLinkedWorkbenchSnapshot(
+      scope,
+      'src/B.java',
+      'document-b',
+    ));
+    expect(navigation.state.value.backStack).toEqual([snapshotA]);
+  });
+
+  it('returns through the linked navigation entry without replacing the saved reading target', async () => {
+    const scope = {
+      workspaceId: 'w1',
+      repositoryId: 'repository-1',
+      revision: 'revision-1',
+    };
+    const navigation = useLinkedWorkbenchNavigation(ref(scope));
+    const snapshotA = createLinkedWorkbenchSnapshot(scope, 'src/A.java', 'document-a');
+    navigation.updateCurrent(snapshotA);
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('r1') as any,
+    );
+
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/r1');
+    await (wrapper.vm as any).openLinkedWorkbench();
+    await flushPromises();
+
+    expect(router.currentRoute.value.name).toBe('workspace-code');
+    expect(router.currentRoute.value.query).toEqual({});
+    expect(navigation.restoreCurrent()).toEqual(snapshotA);
   });
 });

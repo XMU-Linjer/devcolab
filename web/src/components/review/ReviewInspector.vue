@@ -116,10 +116,10 @@
           <div class="card-title"><span>Binding Proposals</span><small>{{ detail.bindingProposals.length }}</small></div>
           <button
             v-for="proposal in detail.bindingProposals"
-            :key="proposal.id"
+            :key="proposal.bindingProposalId"
             type="button"
-            :class="{ 'is-active': proposal.id === activeEvidenceId }"
-            @click="emit('select-evidence', proposal.id)"
+            :class="{ 'is-active': proposal.bindingProposalId === activeEvidenceId }"
+            @click="emit('select-evidence', proposal.bindingProposalId)"
           >
             <strong>{{ proposal.filePath }}</strong>
             <small>{{ proposal.action === 'UPSERT_BINDING' ? '新增或更新代码关联' : '移除代码关联' }} · {{ proposal.reason }}</small>

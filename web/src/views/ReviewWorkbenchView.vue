@@ -127,6 +127,43 @@
           </p>
         </header>
 
+        <section
+          v-if="detail?.request.status === 'APPLIED'"
+          class="review-apply-result"
+          data-test="review-apply-result"
+        >
+          <div>
+            <strong>文档变更已应用</strong>
+            <span>阅读现场不会自动切换；请选择需要查看的应用结果。</span>
+          </div>
+          <el-skeleton v-if="appliedTargetsLoading" :rows="1" animated />
+          <div v-else-if="appliedNavigationTargets.length" class="review-apply-targets">
+            <div
+              v-for="target in appliedNavigationTargets"
+              :key="`${target.repositoryId}:${target.documentId}`"
+              class="review-apply-target"
+            >
+              <span>
+                <strong>{{ target.documentTitle || target.documentId }}</strong>
+                <small v-if="target.filePath">{{ target.filePath }}</small>
+                <small v-else>该文档暂无可定位的正式代码 Binding</small>
+              </span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :disabled="!target.filePath"
+                @click="viewAppliedTarget(target)"
+              >
+                查看应用结果
+              </el-button>
+            </div>
+          </div>
+          <span v-else class="review-apply-empty">
+            应用响应中暂无可确认的真实文档与 Binding，不会猜测跳转目标。
+          </span>
+        </section>
+
         <el-skeleton v-if="detailLoading" :rows="12" animated />
         <el-empty
           v-else-if="!detail || !activeOperation"
@@ -232,6 +269,7 @@ import {
   getGitRepositorySource,
   listGitRepositories,
   listGitRepositoryFiles,
+  queryCodeBindings,
   type GitRepository,
   type GitRepositoryFile,
   type GitRepositorySource,
@@ -243,10 +281,18 @@ import ReviewCodeEvidencePane from '@/components/review/ReviewCodeEvidencePane.v
 import ReviewDocumentPane from '@/components/review/ReviewDocumentPane.vue';
 import ReviewInspector from '@/components/review/ReviewInspector.vue';
 import {
+  createLinkedWorkbenchSnapshot,
+  useLinkedWorkbenchNavigation,
+} from '@/composables/useLinkedWorkbenchNavigation';
+import {
   reviewStatusLabels,
   selectedEvidence,
 } from '@/components/review/reviewPresentation';
 import { readableError } from '@/utils/error';
+import {
+  resolveAppliedReviewNavigationTargets,
+  type AppliedReviewNavigationTarget,
+} from '@/utils/linkedReviewNavigation';
 import { buildRepositoryTree } from '@/utils/repositoryTree';
 
 type ReviewRouteStatus = 'pending' | 'applied' | 'rejected' | 'stale';
@@ -283,6 +329,8 @@ const inspectorOpen = ref(true);
 const applyDialogOpen = ref(false);
 const rejectDialogOpen = ref(false);
 const rejectReason = ref('');
+const appliedNavigationTargets = ref<AppliedReviewNavigationTarget[]>([]);
+const appliedTargetsLoading = ref(false);
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
 const statusCounts = ref<Record<ReviewRouteStatus, number>>({
   pending: 0,
@@ -300,6 +348,8 @@ const pageData = ref<DocumentChangePage>({
 
 let detailRequestGeneration = 0;
 let operationDocumentGeneration = 0;
+let appliedTargetGeneration = 0;
+const linkedNavigation = useLinkedWorkbenchNavigation(() => null);
 
 const fileTree = computed(() => buildRepositoryTree(files.value));
 const activeRepository = computed(() =>
@@ -336,6 +386,7 @@ onMounted(() => void loadInitialState());
 onUnmounted(() => {
   detailRequestGeneration++;
   operationDocumentGeneration++;
+  appliedTargetGeneration++;
 });
 
 watch(
@@ -348,6 +399,9 @@ watch(
     if (!workspaceChanged && !statusChanged && !requestChanged) return;
 
     errorMessage.value = '';
+    appliedTargetGeneration++;
+    appliedNavigationTargets.value = [];
+    appliedTargetsLoading.value = false;
 
     if (workspaceChanged) {
       detailRequestGeneration++;
@@ -358,6 +412,7 @@ watch(
       selectedRepositoryId.value = '';
       selectedFilePath.value = '';
       manualSource.value = null;
+      appliedNavigationTargets.value = [];
       void loadInitialState();
       return;
     }
@@ -456,6 +511,7 @@ async function loadDetail() {
     if (currentGeneration !== detailRequestGeneration) return;
     detail.value = result;
     await normalizeDetailSelection();
+    await refreshAppliedNavigationTargets(result);
   } catch (error) {
     if (currentGeneration !== detailRequestGeneration) return;
     detail.value = null;
@@ -611,7 +667,9 @@ async function selectEvidence(evidenceId: string) {
     return;
   }
 
-  const bindingProposal = detail.value?.bindingProposals?.find(item => item.id === evidenceId);
+  const bindingProposal = detail.value?.bindingProposals?.find(
+    item => item.bindingProposalId === evidenceId,
+  );
   if (bindingProposal) {
     if (selectedRepositoryId.value !== bindingProposal.repository.id) {
       await selectRepository(bindingProposal.repository.id);
@@ -655,10 +713,6 @@ function openLinkedWorkbench() {
   void router.push({
     name: 'workspace-code',
     params: { workspaceId: workspaceId.value },
-    query: {
-      repositoryId: selectedRepositoryId.value || undefined,
-      filePath: selectedFilePath.value || undefined,
-    },
   });
 }
 
@@ -689,6 +743,7 @@ async function applyRequest() {
     applyDialogOpen.value = false;
     await loadCounts();
     await loadOperationDocument();
+    await refreshAppliedNavigationTargets(detail.value);
     if (detail.value.request.status === 'STALE') {
       ElMessage.warning('目标内容已经变化，请求已标记为失效');
     } else {
@@ -699,6 +754,44 @@ async function applyRequest() {
   } finally {
     decisionLoading.value = false;
   }
+}
+
+async function refreshAppliedNavigationTargets(result: DocumentChangeDetail) {
+  const generation = ++appliedTargetGeneration;
+  if (result.request.status !== 'APPLIED') {
+    appliedNavigationTargets.value = [];
+    return;
+  }
+  appliedTargetsLoading.value = true;
+  try {
+    const targets = await resolveAppliedReviewNavigationTargets(
+      workspaceId.value,
+      result,
+      repositories.value,
+      queryCodeBindings,
+    );
+    if (generation === appliedTargetGeneration) appliedNavigationTargets.value = targets;
+  } finally {
+    if (generation === appliedTargetGeneration) appliedTargetsLoading.value = false;
+  }
+}
+
+async function viewAppliedTarget(target: AppliedReviewNavigationTarget) {
+  if (!target.filePath) return;
+  linkedNavigation.navigateTo(createLinkedWorkbenchSnapshot(
+    {
+      workspaceId: workspaceId.value,
+      repositoryId: target.repositoryId,
+      revision: target.revision,
+    },
+    target.filePath,
+    target.documentId,
+  ));
+  await router.push({
+    name: 'workspace-code',
+    params: { workspaceId: workspaceId.value },
+    query: { repositoryId: target.repositoryId },
+  });
 }
 
 async function rejectRequest() {
@@ -902,7 +995,7 @@ function formatDate(value: string) {
 
 .review-detail-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .review-detail-header {
@@ -934,6 +1027,64 @@ function formatDate(value: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.review-apply-result {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+  border-bottom: 1px solid #dbe4f0;
+  background: #f5f9ff;
+}
+
+.review-apply-result > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.review-apply-result span,
+.review-apply-result small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.review-apply-targets {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-apply-target {
+  display: flex;
+  min-width: 220px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d0dcf7;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.review-apply-target > span {
+  display: grid;
+  min-width: 0;
+}
+
+.review-apply-target strong,
+.review-apply-target small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-apply-empty {
+  text-align: right;
 }
 
 .review-four-area {

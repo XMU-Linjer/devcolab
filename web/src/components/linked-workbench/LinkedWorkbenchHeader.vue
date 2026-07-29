@@ -51,13 +51,13 @@ const modes: Array<{ value: WorkbenchMode; label: string }> = [
 </script>
 
 <style scoped>
-.linked-workbench-header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 18px; border-bottom: 1px solid #dfe6f0; background: #fff; }
-.linked-heading { min-width: 0; }
+.linked-workbench-header { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 14px 18px; border-bottom: 1px solid #dfe6f0; background: #fff; }
+.linked-heading { min-width: 220px; flex: 1 1 240px; }
 .linked-heading h1 { margin: 2px 0 3px; font-size: 23px; }
 .linked-heading p:last-child { overflow: hidden; margin: 0; color: #667085; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.linked-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.mode-switcher { display: flex; overflow: hidden; border: 1px solid #d0d7e2; border-radius: 7px; }
-.mode-switcher button { border: 0; border-right: 1px solid #d0d7e2; padding: 7px 10px; background: #fff; color: #475467; cursor: pointer; }
+.linked-header-actions { display: flex; min-width: 0; flex: 1 1 620px; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.mode-switcher { display: flex; flex: 0 0 auto; overflow: hidden; border: 1px solid #d0d7e2; border-radius: 7px; }
+.mode-switcher button { flex: 0 0 auto; border: 0; border-right: 1px solid #d0d7e2; padding: 7px 10px; background: #fff; color: #475467; white-space: nowrap; cursor: pointer; }
 .mode-switcher button:last-child { border-right: 0; }
 .mode-switcher button.is-active { background: #155eef; color: #fff; }
 @media (max-width: 1100px) { .linked-workbench-header { align-items: flex-start; flex-direction: column; } .linked-header-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; } }

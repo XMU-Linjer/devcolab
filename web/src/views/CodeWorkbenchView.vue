@@ -92,6 +92,24 @@
       >
         <template #header-actions>
           <el-button
+            data-test="linked-history-back"
+            size="small"
+            circle
+            :icon="ArrowLeft"
+            :disabled="!linkedNavigation.canGoBack.value"
+            :title="historyTargetTitle('后退', linkedNavigation.backTarget.value)"
+            @click="handleHistoryBack"
+          />
+          <el-button
+            data-test="linked-history-forward"
+            size="small"
+            circle
+            :icon="ArrowRight"
+            :disabled="!linkedNavigation.canGoForward.value"
+            :title="historyTargetTitle('前进', linkedNavigation.forwardTarget.value)"
+            @click="handleHistoryForward"
+          />
+          <el-button
             v-if="activeRepository"
             data-test="project-scan"
             size="small"
@@ -172,6 +190,7 @@
 </template>
 
 <script setup lang="ts">
+import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -213,6 +232,11 @@ import LinkedRepositoryContext from '@/components/linked-workbench/LinkedReposit
 import LinkedWorkbenchShell from '@/components/linked-workbench/LinkedWorkbenchShell.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
+import {
+  createLinkedWorkbenchSnapshot,
+  useLinkedWorkbenchNavigation,
+  type LinkedWorkbenchSnapshot,
+} from '@/composables/useLinkedWorkbenchNavigation';
 import { useLinkedWorkbenchState } from '@/composables/useLinkedWorkbenchState';
 import type { LinkedDocumentChoice, LinkActivationSource, WorkbenchMode } from '@/types/linkedWorkbench';
 import { readableError } from '@/utils/error';
@@ -257,6 +281,17 @@ const {
 } = state;
 
 const activeRepository = computed(() => repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
+const linkedNavigationScope = computed(() => {
+  const repository = activeRepository.value;
+  const revision = repository?.lastSyncedCommit;
+  if (!repository || !revision) return null;
+  return {
+    workspaceId: workspaceId.value,
+    repositoryId: repository.id,
+    revision,
+  };
+});
+const linkedNavigation = useLinkedWorkbenchNavigation(linkedNavigationScope);
 const fileTree = computed(() => buildRepositoryTree(files.value));
 const documentChoices = computed(() => flattenDocumentTree(documentTree.value));
 const latestVersion = computed(() => versions.value.reduce(
@@ -374,12 +409,19 @@ async function loadWorkbench() {
       getPendingDocumentChangeCount(workspaceId.value).catch(() => 0),
     ]);
     const queryRepositoryId = typeof route.query.repositoryId === 'string' ? route.query.repositoryId : '';
+    const lastScope = linkedNavigation.restoreLastScope(workspaceId.value);
+    const lastRepository = repositories.value.find(item =>
+      item.id === lastScope?.repositoryId && item.lastSyncedCommit === lastScope.revision);
     state.selectedRepositoryId.value = repositories.value.some(item => item.id === queryRepositoryId)
-      ? queryRepositoryId : repositories.value[0]?.id || '';
+      ? queryRepositoryId
+      : lastRepository?.id || repositories.value[0]?.id || '';
+    const restored = linkedNavigation.restoreCurrent();
+    const queryFilePath = typeof route.query.filePath === 'string' ? route.query.filePath : '';
     const queryDocumentId = typeof route.query.documentId === 'string' ? route.query.documentId : '';
-    state.selectDocument(documentChoices.value.some(item => item.id === queryDocumentId)
-      ? queryDocumentId : documentChoices.value[0]?.id || '');
-    await Promise.all([loadRepositoryDetails(), loadDocumentBundle()]);
+    state.selectFile(restored?.filePath || queryFilePath);
+    state.selectDocument(restored?.documentId
+      || (documentChoices.value.some(item => item.id === queryDocumentId) ? queryDocumentId : ''));
+    await loadRepositoryDetails('restore');
   } catch (error) {
     errorMessage.value = readableError(error, '关联工作台加载失败');
   } finally {
@@ -387,12 +429,14 @@ async function loadWorkbench() {
   }
 }
 
-async function loadRepositoryDetails() {
+async function loadRepositoryDetails(historyMode: 'navigate' | 'restore' = 'restore') {
   if (!selectedRepositoryId.value) {
     files.value = [];
     gitChanges.value = [];
     selectedSource.value = null;
     selectedFileBindings.value = [];
+    document.value = null;
+    versions.value = [];
     return;
   }
   [files.value, gitChanges.value] = await Promise.all([
@@ -401,7 +445,17 @@ async function loadRepositoryDetails() {
   ]);
   const current = files.value.find(file => file.path === selectedFilePath.value && file.readable)
     ?? files.value.find(file => file.readable) ?? files.value[0];
-  if (current) await openSource(current);
+  if (current) {
+    await openSource(current, historyMode);
+  } else if (linkedNavigationScope.value) {
+    state.selectFile('');
+    state.selectDocument('');
+    linkedNavigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      linkedNavigationScope.value,
+      null,
+      null,
+    ));
+  }
 }
 
 async function loadDocumentBundle() {
@@ -429,20 +483,24 @@ async function handleRepositoryChange(repositoryId: string) {
   sourceRequestSequence += 1;
   state.selectedRepositoryId.value = repositoryId;
   state.selectFile('');
+  state.selectDocument('');
   selectedSource.value = null;
   selectedFileBindings.value = [];
   await router.replace({ query: { ...route.query, repositoryId } });
-  try { contextLoading.value = true; await loadRepositoryDetails(); }
+  try { contextLoading.value = true; await loadRepositoryDetails('navigate'); }
   catch (error) { ElMessage.error(readableError(error, '仓库内容加载失败')); }
   finally { contextLoading.value = false; }
 }
 
 async function openSourceByPath(path: string) {
   const file = files.value.find(item => item.path === path);
-  if (file) await openSource(file);
+  if (file) await openSource(file, 'navigate');
 }
 
-async function openSource(file: GitRepositoryFile) {
+async function openSource(
+  file: GitRepositoryFile,
+  historyMode: 'navigate' | 'restore' = 'navigate',
+) {
   const requestSequence = ++sourceRequestSequence;
   const repositoryId = selectedRepositoryId.value;
   sourceLoading.value = true;
@@ -489,7 +547,14 @@ async function openSource(file: GitRepositoryFile) {
       if (requestSequence !== sourceRequestSequence
         || repositoryId !== selectedRepositoryId.value
         || file.path !== selectedFilePath.value) return;
+    } else if (document.value?.id !== selectedDocumentId.value) {
+      await loadDocumentBundle();
     }
+    if (requestSequence !== sourceRequestSequence
+      || repositoryId !== selectedRepositoryId.value
+      || file.path !== selectedFilePath.value) return;
+    persistReadingTarget(historyMode);
+    await updateWorkbenchRoute();
     rebuildBindings();
   } catch (error) {
     if (requestSequence !== sourceRequestSequence) return;
@@ -503,12 +568,68 @@ async function openSource(file: GitRepositoryFile) {
 }
 
 async function handleDocumentChange(documentId: string) {
+  if (documentId === selectedDocumentId.value) return;
   state.selectDocument(documentId);
   documentBlocks.value = [];
   state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   await router.replace({ query: { ...route.query, documentId } });
   await loadDocumentBundle();
+  persistReadingTarget('navigate');
+  await updateWorkbenchRoute();
   rebuildBindings();
+}
+
+function persistReadingTarget(historyMode: 'navigate' | 'restore') {
+  if (!linkedNavigationScope.value) return;
+  const snapshot = createLinkedWorkbenchSnapshot(
+    linkedNavigationScope.value,
+    selectedFilePath.value || null,
+    selectedDocumentId.value || null,
+  );
+  if (historyMode === 'navigate') linkedNavigation.navigateTo(snapshot);
+  else linkedNavigation.updateCurrent(snapshot);
+}
+
+async function updateWorkbenchRoute() {
+  await router.replace({
+    name: 'workspace-code',
+    params: { workspaceId: workspaceId.value },
+    query: {
+      repositoryId: selectedRepositoryId.value || undefined,
+      filePath: selectedFilePath.value || undefined,
+      documentId: selectedDocumentId.value || undefined,
+    },
+  });
+}
+
+async function restoreReadingTarget(snapshot: LinkedWorkbenchSnapshot) {
+  const repository = repositories.value.find(item =>
+    item.id === snapshot.repositoryId && item.lastSyncedCommit === snapshot.revision);
+  if (!repository) return;
+  if (selectedRepositoryId.value !== repository.id) {
+    state.selectedRepositoryId.value = repository.id;
+    await loadRepositoryDetails('restore');
+  }
+  state.selectDocument(snapshot.documentId || '');
+  const file = files.value.find(item => item.path === snapshot.filePath && item.readable)
+    ?? files.value.find(item => item.readable)
+    ?? files.value[0];
+  if (file) await openSource(file, 'restore');
+}
+
+async function handleHistoryBack() {
+  const target = linkedNavigation.goBack();
+  if (target) await restoreReadingTarget(target);
+}
+
+async function handleHistoryForward() {
+  const target = linkedNavigation.goForward();
+  if (target) await restoreReadingTarget(target);
+}
+
+function historyTargetTitle(action: string, target: LinkedWorkbenchSnapshot | null) {
+  const fileName = target?.filePath?.split('/').at(-1);
+  return fileName ? `${action}到 ${fileName}` : action;
 }
 
 function handleBlocksLoaded(blocks: DocumentBlock[]) {

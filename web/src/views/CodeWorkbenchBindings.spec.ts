@@ -1,6 +1,12 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 
+import {
+  createLinkedWorkbenchSnapshot,
+  resetLinkedWorkbenchNavigationMemoryForTests,
+  useLinkedWorkbenchNavigation,
+} from '@/composables/useLinkedWorkbenchNavigation';
 import CodeWorkbenchView from './CodeWorkbenchView.vue';
 
 const mocks = vi.hoisted(() => ({
@@ -85,6 +91,8 @@ vi.mock('@/composables/useDocumentCollaboration', () => ({
 describe('CodeWorkbenchView formal bindings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
+    resetLinkedWorkbenchNavigationMemoryForTests();
     mocks.getSource.mockImplementation(
       (_workspaceId: string, _repositoryId: string, path: string) =>
         Promise.resolve(source(path)),
@@ -154,6 +162,67 @@ describe('CodeWorkbenchView formal bindings', () => {
     );
     wrapper.unmount();
   });
+
+  it('restores a saved file and rejects a stale saved document not present in formal bindings', async () => {
+    const navigation = testNavigation();
+    navigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      scope,
+      'src/C.java',
+      'document-a',
+    ));
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(snapshot(wrapper)).toEqual({
+      sourcePath: 'src/C.java',
+      documentIds: 'document-c',
+    });
+    expect(navigation.restoreCurrent()).toEqual(createLinkedWorkbenchSnapshot(
+      scope,
+      'src/C.java',
+      'document-c',
+    ));
+    wrapper.unmount();
+  });
+
+  it('degrades a deleted saved file to the first readable file and persists the repaired target', async () => {
+    const navigation = testNavigation();
+    navigation.updateCurrent(createLinkedWorkbenchSnapshot(
+      scope,
+      'src/Deleted.java',
+      'document-a',
+    ));
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(snapshot(wrapper).sourcePath).toBe('src/A.java');
+    expect(navigation.restoreCurrent()?.filePath).toBe('src/A.java');
+    wrapper.unmount();
+  });
+
+  it('uses reading history buttons without reusing stale file bindings', async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await selectFile(wrapper, 'src/C.java');
+    expect(snapshot(wrapper).sourcePath).toBe('src/C.java');
+
+    await wrapper.get('[data-test="linked-history-back"]').trigger('click');
+    await flushPromises();
+    expect(snapshot(wrapper)).toEqual({
+      sourcePath: 'src/A.java',
+      documentIds: 'document-a',
+    });
+
+    await wrapper.get('[data-test="linked-history-forward"]').trigger('click');
+    await flushPromises();
+    expect(snapshot(wrapper)).toEqual({
+      sourcePath: 'src/C.java',
+      documentIds: 'document-c',
+    });
+    wrapper.unmount();
+  });
 });
 
 function mountView() {
@@ -180,13 +249,17 @@ function mountView() {
             focusAnchor: vi.fn(),
             focusBlock: vi.fn(),
           },
-          template: '<section data-test="source-path">{{ sourcePath }}<slot name="header-actions" /></section>',
+          template: '<section><span data-test="source-path">{{ sourcePath }}</span><slot name="header-actions" /></section>',
         },
         NotificationCenter: true,
         ElAlert: true,
         ElSkeleton: true,
         ElDrawer: true,
-        ElButton: true,
+        ElButton: {
+          props: ['disabled'],
+          emits: ['click'],
+          template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+        },
       },
     },
   });
@@ -271,4 +344,14 @@ function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolver) => { resolve = resolver; });
   return { promise, resolve };
+}
+
+const scope = {
+  workspaceId: 'workspace-1',
+  repositoryId: 'repository-1',
+  revision: 'revision-1',
+};
+
+function testNavigation() {
+  return useLinkedWorkbenchNavigation(ref(scope));
 }

@@ -83,7 +83,7 @@ export interface DocumentChangeEvidence {
 export type BindingAction = 'UPSERT_BINDING' | 'REMOVE_BINDING';
 
 export interface DocumentChangeBindingProposal {
-  id: string;
+  bindingProposalId: string;
   clientBindingProposalId: string;
   sequenceNumber: number;
   action: BindingAction;
@@ -92,8 +92,7 @@ export interface DocumentChangeBindingProposal {
     name: string;
   };
   filePath: string;
-  documentId: string | null;
-  createdDocumentClientOperationId: string | null;
+  documentTarget: DocumentChangeTarget;
   bindingId: string | null;
   reason: string;
 }
