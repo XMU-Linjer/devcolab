@@ -37,4 +37,17 @@ describe('useLinkedWorkbenchState', () => {
     expect(state.inspectorOpen.value).toBe(true);
     expect(state.activeLinkId.value).toBe('l2');
   });
+
+  it('switches all bindings without creating a second relation state', () => {
+    const state = useLinkedWorkbenchState();
+    state.replaceFixture(fixture);
+
+    expect(state.activeLinkIndex.value).toBe(0);
+    expect(state.linkCount.value).toBe(2);
+    expect(state.canSelectPreviousLink.value).toBe(false);
+    expect(state.selectNextLink()?.id).toBe('l2');
+    expect(state.activeLinkId.value).toBe('l2');
+    expect(state.canSelectNextLink.value).toBe(false);
+    expect(state.selectPreviousLink()?.id).toBe('l1');
+  });
 });

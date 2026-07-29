@@ -87,7 +87,8 @@ const codePaneRef = ref<InstanceType<typeof LinkedCodePane> | null>(null);
 const documentPaneRef = ref<InstanceType<typeof LinkedDocumentPane> | null>(null);
 function focusAnchor(anchorId: string) { codePaneRef.value?.focusAnchor(anchorId); }
 function focusBlock(blockId: string) { documentPaneRef.value?.focusBlock(blockId); }
-defineExpose({ focusAnchor, focusBlock });
+function clearBlockFocus() { documentPaneRef.value?.clearBlockFocus(); }
+defineExpose({ focusAnchor, focusBlock, clearBlockFocus });
 </script>
 
 <style scoped>

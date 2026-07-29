@@ -59,9 +59,12 @@ const emit = defineEmits<{
 
 const blockEditorRef = ref<InstanceType<typeof BlockEditor> | null>(null);
 function focusBlock(blockId: string) {
-  blockEditorRef.value?.focusBlock(blockId);
+  return blockEditorRef.value?.focusBlock(blockId);
 }
-defineExpose({ focusBlock });
+function clearBlockFocus() {
+  blockEditorRef.value?.clearBlockFocus();
+}
+defineExpose({ focusBlock, clearBlockFocus });
 </script>
 
 <style scoped>

@@ -12,6 +12,7 @@ import CodeWorkbenchView from './CodeWorkbenchView.vue';
 const mocks = vi.hoisted(() => ({
   getSource: vi.fn(),
   queryBindings: vi.fn(),
+  listCodeBindings: vi.fn(),
   listFiles: vi.fn(),
   replace: vi.fn(),
   routeQuery: { repositoryId: 'repository-1' } as Record<string, string>,
@@ -52,6 +53,7 @@ vi.mock('@/api/git', () => ({
   listGitChanges: vi.fn().mockResolvedValue([]),
   getGitRepositorySource: mocks.getSource,
   queryCodeBindings: mocks.queryBindings,
+  listCodeBindings: mocks.listCodeBindings,
   syncGitRepository: vi.fn(),
 }));
 
@@ -106,6 +108,7 @@ describe('CodeWorkbenchView formal bindings', () => {
       (_workspaceId: string, _repositoryId: string, _revision: string, path: string) =>
         Promise.resolve(bindingResult(path)),
     );
+    mocks.listCodeBindings.mockResolvedValue([]);
   });
 
   it('loads A, empty B, C and A again without reusing another file bindings', async () => {
@@ -187,6 +190,8 @@ describe('CodeWorkbenchView formal bindings', () => {
       scope,
       'src/C.java',
       'document-c',
+      'binding-src/C.java',
+      null,
     ));
     wrapper.unmount();
   });
@@ -291,7 +296,12 @@ describe('CodeWorkbenchView formal bindings', () => {
     const wrapper = mountView();
     await flushPromises();
 
-    expect(navigation.state.value).toEqual(before);
+    expect(navigation.state.value.current).toMatchObject({
+      ...before.current,
+      bindingId: 'binding-src/A.java',
+    });
+    expect(navigation.state.value.backStack).toEqual(before.backStack);
+    expect(navigation.state.value.forwardStack).toEqual(before.forwardStack);
     expect(navigation.canGoForward.value).toBe(true);
     expect(mocks.getSource).toHaveBeenCalledTimes(1);
     wrapper.unmount();
@@ -317,6 +327,64 @@ describe('CodeWorkbenchView formal bindings', () => {
     expect(mocks.getSource).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
+
+  it('keeps two formal bindings for one file and switches the active binding', async () => {
+    mocks.queryBindings.mockResolvedValue({
+      ...bindingResult('src/A.java'),
+      bindings: [
+        preciseBinding('binding-a', 'src/A.java', 'block-a', 2, 3),
+        preciseBinding('binding-overview', 'src/A.java', 'block-overview', 2, 3),
+      ],
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="next-binding"]').text()).toBe('下一关联');
+    await wrapper.get('[data-test="next-binding"]').trigger('click');
+    await flushPromises();
+    expect(testNavigation().restoreCurrent()?.bindingId).toBe('binding-overview');
+    expect(testNavigation().state.value.backStack).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('queries formal reverse bindings when a document Block is selected', async () => {
+    mocks.queryBindings.mockResolvedValue({
+      ...bindingResult('src/A.java'),
+      bindings: [preciseBinding('binding-a', 'src/A.java', 'block-a', 2, 3)],
+    });
+    mocks.listCodeBindings.mockResolvedValue([{
+      id: 'binding-a',
+      workspaceId: 'workspace-1',
+      repositoryId: 'repository-1',
+      documentId: 'document-a',
+      blockId: 'block-a',
+      targetKey: 'BLOCK:block-a',
+      pathPattern: 'src/A.java',
+      revision: 'revision-1',
+      anchorKind: 'SYMBOL',
+      symbolKey: 'JAVA:A.run',
+      startLine: 2,
+      endLine: 3,
+      createdBy: 'user',
+      createdAt: '',
+    }]);
+    const wrapper = mountView();
+    await flushPromises();
+
+    await wrapper.get('[data-test="select-block"]').trigger('click');
+    await flushPromises();
+
+    expect(mocks.listCodeBindings).toHaveBeenCalledWith('document-a', {
+      revision: 'revision-1',
+      includeLegacy: true,
+      blockId: 'block-a',
+    });
+    expect(testNavigation().restoreCurrent()).toMatchObject({
+      bindingId: 'binding-a',
+      blockId: 'block-a',
+    });
+    wrapper.unmount();
+  });
 });
 
 function mountView() {
@@ -339,11 +407,13 @@ function mountView() {
         },
         LinkedWorkbenchShell: {
           props: ['sourcePath'],
+          emits: ['select-block'],
           methods: {
             focusAnchor: vi.fn(),
             focusBlock: vi.fn(),
+            clearBlockFocus: vi.fn(),
           },
-          template: '<section><span data-test="source-path">{{ sourcePath }}</span><slot name="header-actions" /></section>',
+          template: '<section><span data-test="source-path">{{ sourcePath }}</span><button data-test="select-block" @click="$emit(\'select-block\', \'block-a\')" /><slot name="header-actions" /></section>',
         },
         NotificationCenter: true,
         ElAlert: true,
@@ -354,6 +424,7 @@ function mountView() {
           emits: ['click'],
           template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
         },
+        ElButtonGroup: { template: '<div><slot /></div>' },
       },
     },
   });
@@ -387,6 +458,13 @@ function bindingResult(path: string) {
     fileHasBindings: documentId !== null,
     bindings: documentId ? [{
       bindingId: `binding-${path}`,
+      workspaceId: 'workspace-1',
+      repositoryId: 'repository-1',
+      revision: 'revision-1',
+      anchorKind: 'FILE',
+      symbolKey: null,
+      startLine: null,
+      endLine: null,
       documentId,
       blockId: null,
       pathPattern: path,
@@ -394,6 +472,30 @@ function bindingResult(path: string) {
     }] : [],
     truncated: false,
     omittedBindingCount: 0,
+  };
+}
+
+function preciseBinding(
+  bindingId: string,
+  path: string,
+  blockId: string,
+  startLine: number,
+  endLine: number,
+) {
+  return {
+    bindingId,
+    workspaceId: 'workspace-1',
+    repositoryId: 'repository-1',
+    revision: 'revision-1',
+    anchorKind: 'SYMBOL',
+    symbolKey: `JAVA:${path}:run`,
+    startLine,
+    endLine,
+    documentId: 'document-a',
+    blockId,
+    targetKey: `BLOCK:${blockId}`,
+    pathPattern: path,
+    documentTitle: 'Document A',
   };
 }
 

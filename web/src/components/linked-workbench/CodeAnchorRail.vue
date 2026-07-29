@@ -39,7 +39,13 @@ function nodeClass(link: CodeDocumentLink) {
 }
 function nodeTitle(link: CodeDocumentLink) {
   const anchor = anchorFor(link);
-  return `${anchor?.symbolName || '代码范围'}，${link.relationType}，${anchor?.status || '未知状态'}`;
+  const codeTarget = anchor?.anchorKind === 'SYMBOL'
+    ? anchor.symbolName || '符号关联'
+    : anchor?.startLine !== null && anchor?.startLine !== undefined
+      ? `第 ${anchor.startLine}–${anchor.endLine} 行`
+      : '整个文件';
+  const documentTarget = link.blockId ? `Block ${link.blockId.slice(0, 8)}` : '整篇文档';
+  return `${codeTarget} ↔ ${documentTarget}，${anchor?.status || '未知状态'}`;
 }
 function railPosition(index: number) {
   if (props.links.length <= 1) return 50;

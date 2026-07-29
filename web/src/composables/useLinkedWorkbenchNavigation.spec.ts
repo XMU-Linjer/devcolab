@@ -72,6 +72,54 @@ describe('useLinkedWorkbenchNavigation', () => {
     expect(restored.restoreLastScope(scope.workspaceId)).toEqual(scope);
   });
 
+  it('migrates v1 snapshots to v2 without clearing back and forward history', () => {
+    sessionStorage.setItem(
+      'devcollab.linked-workbench.navigation.v1:workspace-1:repository-1:revision-1',
+      JSON.stringify({
+        current: {
+          version: 1,
+          ...scope,
+          filePath: 'A.java',
+          documentId: 'document-a',
+        },
+        backStack: [{
+          version: 1,
+          ...scope,
+          filePath: 'B.java',
+          documentId: 'document-b',
+        }],
+        forwardStack: [],
+      }),
+    );
+
+    const navigation = createNavigation();
+    expect(navigation.restoreCurrent()).toEqual(snapshot('A.java', 'document-a'));
+    expect(navigation.state.value.backStack).toEqual([snapshot('B.java', 'document-b')]);
+  });
+
+  it('restores binding and block ids through back and forward navigation', () => {
+    const navigation = createNavigation();
+    const preciseA = createLinkedWorkbenchSnapshot(
+      scope,
+      'A.java',
+      'document-a',
+      'binding-a',
+      'block-a',
+    );
+    const preciseB = createLinkedWorkbenchSnapshot(
+      scope,
+      'B.java',
+      'document-b',
+      'binding-b',
+      'block-b',
+    );
+    navigation.updateCurrent(preciseA);
+    navigation.navigateTo(preciseB);
+
+    expect(navigation.goBack()).toEqual(preciseA);
+    expect(navigation.goForward()).toEqual(preciseB);
+  });
+
   it('isolates repository and revision scopes', () => {
     const navigation = createNavigation();
     navigation.updateCurrent(snapshot('A.java', 'document-a'));

@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CodeBindingQueryItem, GitRepositorySource } from '@/api/git';
-import { bindingDocumentChoices, buildBindingFixture } from './linkedWorkbenchBindings';
+import {
+  bindingDocumentChoices,
+  buildBindingFixture,
+  selectDefaultBinding,
+} from './linkedWorkbenchBindings';
 
 describe('linkedWorkbenchBindings', () => {
   it('keeps file-specific bindings isolated while switching A to B to A', () => {
     const aBinding = binding('binding-a', 'document-a', 'src/A.java');
     const bBinding = binding('binding-b', 'document-b', 'src/B.java');
 
-    const firstA = buildBindingFixture(input(source('src/A.java'), [aBinding], 'document-a'));
-    const b = buildBindingFixture(input(source('src/B.java'), [bBinding], 'document-b'));
-    const secondA = buildBindingFixture(input(source('src/A.java'), [aBinding], 'document-a'));
+    const firstA = buildBindingFixture(input(source('src/A.java'), [aBinding]));
+    const b = buildBindingFixture(input(source('src/B.java'), [bBinding]));
+    const secondA = buildBindingFixture(input(source('src/A.java'), [aBinding]));
 
     expect(firstA.codeAnchors.map(item => item.filePath)).toEqual(['src/A.java']);
     expect(firstA.codeAnchors[0]).toMatchObject({
@@ -28,16 +32,59 @@ describe('linkedWorkbenchBindings', () => {
     const b = binding('binding-b', 'document-shared', 'src/B.java');
 
     const aFixture = buildBindingFixture(
-      input(source('src/A.java'), [a], 'document-shared'),
+      input(source('src/A.java'), [a]),
     );
     const bFixture = buildBindingFixture(
-      input(source('src/B.java'), [b], 'document-shared'),
+      input(source('src/B.java'), [b]),
     );
 
     expect(aFixture.links[0].id).toBe('binding-link-binding-a');
     expect(bFixture.links[0].id).toBe('binding-link-binding-b');
     expect(aFixture.links[0].blockId).toBeNull();
     expect(bFixture.links[0].blockId).toBeNull();
+  });
+
+  it('preserves FILE, RANGE and SYMBOL anchors without merging bindings', () => {
+    const bindings = [
+      binding('file', 'document-a', 'src/A.java'),
+      { ...binding('range', 'document-a', 'src/A.java'), anchorKind: 'RANGE' as const, startLine: 2, endLine: 4, blockId: 'block-a' },
+      { ...binding('symbol', 'document-a', 'src/A.java'), anchorKind: 'SYMBOL' as const, symbolKey: 'JAVA:A.run', startLine: 6, endLine: 8, blockId: 'block-b' },
+    ];
+
+    const fixture = buildBindingFixture(input(source('src/A.java'), bindings));
+
+    expect(fixture.links).toHaveLength(3);
+    expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['SYMBOL', 'RANGE', 'FILE']);
+    expect(fixture.codeAnchors[0]).toMatchObject({
+      symbolName: 'JAVA:A.run',
+      startLine: 6,
+      endLine: 8,
+    });
+  });
+
+  it('prefers exact revision block bindings and keeps legacy FILE selectable', () => {
+    const legacy = { ...binding('legacy', 'document-a', 'src/A.java'), revision: null };
+    const precise = {
+      ...binding('precise', 'document-a', 'src/A.java'),
+      anchorKind: 'SYMBOL' as const,
+      blockId: 'block-a',
+      symbolKey: 'JAVA:A.run',
+      startLine: 2,
+      endLine: 4,
+    };
+
+    expect(selectDefaultBinding([legacy, precise], 'revision')).toEqual(precise);
+    expect(buildBindingFixture(input(source('src/A.java'), [legacy, precise])).links)
+      .toHaveLength(2);
+  });
+
+  it('restores a valid binding id, then block id, before using stable defaults', () => {
+    const first = { ...binding('a', 'document-a', 'src/A.java'), blockId: 'block-a' };
+    const second = { ...binding('b', 'document-a', 'src/A.java'), blockId: 'block-b' };
+
+    expect(selectDefaultBinding([first, second], 'revision', 'b')?.bindingId).toBe('b');
+    expect(selectDefaultBinding([first, second], 'revision', 'missing', 'block-a')?.bindingId)
+      .toBe('a');
   });
 
   it('deduplicates related documents without merging different document ids', () => {
@@ -94,7 +141,6 @@ function source(path: string): GitRepositorySource {
 function input(
   sourceValue: GitRepositorySource,
   bindings: CodeBindingQueryItem[],
-  selectedDocumentId: string,
 ) {
   return {
     repositoryId: 'repository',
@@ -102,6 +148,5 @@ function input(
     commitSha: 'revision',
     source: sourceValue,
     bindings,
-    selectedDocumentId,
   };
 }

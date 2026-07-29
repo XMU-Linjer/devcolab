@@ -83,7 +83,8 @@ const canvasProps = computed(() => ({
 }));
 function focusAnchor(anchorId: string) { canvasRef.value?.focusAnchor(anchorId); }
 function focusBlock(blockId: string) { canvasRef.value?.focusBlock(blockId); }
-defineExpose({ focusAnchor, focusBlock });
+function clearBlockFocus() { canvasRef.value?.clearBlockFocus(); }
+defineExpose({ focusAnchor, focusBlock, clearBlockFocus });
 </script>
 
 <style scoped>

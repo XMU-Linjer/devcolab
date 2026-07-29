@@ -20,6 +20,7 @@ export function useLinkedWorkbenchState() {
   const selectedRepositoryId = ref('');
   const selectedFilePath = ref('');
   const selectedDocumentId = ref('');
+  const selectedBlockId = ref<string | null>(null);
 
   const codeAnchors = ref<CodeAnchor[]>([]);
   const documentBlocks = ref<DocumentBlock[]>([]);
@@ -32,10 +33,16 @@ export function useLinkedWorkbenchState() {
     anchor => anchor.id === activeLink.value?.codeAnchorId,
   ) ?? null);
   const activeDocumentBlock = computed(() => documentBlocks.value.find(
-    block => activeLink.value?.blockId != null && block.id === activeLink.value.blockId,
+    block => block.id === (selectedBlockId.value ?? activeLink.value?.blockId),
   ) ?? null);
   const activeIssue = computed(() => issues.value.find(issue => issue.linkId === activeLinkId.value) ?? null);
   const activeEvidence = computed(() => evidence.value.filter(item => item.linkId === activeLinkId.value));
+  const activeLinkIndex = computed(() => links.value.findIndex(link => link.id === activeLinkId.value));
+  const linkCount = computed(() => links.value.length);
+  const canSelectPreviousLink = computed(() => activeLinkIndex.value > 0);
+  const canSelectNextLink = computed(() => (
+    activeLinkIndex.value >= 0 && activeLinkIndex.value < links.value.length - 1
+  ));
   const driftedLinkIds = computed(() => links.value
     .filter((link) => link.relationType === 'CONFLICTS_WITH'
       || codeAnchors.value.some(anchor => anchor.id === link.codeAnchorId && anchor.status !== 'VALID'))
@@ -44,7 +51,32 @@ export function useLinkedWorkbenchState() {
   function activateLink(linkId: string, source: LinkActivationSource) {
     if (!links.value.some(link => link.id === linkId)) return;
     activeLinkId.value = linkId;
+    selectedBlockId.value = links.value.find(link => link.id === linkId)?.blockId ?? null;
     lastActivationSource.value = source;
+  }
+
+  function selectDocumentBlock(blockId: string) {
+    selectedBlockId.value = blockId;
+  }
+
+  function selectUnboundDocumentBlock(blockId: string) {
+    selectedBlockId.value = blockId;
+    activeLinkId.value = null;
+    lastActivationSource.value = 'document';
+  }
+
+  function selectPreviousLink(source: LinkActivationSource = 'rail') {
+    if (!canSelectPreviousLink.value) return null;
+    const link = links.value[activeLinkIndex.value - 1];
+    activateLink(link.id, source);
+    return link;
+  }
+
+  function selectNextLink(source: LinkActivationSource = 'rail') {
+    if (!canSelectNextLink.value) return null;
+    const link = links.value[activeLinkIndex.value + 1];
+    activateLink(link.id, source);
+    return link;
   }
 
   function setMode(nextMode: WorkbenchMode) {
@@ -76,6 +108,7 @@ export function useLinkedWorkbenchState() {
     evidence.value = fixture.evidence;
     if (!activeLinkId.value || !links.value.some(link => link.id === activeLinkId.value)) {
       activeLinkId.value = links.value[0]?.id ?? null;
+      selectedBlockId.value = links.value[0]?.blockId ?? null;
       lastActivationSource.value = 'system';
     }
   }
@@ -92,6 +125,7 @@ export function useLinkedWorkbenchState() {
     selectedRepositoryId,
     selectedFilePath,
     selectedDocumentId,
+    selectedBlockId,
     codeAnchors,
     documentBlocks,
     links,
@@ -102,8 +136,16 @@ export function useLinkedWorkbenchState() {
     activeDocumentBlock,
     activeIssue,
     activeEvidence,
+    activeLinkIndex,
+    linkCount,
+    canSelectPreviousLink,
+    canSelectNextLink,
     driftedLinkIds,
     activateLink,
+    selectDocumentBlock,
+    selectUnboundDocumentBlock,
+    selectPreviousLink,
+    selectNextLink,
     setMode,
     toggleInspector,
     selectFile,

@@ -285,9 +285,20 @@ async function focusRequestedBlock() {
 
 async function focusBlock(blockId: string) {
   await nextTick();
-  editorRoot.value?.querySelector<HTMLElement>(
+  const target = editorRoot.value?.querySelector<HTMLElement>(
     `[data-block-id="${blockId}"]`,
-  )?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  );
+  if (!target) {
+    focusedBlockId.value = null;
+    return false;
+  }
+  focusedBlockId.value = blockId;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return true;
+}
+
+function clearBlockFocus() {
+  focusedBlockId.value = null;
 }
 
 async function handleCreate(type: DocumentBlockType) {
@@ -396,5 +407,5 @@ function editingUsersByBlock(blockId: string) {
   return (props.editingStates ?? []).filter((state) => state.blockId === blockId);
 }
 
-defineExpose({ focusBlock });
+defineExpose({ focusBlock, clearBlockFocus });
 </script>

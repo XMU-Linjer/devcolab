@@ -16,14 +16,16 @@ export type LinkActivationSource =
 
 export interface CodeAnchor {
   id: string;
+  bindingId?: string;
   repositoryId: string;
+  revision?: string | null;
   branch: string;
   commitSha: string;
   filePath: string;
   language: string;
   symbolName?: string;
   qualifiedSymbol?: string;
-  anchorKind?: 'FILE' | 'RANGE';
+  anchorKind?: 'FILE' | 'RANGE' | 'SYMBOL';
   startLine: number | null;
   endLine: number | null;
   contentHash?: string;
@@ -32,9 +34,18 @@ export interface CodeAnchor {
 
 export interface CodeDocumentLink {
   id: string;
+  bindingId?: string;
   codeAnchorId: string;
+  repositoryId?: string;
+  revision?: string | null;
+  filePath?: string;
   documentId: string;
   blockId: string | null;
+  documentTitle?: string | null;
+  anchorKind?: 'FILE' | 'RANGE' | 'SYMBOL';
+  symbolKey?: string | null;
+  startLine?: number | null;
+  endLine?: number | null;
   relationType:
     | 'IMPLEMENTS'
     | 'DESCRIBES'

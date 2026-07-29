@@ -28,7 +28,10 @@
           {{ isAgentRunning ? agentStatusLabel : 'Agent 检查' }}
         </el-button>
         <el-tag v-if="activeAnchor" size="small" effect="plain">
-          {{ hasLineRange(activeAnchor) ? `L${activeAnchor.startLine}–${activeAnchor.endLine}` : '文件级关联' }}
+          {{ activeAnchorLabel }}
+        </el-tag>
+        <el-tag v-if="rangeWarning" size="small" type="warning" effect="plain">
+          {{ rangeWarning }}
         </el-tag>
       </div>
     </header>
@@ -122,6 +125,25 @@ const lineElements = new Map<number, HTMLElement>();
 const lines = computed(() => props.content.split(/\r?\n/));
 const activeLink = computed(() => props.links.find(link => link.id === props.activeLinkId) ?? null);
 const activeAnchor = computed(() => props.anchors.find(anchor => anchor.id === activeLink.value?.codeAnchorId) ?? null);
+const activeAnchorLabel = computed(() => {
+  const anchor = activeAnchor.value;
+  if (!anchor) return '';
+  if (hasLineRange(anchor)) {
+    const symbol = anchor.anchorKind === 'SYMBOL' && anchor.symbolName
+      ? `${anchor.symbolName} · `
+      : '';
+    return `${symbol}L${anchor.startLine}–${anchor.endLine}`;
+  }
+  if (anchor.anchorKind === 'SYMBOL') return anchor.symbolName || '符号级关联';
+  return anchor.revision === null ? '旧文件级 Binding' : '文件级关联';
+});
+const rangeWarning = computed(() => {
+  const anchor = activeAnchor.value;
+  if (!anchor || anchor.startLine === null || anchor.endLine === null) return '';
+  return anchor.startLine > lines.value.length || anchor.endLine < 1
+    ? '关联范围已超出当前文件'
+    : '';
+});
 const agentDialogOpen = ref(false);
 const creatingRun = ref(false);
 const userInstruction = ref('');
@@ -186,18 +208,24 @@ watch(
 onBeforeUnmount(() => stopPolling());
 onMounted(() => restoreAgentJob());
 
-function anchorForLine(line: number) {
-  return props.anchors.find(anchor => (
-    anchor.startLine !== null
+function anchorsForLine(line: number) {
+  return props.anchors.filter(anchor => (
+    anchor.filePath === props.path
+    && anchor.startLine !== null
     && anchor.endLine !== null
     && line >= anchor.startLine
     && line <= anchor.endLine
   ));
 }
 
+function linksForLine(line: number) {
+  const anchorIds = new Set(anchorsForLine(line).map(anchor => anchor.id));
+  return props.links.filter(link => anchorIds.has(link.codeAnchorId));
+}
+
 function linkForLine(line: number) {
-  const anchor = anchorForLine(line);
-  return props.links.find(link => link.codeAnchorId === anchor?.id);
+  const candidates = linksForLine(line);
+  return candidates.find(link => link.id === props.activeLinkId) ?? candidates[0];
 }
 
 function activateLine(line: number) {
@@ -206,12 +234,13 @@ function activateLine(line: number) {
 }
 
 function lineClass(line: number) {
-  const anchor = anchorForLine(line);
-  const link = linkForLine(line);
+  const anchors = anchorsForLine(line);
+  const links = linksForLine(line);
+  const active = links.some(link => link.id === props.activeLinkId);
   return {
-    'is-linked': Boolean(link),
-    'is-active': link?.id === props.activeLinkId,
-    'is-drifted': anchor?.status === 'DRIFTED' || anchor?.status === 'BROKEN',
+    'is-linked': links.length > 0,
+    'is-active': active,
+    'is-drifted': anchors.some(anchor => anchor.status !== 'VALID'),
   };
 }
 
@@ -335,8 +364,9 @@ function clearActiveJob() {
 
 function focusAnchor(anchorId: string) {
   const anchor = props.anchors.find(item => item.id === anchorId);
-  if (!anchor || anchor.startLine === null) return;
-  lineElements.get(anchor.startLine)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!anchor || anchor.filePath !== props.path || anchor.startLine === null) return;
+  const clampedLine = Math.min(Math.max(anchor.startLine, 1), lines.value.length);
+  lineElements.get(clampedLine)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function hasLineRange(anchor: CodeAnchor) {

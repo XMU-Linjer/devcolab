@@ -62,7 +62,8 @@ const statusProps = computed(() => ({ collaborationConnected: props.collaboratio
   membersCount: props.membersCount, linksCount: props.links.length, activeAnchor: props.activeAnchor }));
 function focusAnchor(anchorId: string) { contentRef.value?.focusAnchor(anchorId); }
 function focusBlock(blockId: string) { contentRef.value?.focusBlock(blockId); }
-defineExpose({ focusAnchor, focusBlock });
+function clearBlockFocus() { contentRef.value?.clearBlockFocus(); }
+defineExpose({ focusAnchor, focusBlock, clearBlockFocus });
 </script>
 
 <style scoped>

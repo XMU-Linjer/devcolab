@@ -7,9 +7,11 @@ export interface LinkedWorkbenchScope {
 }
 
 export interface LinkedWorkbenchSnapshot extends LinkedWorkbenchScope {
-  version: 1;
+  version: 2;
   filePath: string | null;
   documentId: string | null;
+  bindingId: string | null;
+  blockId: string | null;
 }
 
 export interface LinkedWorkbenchNavigationState {
@@ -78,28 +80,63 @@ function isScope(value: unknown): value is LinkedWorkbenchScope {
     && isNonEmptyString(candidate.revision);
 }
 
-function isSnapshot(value: unknown, scope?: LinkedWorkbenchScope): value is LinkedWorkbenchSnapshot {
-  if (!isScope(value)) return false;
-  const candidate = value as Partial<LinkedWorkbenchSnapshot>;
-  return candidate.version === 1
-    && isNullableString(candidate.filePath)
-    && isNullableString(candidate.documentId)
-    && (!scope
-      || (candidate.workspaceId === scope.workspaceId
-        && candidate.repositoryId === scope.repositoryId
-        && candidate.revision === scope.revision));
+function normalizeSnapshot(
+  value: unknown,
+  scope?: LinkedWorkbenchScope,
+): LinkedWorkbenchSnapshot | null {
+  if (!isScope(value)) return null;
+  const candidate = value as Partial<LinkedWorkbenchScope & {
+    version: 1 | 2;
+    filePath: string | null;
+    documentId: string | null;
+    bindingId: string | null;
+    blockId: string | null;
+  }>;
+  const scopeMatches = !scope
+    || (candidate.workspaceId === scope.workspaceId
+      && candidate.repositoryId === scope.repositoryId
+      && candidate.revision === scope.revision);
+  if (!scopeMatches
+    || !isNullableString(candidate.filePath)
+    || !isNullableString(candidate.documentId)) return null;
+  if (candidate.version === 1) {
+    return {
+      version: 2,
+      workspaceId: candidate.workspaceId!,
+      repositoryId: candidate.repositoryId!,
+      revision: candidate.revision!,
+      filePath: candidate.filePath,
+      documentId: candidate.documentId,
+      bindingId: null,
+      blockId: null,
+    };
+  }
+  if (candidate.version !== 2
+    || !isNullableString(candidate.bindingId)
+    || !isNullableString(candidate.blockId)) return null;
+  return candidate as LinkedWorkbenchSnapshot;
+}
+
+function isSnapshot(value: unknown): value is LinkedWorkbenchSnapshot {
+  return normalizeSnapshot(value) !== null;
 }
 
 function normalizeState(value: unknown, scope: LinkedWorkbenchScope): LinkedWorkbenchNavigationState {
   if (!value || typeof value !== 'object') return emptyState();
   const candidate = value as Partial<LinkedWorkbenchNavigationState>;
   return {
-    current: isSnapshot(candidate.current, scope) ? candidate.current : null,
+    current: normalizeSnapshot(candidate.current, scope),
     backStack: Array.isArray(candidate.backStack)
-      ? candidate.backStack.filter(item => isSnapshot(item, scope)).slice(-MAX_HISTORY)
+      ? candidate.backStack
+          .map(item => normalizeSnapshot(item, scope))
+          .filter((item): item is LinkedWorkbenchSnapshot => item !== null)
+          .slice(-MAX_HISTORY)
       : [],
     forwardStack: Array.isArray(candidate.forwardStack)
-      ? candidate.forwardStack.filter(item => isSnapshot(item, scope)).slice(-MAX_HISTORY)
+      ? candidate.forwardStack
+          .map(item => normalizeSnapshot(item, scope))
+          .filter((item): item is LinkedWorkbenchSnapshot => item !== null)
+          .slice(-MAX_HISTORY)
       : [],
   };
 }
@@ -143,7 +180,9 @@ function sameTarget(left: LinkedWorkbenchSnapshot | null, right: LinkedWorkbench
     && left.repositoryId === right.repositoryId
     && left.revision === right.revision
     && left.filePath === right.filePath
-    && left.documentId === right.documentId);
+    && left.documentId === right.documentId
+    && left.bindingId === right.bindingId
+    && left.blockId === right.blockId);
 }
 
 function trimHistory(items: LinkedWorkbenchSnapshot[]) {
@@ -154,8 +193,10 @@ export function createLinkedWorkbenchSnapshot(
   scope: LinkedWorkbenchScope,
   filePath: string | null,
   documentId: string | null,
+  bindingId: string | null = null,
+  blockId: string | null = null,
 ): LinkedWorkbenchSnapshot {
-  return { version: 1, ...scope, filePath, documentId };
+  return { version: 2, ...scope, filePath, documentId, bindingId, blockId };
 }
 
 export function resetLinkedWorkbenchNavigationMemoryForTests() {
