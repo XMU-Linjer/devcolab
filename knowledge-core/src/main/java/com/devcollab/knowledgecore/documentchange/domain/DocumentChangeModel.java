@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.domain;
 
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -73,13 +75,44 @@ public final class DocumentChangeModel {
             int sequenceNumber,
             BindingAction action,
             UUID repositoryId,
+            String revision,
             String filePath,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
             UUID documentId,
             UUID createdDocumentOperationId,
+            UUID blockId,
+            UUID createdBlockOperationId,
             UUID bindingId,
+            String candidateId,
+            String documentAnchorCandidateId,
             String reason,
+            Double confidence,
             Instant createdAt
     ) {
+        public BindingProposal(
+                UUID id,
+                UUID changeRequestId,
+                String clientBindingProposalId,
+                int sequenceNumber,
+                BindingAction action,
+                UUID repositoryId,
+                String filePath,
+                UUID documentId,
+                UUID createdDocumentOperationId,
+                UUID bindingId,
+                String reason,
+                Instant createdAt
+        ) {
+            this(
+                    id, changeRequestId, clientBindingProposalId, sequenceNumber,
+                    action, repositoryId, null, filePath, CodeAnchorKind.FILE,
+                    null, null, null, documentId, createdDocumentOperationId,
+                    null, null, bindingId, null, null, reason, null, createdAt
+            );
+        }
     }
 
     public record Evidence(

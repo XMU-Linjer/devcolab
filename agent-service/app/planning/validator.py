@@ -52,7 +52,6 @@ class AgentPlanValidator:
 
         self._validate_counts_and_sequences(plan, issues)
         self._validate_evidence(plan, code_by_path, repository_id, issues)
-        self._validate_binding_completeness(plan, context, bindings, issues)
 
         for index, operation in enumerate(plan.operations):
             path = f"operations[{index}]"
@@ -181,7 +180,10 @@ class AgentPlanValidator:
 
         self._validate_document_authoring(plan, context, documents, code_by_path, issues)
 
-        seen_upserts: set[tuple[str, str, str]] = set()
+        seen_upserts: set[tuple[str, ...]] = set()
+        operations_by_id = {
+            item.clientOperationId: item for item in plan.operations
+        }
         for index, proposal in enumerate(plan.bindingProposals):
             path = f"bindingProposals[{index}]"
             if str(proposal.repositoryId) != repository_id:
@@ -201,14 +203,79 @@ class AgentPlanValidator:
                     "DOCUMENT_TARGET_INVALID",
                     "binding must target exactly one known or newly created document",
                 )
+            block_target = str(proposal.blockId) if proposal.blockId else ""
+            created_block_target = proposal.createdBlockClientOperationId
+            if block_target:
+                actual_block = blocks.get(block_target)
+                if actual_block is None or actual_block[0] != target:
+                    self._issue(
+                        issues,
+                        path,
+                        "BLOCK_TARGET_INVALID",
+                        "binding blockId must belong to the selected document",
+                    )
+            if created_block_target:
+                creator = operations_by_id.get(created_block_target)
+                if creator is None or creator.operationType != OperationType.ADD_BLOCK:
+                    self._issue(
+                        issues,
+                        path,
+                        "CREATED_BLOCK_REFERENCE_INVALID",
+                        "createdBlockClientOperationId must reference ADD_BLOCK",
+                    )
+                else:
+                    same_existing = (
+                        proposal.documentId is not None
+                        and creator.documentId == proposal.documentId
+                        and creator.createdDocumentClientOperationId is None
+                    )
+                    same_created = (
+                        created_target is not None
+                        and creator.createdDocumentClientOperationId == created_target
+                        and creator.documentId is None
+                    )
+                    if not (same_existing or same_created):
+                        self._issue(
+                            issues,
+                            path,
+                            "CREATED_BLOCK_DOCUMENT_MISMATCH",
+                            "created block must target the same document as its binding",
+                        )
+                    if creator.sequenceNumber >= proposal.sequenceNumber:
+                        self._issue(
+                            issues,
+                            path,
+                            "CREATE_REFERENCE_ORDER",
+                            "created block must appear before its binding",
+                        )
             if proposal.action == BindingAction.UPSERT_BINDING:
-                key = (proposal.filePath, target, created_target or "")
+                key = (
+                    proposal.filePath,
+                    target or created_target or "",
+                    block_target or created_block_target or "",
+                    proposal.anchorKind,
+                    proposal.symbolKey or "",
+                    str(proposal.startLine or ""),
+                    str(proposal.endLine or ""),
+                )
                 if key in seen_upserts:
                     self._issue(issues, path, "DUPLICATE_BINDING", "duplicate binding proposal")
                 seen_upserts.add(key)
                 for binding in bindings:
                     known_path = binding.get("filePath") or binding.get("pathPattern")
-                    if known_path == proposal.filePath and str(binding.get("documentId")) == target:
+                    if (
+                        known_path == proposal.filePath
+                        and str(binding.get("documentId")) == target
+                        and str(binding.get("blockId") or "") == block_target
+                        and str(binding.get("revision") or "")
+                        == str(proposal.revision or "")
+                        and str(binding.get("anchorKind") or "FILE")
+                        == proposal.anchorKind
+                        and str(binding.get("symbolKey") or "")
+                        == str(proposal.symbolKey or "")
+                        and binding.get("startLine") == proposal.startLine
+                        and binding.get("endLine") == proposal.endLine
+                    ):
                         self._issue(
                             issues, path, "BINDING_EXISTS", "the same binding already exists"
                         )
@@ -229,6 +296,13 @@ class AgentPlanValidator:
                             "created document must appear before its binding",
                         )
             else:
+                if created_target or created_block_target:
+                    self._issue(
+                        issues,
+                        path,
+                        "REMOVE_CREATED_TARGET_INVALID",
+                        "REMOVE_BINDING cannot target objects created by this review",
+                    )
                 existing_binding = bindings_by_id.get(str(proposal.bindingId))
                 if existing_binding is None:
                     self._issue(
@@ -267,32 +341,6 @@ class AgentPlanValidator:
         if issues:
             raise PlanValidationError(issues)
         return plan
-
-    def _validate_binding_completeness(
-        self,
-        plan: AgentPlan,
-        context: dict[str, Any],
-        bindings: list[dict[str, Any]],
-        issues: list[PlanValidationIssue],
-    ) -> None:
-        if plan.decision != Decision.NO_CHANGE:
-            return
-        selected_paths = {
-            str(path) for path in context.get("task", {}).get("selectedPaths", []) if path
-        }
-        bound_paths = {
-            str(item.get("filePath") or item.get("pathPattern"))
-            for item in bindings
-            if item.get("filePath") or item.get("pathPattern")
-        }
-        missing = sorted(selected_paths - bound_paths)
-        if missing:
-            self._issue(
-                issues,
-                "decision",
-                "BINDING_CHANGE_REQUIRED",
-                "NO_CHANGE is invalid while selected files lack a formal Binding",
-            )
 
     def _validate_document_authoring(
         self,

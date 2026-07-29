@@ -62,6 +62,16 @@ class ProjectUnitContextBuilder:
                     "path": path,
                 },
             )
+            details_reader = getattr(self._client, "read_code_details", None)
+            details = (
+                await details_reader(
+                    workspace_id=workspace_id,
+                    repository_id=repository_id,
+                    path=path,
+                )
+                if callable(details_reader)
+                else {}
+            )
             if str(source.get("commitHash", "")).lower() != revision.lower():
                 raise JobExecutionError(
                     "REVISION_CHANGED",
@@ -84,6 +94,7 @@ class ProjectUnitContextBuilder:
                     "language": source.get("language"),
                     "content": content,
                     "truncated": truncated,
+                    "symbols": list(details.get("symbols", [])),
                 }
             )
 
@@ -123,6 +134,7 @@ class ProjectUnitContextBuilder:
             "run_id": run_id,
             "workspace_id": workspace_id,
             "repository_id": repository_id,
+            "revision": revision,
             "selected_paths": selected_paths,
             "preferred_document_ids": preferred_document_ids,
             "user_instruction": user_instruction,

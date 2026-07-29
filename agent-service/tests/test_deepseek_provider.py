@@ -170,3 +170,34 @@ async def test_deepseek_project_planner_uses_separate_unit_plan_schema() -> None
     assert result.units[0].name == "认证服务"
     assert user["unitPlanSchema"]["title"] == "UnitPlan"
     assert "agentPlanSchema" not in user
+
+
+@pytest.mark.asyncio
+async def test_deepseek_binding_pass_uses_only_binding_plan_schema() -> None:
+    seen: dict[str, Any] = {}
+    binding_plan = {
+        "selections": [
+            {
+                "codeCandidateId": "code_candidate_123",
+                "documentAnchorCandidateId": "doc_candidate_456",
+                "reason": "代码职责与文档块内容一致。",
+                "confidence": 0.93,
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(binding_plan)
+
+    result = await provider(handler).plan_block_bindings(
+        {
+            "codeCandidates": [{"candidateId": "code_candidate_123"}],
+            "documentAnchorCandidates": [{"candidateId": "doc_candidate_456"}],
+        }
+    )
+    user = json.loads(seen["messages"][1]["content"])
+    assert result.selections[0].codeCandidateId == "code_candidate_123"
+    assert user["bindingPlanSchema"]["title"] == "BindingPlan"
+    assert "agentPlanSchema" not in user
+    assert "unitPlanSchema" not in user

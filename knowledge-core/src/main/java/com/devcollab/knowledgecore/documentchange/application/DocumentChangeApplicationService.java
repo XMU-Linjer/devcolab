@@ -24,7 +24,9 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepositor
 import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
+import com.devcollab.knowledgecore.git.application.CodeBindingAnchorValidator;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
 import com.devcollab.knowledgecore.git.application.exception.DuplicateCodeBindingException;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
@@ -118,12 +120,41 @@ public class DocumentChangeApplicationService {
             int sequenceNumber,
             BindingAction action,
             UUID repositoryId,
+            String revision,
             String filePath,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
             UUID documentId,
             String createdDocumentClientOperationId,
+            UUID blockId,
+            String createdBlockClientOperationId,
             UUID bindingId,
-            String reason
+            String candidateId,
+            String documentAnchorCandidateId,
+            String reason,
+            Double confidence
     ) {
+        public CreateBindingProposalCommand(
+                String clientBindingProposalId,
+                int sequenceNumber,
+                BindingAction action,
+                UUID repositoryId,
+                String filePath,
+                UUID documentId,
+                String createdDocumentClientOperationId,
+                UUID bindingId,
+                String reason
+        ) {
+            this(
+                    clientBindingProposalId, sequenceNumber, action,
+                    repositoryId, null, filePath, CodeAnchorKind.FILE,
+                    null, null, null, documentId,
+                    createdDocumentClientOperationId, null, null, bindingId,
+                    null, null, reason, null
+            );
+        }
     }
 
     public record CreateOperationCommand(
@@ -302,22 +333,29 @@ public class DocumentChangeApplicationService {
         }
 
         Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
+        Map<UUID, UUID> createdBlocks = new java.util.HashMap<>();
         for (Operation operation : operations) {
             applyOperation(
                     workspaceId,
                     currentUserId,
                     operation,
                     createdDocuments,
+                    createdBlocks,
                     targets.blocks()
             );
         }
 
+        List<BindingApplyResultView> appliedBindings = new ArrayList<>();
         for (BindingProposal proposal : bindingProposals) {
-            applyBindingProposal(
+            BindingApplyResultView result = applyBindingProposal(
                     currentUserId,
                     proposal,
-                    createdDocuments
+                    createdDocuments,
+                    createdBlocks
             );
+            if (result != null) {
+                appliedBindings.add(result);
+            }
         }
 
         Instant reviewedAt = Instant.now();
@@ -335,7 +373,14 @@ public class DocumentChangeApplicationService {
                 "批准并原子应用文档变更请求",
                 reviewedAt
         );
-        return new DecisionResult(detail(applied), false);
+        return new DecisionResult(detail(
+                applied,
+                new ApplyResultView(
+                        Map.copyOf(createdDocuments),
+                        Map.copyOf(createdBlocks),
+                        List.copyOf(appliedBindings)
+                )
+        ), false);
     }
 
     @Transactional
@@ -453,6 +498,13 @@ public class DocumentChangeApplicationService {
 
     @Transactional(readOnly = true)
     public DetailView detail(ChangeRequest request) {
+        return detail(request, null);
+    }
+
+    private DetailView detail(
+            ChangeRequest request,
+            ApplyResultView applyResult
+    ) {
         List<Operation> operations = repository.findOperations(request.id());
         List<BindingProposal> bindingProposals = repository.findBindingProposals(request.id());
         List<Evidence> evidence = repository.findEvidence(request.id());
@@ -474,6 +526,8 @@ public class DocumentChangeApplicationService {
                 .map(gitRepository::findRepositoryById)
                 .flatMap(java.util.Optional::stream)
                 .collect(Collectors.toMap(GitRepository::id, Function.identity()));
+        Map<UUID, Operation> operationsById = operations.stream()
+                .collect(Collectors.toMap(Operation::id, Function.identity()));
 
         List<OperationView> operationViews = operations.stream()
                 .map(operation -> operationView(
@@ -485,7 +539,11 @@ public class DocumentChangeApplicationService {
                 .toList();
 
         List<BindingProposalView> bindingProposalViews = bindingProposals.stream()
-                .map(bp -> bindingProposalView(bp, repositories))
+                .map(bp -> bindingProposalView(
+                        bp,
+                        repositories,
+                        operationsById
+                ))
                 .toList();
 
         return new DetailView(
@@ -494,7 +552,8 @@ public class DocumentChangeApplicationService {
                 bindingProposalViews,
                 requestEvidence.stream()
                         .map(item -> evidenceView(item, repositories))
-                        .toList()
+                        .toList(),
+                applyResult
         );
     }
 
@@ -590,10 +649,27 @@ public class DocumentChangeApplicationService {
 
     private BindingProposalView bindingProposalView(
             BindingProposal bp,
-            Map<UUID, GitRepository> repositories
+            Map<UUID, GitRepository> repositories,
+            Map<UUID, Operation> operations
     ) {
-        Document document = bp.documentId() == null ? null : documentRepository.findById(bp.documentId()).orElse(null);
-        String documentTitle = document == null ? null : document.title();
+        Document document = bp.documentId() == null
+                ? null : documentRepository.findById(bp.documentId()).orElse(null);
+        Operation documentCreator = bp.createdDocumentOperationId() == null
+                ? null : operations.get(bp.createdDocumentOperationId());
+        Operation blockCreator = bp.createdBlockOperationId() == null
+                ? null : operations.get(bp.createdBlockOperationId());
+        DocumentBlock block = bp.blockId() == null
+                ? null : blockRepository.findById(bp.blockId()).orElse(null);
+        String documentTitle = document != null
+                ? document.title()
+                : documentCreator == null
+                ? null : documentCreator.proposedDocumentTitle();
+        String blockType = block != null
+                ? block.type().name()
+                : blockCreator == null ? null : blockCreator.proposedBlockType();
+        String blockPreview = block != null
+                ? block.text()
+                : blockCreator == null ? null : blockCreator.proposedPlainText();
         GitRepository git = repositories.get(bp.repositoryId());
         return new BindingProposalView(
                 bp.id(),
@@ -603,16 +679,28 @@ public class DocumentChangeApplicationService {
                 new TargetView(
                         bp.documentId(),
                         documentTitle,
-                        null,
-                        null
+                        bp.blockId(),
+                        blockType
                 ),
                 new RepositoryView(
                         bp.repositoryId(),
                         git == null ? "Unavailable repository" : git.name()
                 ),
                 bp.filePath(),
+                bp.revision(),
+                bp.anchorKind(),
+                bp.symbolKey(),
+                bp.startLine(),
+                bp.endLine(),
+                documentCreator == null
+                        ? null : documentCreator.clientOperationId(),
+                blockCreator == null ? null : blockCreator.clientOperationId(),
+                blockPreview,
                 bp.bindingId(),
-                bp.reason()
+                bp.candidateId(),
+                bp.documentAnchorCandidateId(),
+                bp.reason(),
+                bp.confidence()
         );
     }
 
@@ -787,8 +875,13 @@ public class DocumentChangeApplicationService {
                     || !binding.workspaceId().equals(workspaceId)
                     || !binding.repositoryId().equals(proposal.repositoryId())
                     || !binding.documentId().equals(proposal.documentId())
-                    || binding.blockId() != null
-                    || !binding.pathPattern().equals(proposal.filePath())) {
+                    || !Objects.equals(binding.blockId(), proposal.blockId())
+                    || !binding.pathPattern().equals(proposal.filePath())
+                    || !Objects.equals(binding.revision(), proposal.revision())
+                    || binding.anchorKind() != proposal.anchorKind()
+                    || !Objects.equals(binding.symbolKey(), proposal.symbolKey())
+                    || !Objects.equals(binding.startLine(), proposal.startLine())
+                    || !Objects.equals(binding.endLine(), proposal.endLine())) {
                 return true;
             }
         }
@@ -800,6 +893,7 @@ public class DocumentChangeApplicationService {
             UUID currentUserId,
             Operation operation,
             Map<UUID, UUID> createdDocuments,
+            Map<UUID, UUID> createdBlocks,
             Map<UUID, DocumentBlock> lockedBlocks
     ) {
         switch (operation.operationType()) {
@@ -819,18 +913,21 @@ public class DocumentChangeApplicationService {
                 );
                 createdDocuments.put(operation.id(), created.id());
             }
-            case ADD_BLOCK -> blockService.create(
-                    resolveDocumentId(operation, createdDocuments),
-                    currentUserId,
-                    new CreateDocumentBlockCommand(
-                            DocumentBlockType.valueOf(
-                                    operation.proposedBlockType()
-                            ),
-                            operation.proposedPlainText(),
-                            operation.proposedContentSchemaVersion(),
-                            readJson(operation.proposedContentJson())
-                    )
-            );
+            case ADD_BLOCK -> {
+                DocumentBlock created = blockService.create(
+                        resolveDocumentId(operation, createdDocuments),
+                        currentUserId,
+                        new CreateDocumentBlockCommand(
+                                DocumentBlockType.valueOf(
+                                        operation.proposedBlockType()
+                                ),
+                                operation.proposedPlainText(),
+                                operation.proposedContentSchemaVersion(),
+                                readJson(operation.proposedContentJson())
+                        )
+                );
+                createdBlocks.put(operation.id(), created.id());
+            }
             case UPDATE_BLOCK -> {
                 DocumentBlock block = lockedBlocks.get(operation.blockId());
                 if (block == null) {
@@ -895,40 +992,68 @@ public class DocumentChangeApplicationService {
         return documentId;
     }
 
-    private void applyBindingProposal(
+    private BindingApplyResultView applyBindingProposal(
             UUID currentUserId,
             BindingProposal proposal,
-            Map<UUID, UUID> createdDocuments
+            Map<UUID, UUID> createdDocuments,
+            Map<UUID, UUID> createdBlocks
     ) {
         if (proposal.action() == BindingAction.UPSERT_BINDING) {
             UUID documentId = resolveDocumentId(proposal, createdDocuments);
+            UUID blockId = resolveBlockId(proposal, createdBlocks);
+            if (blockId != null) {
+                DocumentBlock block = blockRepository.findById(blockId)
+                        .orElseThrow(() -> new IllegalStateException(
+                                "BindingProposal 引用的 Block 不存在"
+                        ));
+                if (!block.documentId().equals(documentId)) {
+                    throw new IllegalStateException(
+                            "BindingProposal 引用的 Block 不属于目标文档"
+                    );
+                }
+            }
             CreateCodeBindingCommand command = new CreateCodeBindingCommand(
                     proposal.repositoryId(),
-                    null,
-                    proposal.filePath()
+                    blockId,
+                    proposal.filePath(),
+                    proposal.revision(),
+                    proposal.anchorKind(),
+                    proposal.symbolKey(),
+                    proposal.startLine(),
+                    proposal.endLine()
             );
-            if (gitKnowledgeService.findExactBinding(
+            var existing = gitKnowledgeService.findExactBinding(
                     documentId,
                     currentUserId,
                     command
-            ).isPresent()) {
-                return;
+            );
+            if (existing.isPresent()) {
+                return new BindingApplyResultView(
+                        proposal.id(), existing.get().id(), true
+                );
             }
             try {
-                gitKnowledgeService.createBinding(
+                CodeDocumentBinding created = gitKnowledgeService.createBinding(
                         documentId,
                         currentUserId,
                         command
                 );
+                return new BindingApplyResultView(
+                        proposal.id(), created.id(), false
+                );
             } catch (DuplicateCodeBindingException
                      | DataIntegrityViolationException exception) {
-                if (gitKnowledgeService.findExactBinding(
+                var concurrent = gitKnowledgeService.findExactBinding(
                         documentId,
                         currentUserId,
                         command
-                ).isEmpty()) {
+                );
+                if (concurrent.isEmpty()) {
                     throw exception;
                 }
+                return new BindingApplyResultView(
+                        proposal.id(), concurrent.get().id(), true
+                );
             }
         } else if (proposal.action() == BindingAction.REMOVE_BINDING) {
             gitKnowledgeService.deleteBinding(
@@ -936,6 +1061,26 @@ public class DocumentChangeApplicationService {
                     currentUserId
             );
         }
+        return null;
+    }
+
+    private UUID resolveBlockId(
+            BindingProposal proposal,
+            Map<UUID, UUID> createdBlocks
+    ) {
+        if (proposal.blockId() != null) {
+            return proposal.blockId();
+        }
+        if (proposal.createdBlockOperationId() == null) {
+            return null;
+        }
+        UUID blockId = createdBlocks.get(proposal.createdBlockOperationId());
+        if (blockId == null) {
+            throw new IllegalStateException(
+                    "新建 Block BindingProposal 尚未产生目标 Block"
+            );
+        }
+        return blockId;
     }
 
     private void recordDecision(
@@ -977,7 +1122,8 @@ public class DocumentChangeApplicationService {
                 detail.operations(),
                 detail.bindingProposals(),
                 detail.requestEvidence(),
-                true
+                true,
+                detail.applyResult()
         );
     }
 
@@ -1144,6 +1290,7 @@ public class DocumentChangeApplicationService {
             Map<String, Operation> savedByClientId
     ) {
         UUID createdDocumentOperationId = null;
+        Operation documentCreator = null;
         if (input.createdDocumentClientOperationId() != null) {
             Operation creator = savedByClientId.get(
                     input.createdDocumentClientOperationId()
@@ -1161,6 +1308,7 @@ public class DocumentChangeApplicationService {
                 );
             }
             createdDocumentOperationId = creator.id();
+            documentCreator = creator;
         }
 
         if (input.documentId() == null && createdDocumentOperationId == null) {
@@ -1175,10 +1323,77 @@ public class DocumentChangeApplicationService {
             requireDocument(workspaceId, input.documentId());
         }
 
+        UUID createdBlockOperationId = null;
+        if (input.blockId() != null) {
+            Document targetDocument = input.documentId() == null
+                    ? null : requireDocument(workspaceId, input.documentId());
+            requireBlock(targetDocument, input.blockId());
+            if (createdDocumentOperationId != null) {
+                throw operationInvalid(
+                        "现有 blockId 不能引用本请求新建的文档"
+                );
+            }
+        }
+        if (input.createdBlockClientOperationId() != null) {
+            Operation blockCreator = savedByClientId.get(
+                    input.createdBlockClientOperationId()
+            );
+            if (blockCreator == null
+                    || blockCreator.operationType() != OperationType.ADD_BLOCK) {
+                throw operationInvalid(
+                        "createdBlockClientOperationId 必须引用更早的 ADD_BLOCK"
+                );
+            }
+            boolean sameExistingDocument = input.documentId() != null
+                    && input.documentId().equals(blockCreator.documentId())
+                    && blockCreator.createdDocumentOperationId() == null;
+            boolean sameCreatedDocument = documentCreator != null
+                    && blockCreator.documentId() == null
+                    && documentCreator.id().equals(
+                    blockCreator.createdDocumentOperationId()
+            );
+            if (!sameExistingDocument && !sameCreatedDocument) {
+                throw operationInvalid(
+                        "Binding 引用的新建 Block 必须属于同一目标文档"
+                );
+            }
+            createdBlockOperationId = blockCreator.id();
+        }
+        if (input.blockId() != null && createdBlockOperationId != null) {
+            throw operationInvalid(
+                    "Binding 不能同时引用现有 Block 和新建 Block"
+            );
+        }
+        if (input.action() == BindingAction.REMOVE_BINDING
+                && (createdDocumentOperationId != null
+                || createdBlockOperationId != null)) {
+            throw operationInvalid(
+                    "REMOVE_BINDING 不能引用本请求新建的文档或 Block"
+            );
+        }
+
         gitRepository.findRepositoryById(input.repositoryId())
                 .filter(item -> item.workspaceId().equals(workspaceId))
                 .orElseThrow(() -> evidenceInvalid("目标代码仓库不存在或不属于工作区"));
         String filePath = normalizeBindingPath(input.filePath());
+        CodeBindingAnchorValidator.ValidatedAnchor anchor =
+                CodeBindingAnchorValidator.validate(
+                        input.revision(),
+                        input.anchorKind(),
+                        input.symbolKey(),
+                        input.startLine(),
+                        input.endLine()
+                );
+        if (input.confidence() != null
+                && (input.confidence() < 0 || input.confidence() > 1)) {
+            throw operationInvalid("Binding confidence 必须在 0 到 1 之间");
+        }
+        requireOptionalText(input.candidateId(), 100, "candidateId");
+        requireOptionalText(
+                input.documentAnchorCandidateId(),
+                100,
+                "documentAnchorCandidateId"
+        );
 
         return new BindingProposal(
                 UUID.randomUUID(),
@@ -1187,11 +1402,21 @@ public class DocumentChangeApplicationService {
                 input.sequenceNumber(),
                 input.action(),
                 input.repositoryId(),
+                anchor.revision(),
                 filePath,
+                anchor.anchorKind(),
+                anchor.symbolKey(),
+                anchor.startLine(),
+                anchor.endLine(),
                 input.documentId(),
                 createdDocumentOperationId,
+                input.blockId(),
+                createdBlockOperationId,
                 input.bindingId(),
-                input.reason(),
+                trim(input.candidateId()),
+                trim(input.documentAnchorCandidateId()),
+                input.reason().trim(),
+                input.confidence(),
                 Instant.now()
         );
     }
@@ -1361,11 +1586,22 @@ public class DocumentChangeApplicationService {
                                 proposal.sequenceNumber(),
                                 proposal.action(),
                                 proposal.repositoryId(),
+                                trim(proposal.revision()),
                                 normalizeBindingPath(proposal.filePath()),
+                                proposal.anchorKind() == null
+                                        ? CodeAnchorKind.FILE : proposal.anchorKind(),
+                                trim(proposal.symbolKey()),
+                                proposal.startLine(),
+                                proposal.endLine(),
                                 proposal.documentId(),
                                 proposal.createdDocumentClientOperationId(),
+                                proposal.blockId(),
+                                proposal.createdBlockClientOperationId(),
                                 proposal.bindingId(),
-                                proposal.reason()
+                                trim(proposal.candidateId()),
+                                trim(proposal.documentAnchorCandidateId()),
+                                proposal.reason(),
+                                proposal.confidence()
                         ))
                         .toList();
         List<CreateEvidenceCommand> evidence = safeList(command.evidence()).stream()
@@ -1468,6 +1704,12 @@ public class DocumentChangeApplicationService {
     private void requireText(String value, int max, String field) {
         if (value == null || value.trim().isEmpty() || value.trim().length() > max) {
             throw invalid(field + " 必须为 1 到 " + max + " 个字符");
+        }
+    }
+
+    private void requireOptionalText(String value, int max, String field) {
+        if (value != null) {
+            requireText(value, max, field);
         }
     }
 

@@ -378,12 +378,13 @@ final class McpToolSchemas {
                         "bindingId", uuidProperty("Binding identifier"),
                         "repositoryId", uuidProperty("Repository identifier"),
                         "documentId", uuidProperty("Document identifier"),
+                        "documentTitle", Map.of("type", List.of("string", "null")),
                         "blockId", uuidProperty("Block identifier", true),
                         "pathPattern", Map.of("type", "string")
                 ),
                 List.of(
                         "bindingId", "repositoryId", "documentId",
-                        "blockId", "pathPattern"
+                        "documentTitle", "blockId", "pathPattern"
                 )
         );
         Map<String, Object> file = objectSchema(
@@ -619,11 +620,34 @@ final class McpToolSchemas {
         bindingProposalProperties.put("sequenceNumber", Map.of("type", "integer", "minimum", 1));
         bindingProposalProperties.put("action", Map.of("type", "string", "enum", List.of("UPSERT_BINDING", "REMOVE_BINDING")));
         bindingProposalProperties.put("repositoryId", uuidProperty("Binding repository identifier"));
+        bindingProposalProperties.put("revision", nullableStringProperty(1, 255));
         bindingProposalProperties.put("filePath", stringProperty(1, maxPathCharacters));
+        bindingProposalProperties.put("anchorKind", Map.of(
+                "type", "string",
+                "enum", List.of("FILE", "RANGE", "SYMBOL")
+        ));
+        bindingProposalProperties.put("symbolKey", nullableStringProperty(1, 1000));
+        bindingProposalProperties.put("startLine", Map.of(
+                "type", List.of("integer", "null"),
+                "minimum", 1
+        ));
+        bindingProposalProperties.put("endLine", Map.of(
+                "type", List.of("integer", "null"),
+                "minimum", 1
+        ));
         bindingProposalProperties.put("documentId", uuidProperty("Target document identifier", true));
         bindingProposalProperties.put("createdDocumentClientOperationId", nullableStringProperty(1, 100));
+        bindingProposalProperties.put("blockId", uuidProperty("Target Block identifier", true));
+        bindingProposalProperties.put("createdBlockClientOperationId", nullableStringProperty(1, 100));
         bindingProposalProperties.put("bindingId", uuidProperty("Existing binding identifier", true));
+        bindingProposalProperties.put("candidateId", nullableStringProperty(1, 100));
+        bindingProposalProperties.put("documentAnchorCandidateId", nullableStringProperty(1, 100));
         bindingProposalProperties.put("reason", stringProperty(1, 1000));
+        bindingProposalProperties.put("confidence", Map.of(
+                "type", List.of("number", "null"),
+                "minimum", 0,
+                "maximum", 1
+        ));
 
         Map<String, Object> bindingProposal = objectSchema(
                 bindingProposalProperties,

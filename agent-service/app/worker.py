@@ -136,6 +136,8 @@ class AgentWorker:
             delegation_id=UUID(str(job["delegation_id"])),
             job_id=job_id,
             revision=str(job["revision"]),
+            knowledge_core_base_url=self._settings.knowledge_core_base_url,
+            request_timeout_seconds=self._settings.agent_request_timeout_seconds,
         )
 
         async def on_status(status: str, _node: str, _updates: dict[str, Any]) -> None:
@@ -181,6 +183,7 @@ class AgentWorker:
                 "run_id": run_id,
                 "workspace_id": str(job["workspace_id"]),
                 "repository_id": str(job["repository_id"]),
+                "revision": str(job["revision"]),
                 "selected_paths": selected_paths,
                 "preferred_document_ids": preferred_document_ids,
                 "user_instruction": user_instruction,

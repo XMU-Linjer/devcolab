@@ -8,6 +8,7 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Ope
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
 import com.devcollab.knowledgecore.document.domain.DocumentType;
 import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
@@ -208,11 +209,21 @@ public class DocumentChangeController {
             int sequenceNumber,
             @NotNull BindingAction action,
             @NotNull UUID repositoryId,
+            @Size(max = 255) String revision,
             @NotBlank @Size(max = 1000) String filePath,
+            CodeAnchorKind anchorKind,
+            @Size(max = 1000) String symbolKey,
+            Integer startLine,
+            Integer endLine,
             UUID documentId,
             String createdDocumentClientOperationId,
+            UUID blockId,
+            String createdBlockClientOperationId,
             UUID bindingId,
-            @NotBlank @Size(max = 1000) String reason
+            @Size(max = 100) String candidateId,
+            @Size(max = 100) String documentAnchorCandidateId,
+            @NotBlank @Size(max = 1000) String reason,
+            Double confidence
     ) {
         CreateBindingProposalCommand toCommand() {
             return new CreateBindingProposalCommand(
@@ -220,11 +231,21 @@ public class DocumentChangeController {
                     sequenceNumber,
                     action,
                     repositoryId,
+                    revision,
                     filePath,
+                    anchorKind,
+                    symbolKey,
+                    startLine,
+                    endLine,
                     documentId,
                     createdDocumentClientOperationId,
+                    blockId,
+                    createdBlockClientOperationId,
                     bindingId,
-                    reason
+                    candidateId,
+                    documentAnchorCandidateId,
+                    reason,
+                    confidence
             );
         }
     }

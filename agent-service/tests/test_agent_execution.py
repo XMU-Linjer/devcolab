@@ -234,6 +234,8 @@ async def test_fixed_graph_reports_expected_planning_statuses(settings: Settings
     assert statuses == [
         ("PLANNING", "plan_changes"),
         ("VALIDATING", "validate_plan"),
+        ("PLANNING_BINDINGS", "plan_bindings"),
+        ("PLANNING_BINDINGS", "binding_candidates"),
         ("SUBMITTING_REVIEW", "submit_review"),
         ("REVIEW_SUBMITTED", "submit_review"),
     ]

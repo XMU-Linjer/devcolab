@@ -81,6 +81,7 @@ export interface DocumentChangeEvidence {
 }
 
 export type BindingAction = 'UPSERT_BINDING' | 'REMOVE_BINDING';
+export type CodeAnchorKind = 'FILE' | 'RANGE' | 'SYMBOL';
 
 export interface DocumentChangeBindingProposal {
   bindingProposalId: string;
@@ -92,9 +93,30 @@ export interface DocumentChangeBindingProposal {
     name: string;
   };
   filePath: string;
+  revision?: string | null;
+  anchorKind?: CodeAnchorKind;
+  symbolKey?: string | null;
+  startLine?: number | null;
+  endLine?: number | null;
+  createdDocumentClientOperationId?: string | null;
+  createdBlockClientOperationId?: string | null;
+  blockPreview?: string | null;
   documentTarget: DocumentChangeTarget;
   bindingId: string | null;
+  candidateId?: string | null;
+  documentAnchorCandidateId?: string | null;
   reason: string;
+  confidence?: number | null;
+}
+
+export interface DocumentChangeApplyResult {
+  createdDocuments: Record<string, string>;
+  createdBlocks: Record<string, string>;
+  bindings: Array<{
+    bindingProposalId: string;
+    bindingId: string;
+    reused: boolean;
+  }>;
 }
 
 export interface DocumentChangeOperation {
@@ -116,6 +138,7 @@ export interface DocumentChangeDetail {
   bindingProposals: DocumentChangeBindingProposal[];
   requestEvidence: DocumentChangeEvidence[];
   replayed: boolean;
+  applyResult?: DocumentChangeApplyResult | null;
 }
 
 export interface DocumentChangeListItem {

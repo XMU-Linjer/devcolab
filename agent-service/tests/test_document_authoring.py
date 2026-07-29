@@ -287,7 +287,7 @@ def test_no_change_is_valid_when_document_and_binding_are_complete() -> None:
     assert validate(raw).decision == "NO_CHANGE"
 
 
-def test_no_change_is_rejected_when_binding_is_missing() -> None:
+def test_document_plan_allows_binding_only_decision_in_independent_pass() -> None:
     raw = {
         "decision": "NO_CHANGE",
         "summary": "无需修改",
@@ -297,10 +297,10 @@ def test_no_change_is_rejected_when_binding_is_missing() -> None:
         "evidence": [],
     }
     context = code_context(bound_paths=[])
-    assert "BINDING_CHANGE_REQUIRED" in issue_codes(raw, context)
+    assert validate(raw, context).decision == "NO_CHANGE"
 
 
-def test_partial_binding_gap_is_rejected_as_no_change() -> None:
+def test_document_plan_leaves_partial_binding_gap_to_independent_pass() -> None:
     raw = {
         "decision": "NO_CHANGE",
         "summary": "无需修改",
@@ -314,7 +314,7 @@ def test_partial_binding_gap_is_rejected_as_no_change() -> None:
         contents=["class App {}", "class Helper {}"],
         bound_paths=["src/App.java"],
     )
-    assert "BINDING_CHANGE_REQUIRED" in issue_codes(raw, context)
+    assert validate(raw, context).decision == "NO_CHANGE"
 
 
 def test_binding_only_review_is_valid() -> None:

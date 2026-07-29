@@ -122,7 +122,19 @@
             @click="emit('select-evidence', proposal.bindingProposalId)"
           >
             <strong>{{ proposal.filePath }}</strong>
-            <small>{{ proposal.action === 'UPSERT_BINDING' ? '新增或更新代码关联' : '移除代码关联' }} · {{ proposal.reason }}</small>
+            <small class="binding-anchor">{{ bindingAnchorLabel(proposal) }}</small>
+            <small class="binding-target">{{ bindingTargetLabel(proposal) }}</small>
+            <small>{{ proposal.reason }}</small>
+            <small v-if="proposal.confidence != null">
+              置信度 {{ Math.round(proposal.confidence * 100) }}%
+            </small>
+            <small
+              v-if="proposal.candidateId || proposal.documentAnchorCandidateId"
+              class="candidate-ids"
+            >
+              {{ shortCandidate(proposal.candidateId) }}
+              → {{ shortCandidate(proposal.documentAnchorCandidateId) }}
+            </small>
           </button>
         </section>
 
@@ -157,6 +169,7 @@ import { computed } from 'vue';
 
 import type {
   DocumentChangeDetail,
+  DocumentChangeBindingProposal,
   DocumentChangeOperation,
 } from '@/api/documentChange';
 import {
@@ -165,6 +178,40 @@ import {
   operationLabels,
   reviewStatusLabels,
 } from './reviewPresentation';
+
+function bindingAnchorLabel(proposal: DocumentChangeBindingProposal) {
+  const revision = proposal.revision ? proposal.revision.slice(0, 8) : 'legacy';
+  if (proposal.anchorKind === 'SYMBOL') {
+    const range = proposal.startLine == null
+      ? ''
+      : ` · L${proposal.startLine}-${proposal.endLine}`;
+    return `SYMBOL · ${proposal.symbolKey || '-'}${range} · ${revision}`;
+  }
+  if (proposal.anchorKind === 'RANGE') {
+    return `RANGE · L${proposal.startLine}-${proposal.endLine} · ${revision}`;
+  }
+  return `FILE · ${revision}`;
+}
+
+function bindingTargetLabel(proposal: DocumentChangeBindingProposal) {
+  const title = proposal.documentTarget.documentTitle
+    || proposal.createdDocumentClientOperationId
+    || '目标文档';
+  if (proposal.documentTarget.blockId) {
+    const preview = proposal.blockPreview?.trim();
+    return `${title} · Block ${proposal.documentTarget.blockId.slice(0, 8)}${preview ? ` · ${preview.slice(0, 60)}` : ''}`;
+  }
+  if (proposal.createdBlockClientOperationId) {
+    const preview = proposal.blockPreview?.trim();
+    return `${title} · 新建 Block ${proposal.createdBlockClientOperationId}${preview ? ` · ${preview.slice(0, 60)}` : ''}`;
+  }
+  return `${title} · 整篇文档`;
+}
+
+function shortCandidate(value: string | null | undefined) {
+  if (!value) return '-';
+  return value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-5)}` : value;
+}
 
 const props = defineProps<{
   detail: DocumentChangeDetail;

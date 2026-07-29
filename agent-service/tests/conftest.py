@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.runtime.semantic_planner import PlannedSemanticUnit
-from app.schemas.plans import AgentPlan
+from app.schemas.binding_plans import BindingPlan, BindingSelection
+from app.schemas.plans import AgentPlan, BindingAction, Decision
 from app.schemas.unit_plans import UnitPlan
 
 
@@ -478,6 +479,7 @@ class FakeMcpClient:
                         "remoteUrl": "https://example.invalid/devcollab",
                         "defaultBranch": "main",
                         "syncStatus": "SYNCED",
+                        "lastSyncedCommit": "abc",
                     }
                 ],
             }
@@ -676,6 +678,8 @@ class FakeModelProvider:
         ]
         self.calls: list[dict[str, Any]] = []
         self.unit_plan_calls: list[dict[str, Any]] = []
+        self.binding_plan_calls: list[dict[str, Any]] = []
+        self.pending_binding_proposals: list[Any] = []
         self.unit_plans: list[UnitPlan | Exception] = [
             UnitPlan.model_validate(
                 {
@@ -711,7 +715,17 @@ class FakeModelProvider:
         item = self.plans[min(len(self.calls) - 1, len(self.plans) - 1)]
         if isinstance(item, Exception):
             raise item
-        return item
+        self.pending_binding_proposals = list(item.bindingProposals)
+        return item.model_copy(
+            update={
+                "decision": (
+                    Decision.SUBMIT_REVIEW
+                    if item.operations
+                    else Decision.NO_CHANGE
+                ),
+                "bindingProposals": [],
+            }
+        )
 
     async def plan_project_units(
         self,
@@ -733,6 +747,71 @@ class FakeModelProvider:
         if isinstance(item, Exception):
             raise item
         return item
+
+    async def plan_block_bindings(
+        self,
+        candidates: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> BindingPlan:
+        self.binding_plan_calls.append(
+            {
+                "candidates": candidates,
+                "previousPlan": previous_plan,
+                "validationErrors": validation_errors,
+            }
+        )
+        selections: list[BindingSelection] = []
+        for proposal in self.pending_binding_proposals:
+            if proposal.action != BindingAction.UPSERT_BINDING:
+                continue
+            code = next(
+                (
+                    item
+                    for item in candidates.get("codeCandidates", [])
+                    if item.get("filePath") == proposal.filePath
+                    and item.get("anchorKind") == proposal.anchorKind
+                    and item.get("symbolKey") == proposal.symbolKey
+                    and item.get("startLine") == proposal.startLine
+                    and item.get("endLine") == proposal.endLine
+                ),
+                None,
+            )
+            document = next(
+                (
+                    item
+                    for item in candidates.get("documentAnchorCandidates", [])
+                    if item.get("documentId")
+                    == (
+                        str(proposal.documentId)
+                        if proposal.documentId is not None
+                        else None
+                    )
+                    and item.get("createdDocumentClientOperationId")
+                    == proposal.createdDocumentClientOperationId
+                    and item.get("blockId")
+                    == (
+                        str(proposal.blockId)
+                        if proposal.blockId is not None
+                        else None
+                    )
+                    and item.get("createdBlockClientOperationId")
+                    == proposal.createdBlockClientOperationId
+                ),
+                None,
+            )
+            if code is None or document is None:
+                continue
+            selections.append(
+                BindingSelection(
+                    codeCandidateId=code["candidateId"],
+                    documentAnchorCandidateId=document["candidateId"],
+                    reason=proposal.reason,
+                    confidence=proposal.confidence or 0.9,
+                )
+            )
+        return BindingPlan(selections=selections)
 
 
 @pytest.fixture

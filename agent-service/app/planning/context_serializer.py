@@ -9,6 +9,22 @@ def build_model_context(bundle: dict[str, Any]) -> dict[str, Any]:
             "language": item.get("language"),
             "content": item.get("content", ""),
             "truncated": bool(item.get("truncated", False)),
+            "symbols": [
+                {
+                    key: symbol.get(key)
+                    for key in (
+                        "symbolKey",
+                        "language",
+                        "symbolKind",
+                        "qualifiedName",
+                        "simpleName",
+                        "startLine",
+                        "endLine",
+                    )
+                    if symbol.get(key) is not None
+                }
+                for symbol in item.get("symbols", [])
+            ],
         }
         for item in bundle.get("codeFiles", [])
     ]
@@ -23,6 +39,11 @@ def build_model_context(bundle: dict[str, Any]) -> dict[str, Any]:
                 "documentTitle",
                 "blockId",
                 "bindingType",
+                "revision",
+                "anchorKind",
+                "symbolKey",
+                "startLine",
+                "endLine",
             )
             if item.get(key) is not None
         }
@@ -69,6 +90,7 @@ def build_model_context(bundle: dict[str, Any]) -> dict[str, Any]:
             "repositoryId": workspace.get("repositoryId"),
             "repositoryName": workspace.get("repositoryName"),
             "defaultBranch": workspace.get("defaultBranch"),
+            "revision": workspace.get("revision"),
         },
         "task": {
             "selectedPaths": task.get("selectedPaths", []),

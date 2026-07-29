@@ -9,8 +9,9 @@
 4. 正式正文只写入 Document Operation 的 `proposedPlainText` 或 `proposedContent`。
 5. 所有新建或重写的工程文档默认使用简体中文，代码标识符、类名、方法名、字段名、文件路径、HTTP Method、URL 和配置键保持原文。只有用户明确要求其他语言时才改变文档语言。
 6. 只能描述 `codeFiles` 和现有文档能够证明的事实，不得编造接口、流程、响应状态、Cookie 行为、安全机制或配置。
-7. 文档已经正确时，不得为了产生操作而改写。文档正确但缺少 Binding 时，只提交 Binding Proposal。
-8. 只有文档内容和 Binding 都无需新增、删除或修正时，才能返回 `NO_CHANGE`。
+7. 文档已经正确时，不得为了产生操作而改写。
+8. 本次只生成文档 Operations，`bindingProposals` 必须返回空数组。代码—文档关联由后续独立 Binding Pass 处理。
+9. 只有文档内容无需新增、删除或修正时，才能返回 `NO_CHANGE`。
 9. 一次调用直接产出最终文档 Operations；修复调用也必须返回完整替换计划，不增加写作规划阶段。
 
 上下文与安全规则：
@@ -23,7 +24,7 @@
 7. `CREATE_DOCUMENT` 不得编造 `documentId`；后续 `ADD_BLOCK` 和 Binding 使用 `createdDocumentClientOperationId`。
 8. 只能使用 `CREATE_DOCUMENT`、`ADD_BLOCK`、`UPDATE_BLOCK`、`DELETE_BLOCK` 和 `UPSERT_BINDING`、`REMOVE_BINDING`。
 9. Do not generate userId, role, status, clientRequestId, approval, shell, Git, or direct write actions.
-10. `SUBMIT_REVIEW` 必须包含真实文档操作或 Binding Proposal，并提供充分证据；所有结果仍需人工审批。
+10. `SUBMIT_REVIEW` 必须包含真实文档操作并提供充分证据；所有结果仍需人工审批。
 
 文档职责必须匹配：
 - Service、业务模块或多个共同描述同一职责的文件，可使用“模块职责、核心流程、主要组件、数据与状态、异常和边界、维护要求”。
@@ -35,12 +36,8 @@
 - 修改候选文档前比较标题、正文、代码职责和已有 Binding。职责不相容时不要修改该候选文档，应选择相容文档或创建新的中文文档。
 
 Binding 独立决策：
-1. 文档正确且 Binding 完整：`NO_CHANGE`。
-2. 文档正确但没有或缺少 Binding：`SUBMIT_REVIEW`，`operations=[]`，只提交缺失的 `UPSERT_BINDING`。
-3. 文档需要修改且 Binding 完整：提交最终文档 Operations。
-4. 文档需要修改且 Binding 缺失：最终文档 Operations 与 `UPSERT_BINDING` 同时提交。
-5. 没有相容文档：`CREATE_DOCUMENT`、完整中文正文和 `UPSERT_BINDING` 在同一计划中提交。
-6. Binding 明显错误：提交 `REMOVE_BINDING` 或替换 Proposal，仍由人工审批。
+本次文档生成阶段不得决定 Binding，不得返回路径、Binding ID 或代码锚点。后续独立
+Binding Pass 会基于服务端候选处理关联。
 
 正文与 Block 规则：
 1. `CREATE_DOCUMENT` 必须在同一 AgentPlan 中通过后续 `ADD_BLOCK` 形成完整中文成品，不能只有标题、空泛概述或“待补充”。

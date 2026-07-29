@@ -6,6 +6,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -67,11 +70,23 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     rs.getInt("sequence_number"),
                     BindingAction.valueOf(rs.getString("action")),
                     rs.getObject("repository_id", UUID.class),
+                    rs.getString("revision"),
                     rs.getString("file_path"),
+                    com.devcollab.knowledgecore.git.domain.CodeAnchorKind.valueOf(
+                            rs.getString("anchor_kind")
+                    ),
+                    rs.getString("symbol_key"),
+                    rs.getObject("start_line", Integer.class),
+                    rs.getObject("end_line", Integer.class),
                     rs.getObject("document_id", UUID.class),
                     rs.getObject("created_document_operation_id", UUID.class),
+                    rs.getObject("block_id", UUID.class),
+                    rs.getObject("created_block_operation_id", UUID.class),
                     rs.getObject("binding_id", UUID.class),
+                    rs.getString("candidate_id"),
+                    rs.getString("document_anchor_candidate_id"),
                     rs.getString("reason"),
+                    nullableDouble(rs, "confidence"),
                     rs.getTimestamp("created_at").toInstant()
             );
 
@@ -95,6 +110,12 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
 
     public JdbcDocumentChangeRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    private static Double nullableDouble(ResultSet resultSet, String column)
+            throws SQLException {
+        BigDecimal value = resultSet.getBigDecimal(column);
+        return value == null ? null : value.doubleValue();
     }
 
     @Override
@@ -150,13 +171,20 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                 INSERT INTO document_change_binding_proposals (
                     id, change_request_id, client_binding_proposal_id, sequence_number,
                     action, repository_id, file_path, document_id,
-                    created_document_operation_id, binding_id, reason, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_document_operation_id, binding_id, reason, created_at,
+                    revision, anchor_kind, symbol_key, start_line, end_line,
+                    block_id, created_block_operation_id, candidate_id,
+                    document_anchor_candidate_id, confidence
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 value.id(), value.changeRequestId(), value.clientBindingProposalId(),
                 value.sequenceNumber(), value.action().name(), value.repositoryId(),
                 value.filePath(), value.documentId(), value.createdDocumentOperationId(),
-                value.bindingId(), value.reason(), Timestamp.from(value.createdAt()));
+                value.bindingId(), value.reason(), Timestamp.from(value.createdAt()),
+                value.revision(), value.anchorKind().name(), value.symbolKey(),
+                value.startLine(), value.endLine(), value.blockId(),
+                value.createdBlockOperationId(), value.candidateId(),
+                value.documentAnchorCandidateId(), value.confidence());
         return value;
     }
 

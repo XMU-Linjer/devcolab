@@ -5,6 +5,7 @@ class AgentState(TypedDict, total=False):
     run_id: str
     workspace_id: str
     repository_id: str
+    revision: str
     selected_paths: list[str]
     preferred_document_ids: list[str]
     user_instruction: str | None

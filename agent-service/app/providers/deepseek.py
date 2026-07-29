@@ -1,4 +1,5 @@
 import json
+import logging
 from importlib.resources import files
 from typing import Any, cast
 
@@ -6,8 +7,11 @@ import httpx
 from pydantic import ValidationError
 
 from app.providers.base import ModelProviderError
+from app.schemas.binding_plans import BindingPlan
 from app.schemas.plans import AgentPlan
 from app.schemas.unit_plans import UnitPlan
+
+LOGGER = logging.getLogger("devcollab.agent.deepseek")
 
 
 class DeepSeekProvider:
@@ -40,6 +44,9 @@ class DeepSeekProvider:
             files("app.prompts")
             .joinpath("project_unit_planning_v1.md")
             .read_text(encoding="utf-8")
+        )
+        self._block_binding_prompt = (
+            files("app.prompts").joinpath("block_binding_v1.md").read_text(encoding="utf-8")
         )
 
     async def plan_document_sync(
@@ -101,14 +108,64 @@ class DeepSeekProvider:
             ),
         )
 
+    async def plan_block_bindings(
+        self,
+        candidates: dict[str, Any],
+        *,
+        previous_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
+    ) -> BindingPlan:
+        self._require_configuration()
+        user_payload: dict[str, Any] = {
+            "bindingPlanSchema": BindingPlan.model_json_schema(),
+            **candidates,
+        }
+        if previous_plan is not None:
+            user_payload["repair"] = {
+                "previousPlan": previous_plan,
+                "validationErrors": validation_errors or [],
+                "instruction": (
+                    "只使用输入中现有候选 ID，返回修正后的完整 BindingPlan JSON。"
+                    "不得新增路径、UUID、symbol 或行号。"
+                ),
+            }
+        attempt = 2 if previous_plan is not None else 1
+        code_count = len(candidates.get("codeCandidates", []))
+        document_count = len(candidates.get("documentAnchorCandidates", []))
+        LOGGER.info(
+            "provider=deepseek model=%s operation=block_binding attempt=%s "
+            "codeCandidates=%s documentCandidates=%s",
+            self._model,
+            attempt,
+            code_count,
+            document_count,
+        )
+        result = cast(
+            BindingPlan,
+            await self._request_structured(
+                system_prompt=self._block_binding_prompt,
+                user_payload=user_payload,
+                schema=BindingPlan,
+                response_name="BindingPlan",
+            ),
+        )
+        LOGGER.info(
+            "provider=deepseek model=%s operation=block_binding attempt=%s "
+            "validation=success selections=%s",
+            self._model,
+            attempt,
+            len(result.selections),
+        )
+        return result
+
     async def _request_structured(
         self,
         *,
         system_prompt: str,
         user_payload: dict[str, Any],
-        schema: type[AgentPlan] | type[UnitPlan],
+        schema: type[AgentPlan] | type[UnitPlan] | type[BindingPlan],
         response_name: str,
-    ) -> AgentPlan | UnitPlan:
+    ) -> AgentPlan | UnitPlan | BindingPlan:
         body = {
             "model": self._model,
             "temperature": 0,
@@ -145,6 +202,17 @@ class DeepSeekProvider:
         raw_plan: dict[str, Any] | None = None
         try:
             response_json = response.json()
+            usage = response_json.get("usage")
+            if isinstance(usage, dict):
+                LOGGER.info(
+                    "provider=deepseek model=%s response=%s "
+                    "promptTokens=%s completionTokens=%s totalTokens=%s",
+                    self._model,
+                    response_name,
+                    usage.get("prompt_tokens"),
+                    usage.get("completion_tokens"),
+                    usage.get("total_tokens"),
+                )
             content = response_json["choices"][0]["message"]["content"]
             decoded = json.loads(content)
             if not isinstance(decoded, dict):

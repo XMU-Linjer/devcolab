@@ -346,6 +346,7 @@ def test_duplicate_existing_upsert_rejected() -> None:
     raw["operations"] = []
     raw["bindingProposals"][0].pop("createdDocumentClientOperationId")
     raw["bindingProposals"][0]["documentId"] = DOCUMENT
+    raw["bindingProposals"][0]["blockId"] = BLOCK
     raw["bindingProposals"][0]["sequenceNumber"] = 1
     raw["evidence"] = [
         {

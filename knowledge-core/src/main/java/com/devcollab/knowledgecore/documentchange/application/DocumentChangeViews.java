@@ -4,10 +4,12 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Ope
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.SourceType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
+import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public final class DocumentChangeViews {
@@ -105,8 +107,33 @@ public final class DocumentChangeViews {
             TargetView documentTarget,
             RepositoryView repository,
             String filePath,
+            String revision,
+            CodeAnchorKind anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
+            String createdDocumentClientOperationId,
+            String createdBlockClientOperationId,
+            String blockPreview,
             UUID bindingId,
-            String reason
+            String candidateId,
+            String documentAnchorCandidateId,
+            String reason,
+            Double confidence
+    ) {
+    }
+
+    public record BindingApplyResultView(
+            UUID bindingProposalId,
+            UUID bindingId,
+            boolean reused
+    ) {
+    }
+
+    public record ApplyResultView(
+            Map<UUID, UUID> createdDocuments,
+            Map<UUID, UUID> createdBlocks,
+            List<BindingApplyResultView> bindings
     ) {
     }
 
@@ -115,7 +142,8 @@ public final class DocumentChangeViews {
             List<OperationView> operations,
             List<BindingProposalView> bindingProposals,
             List<EvidenceView> requestEvidence,
-            boolean replayed
+            boolean replayed,
+            ApplyResultView applyResult
     ) {
         public DetailView(
                 RequestView request,
@@ -123,7 +151,17 @@ public final class DocumentChangeViews {
                 List<BindingProposalView> bindingProposals,
                 List<EvidenceView> requestEvidence
         ) {
-            this(request, operations, bindingProposals, requestEvidence, false);
+            this(request, operations, bindingProposals, requestEvidence, false, null);
+        }
+
+        public DetailView(
+                RequestView request,
+                List<OperationView> operations,
+                List<BindingProposalView> bindingProposals,
+                List<EvidenceView> requestEvidence,
+                ApplyResultView applyResult
+        ) {
+            this(request, operations, bindingProposals, requestEvidence, false, applyResult);
         }
     }
 

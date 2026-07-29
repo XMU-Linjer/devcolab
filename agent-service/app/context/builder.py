@@ -28,6 +28,7 @@ def build_bundle(state: dict[str, Any]) -> dict[str, Any]:
             "repositoryId": repository_id,
             "repositoryName": repository.get("name"),
             "defaultBranch": repository.get("defaultBranch"),
+            "revision": state.get("revision") or repository.get("lastSyncedCommit"),
         },
         "task": {
             "selectedPaths": state["selected_paths"],

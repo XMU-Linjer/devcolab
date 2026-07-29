@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
@@ -7,6 +8,11 @@ from app.clients.mcp_client import ReviewMcpClient
 from app.config import Settings
 from app.graph.state import AgentState
 from app.graph.workflow import ContextWorkflow
+from app.planning.binding_candidates import (
+    BindingCandidateBuilder,
+    BindingPlanExpander,
+    BindingPlanValidationError,
+)
 from app.planning.context_serializer import build_model_context
 from app.planning.validator import AgentPlanValidator, PlanValidationError
 from app.providers.base import ModelProvider, ModelProviderError
@@ -36,6 +42,8 @@ class DocumentSyncWorkflow:
             settings.agent_review_max_operations,
             settings.agent_review_max_evidence,
         )
+        self._binding_candidates = BindingCandidateBuilder()
+        self._binding_expander = BindingPlanExpander()
         context = ContextWorkflow(client, settings)
         graph = StateGraph(AgentState)
         graph.add_node("load_workspace_context", context.load_workspace_context)
@@ -48,6 +56,7 @@ class DocumentSyncWorkflow:
         graph.add_node("validate_plan", self.validate_plan)
         graph.add_node("repair_plan", self.repair_plan)
         graph.add_node("validate_repaired_plan", self.validate_repaired_plan)
+        graph.add_node("plan_bindings", self.plan_bindings)
         graph.add_node("finish_no_change", self.finish_no_change)
         graph.add_node("submit_review", self.submit_review)
         graph.add_node("fail_run", self.fail_run)
@@ -66,6 +75,7 @@ class DocumentSyncWorkflow:
                 "NO_CHANGE": "finish_no_change",
                 "SUBMIT_REVIEW": "submit_review",
                 "REPAIR": "repair_plan",
+                "BINDING": "plan_bindings",
             },
         )
         graph.add_edge("repair_plan", "validate_repaired_plan")
@@ -76,6 +86,15 @@ class DocumentSyncWorkflow:
                 "NO_CHANGE": "finish_no_change",
                 "SUBMIT_REVIEW": "submit_review",
                 "INVALID": "fail_run",
+                "BINDING": "plan_bindings",
+            },
+        )
+        graph.add_conditional_edges(
+            "plan_bindings",
+            self._route,
+            {
+                "NO_CHANGE": "finish_no_change",
+                "SUBMIT_REVIEW": "submit_review",
             },
         )
         graph.add_edge("finish_no_change", END)
@@ -88,15 +107,13 @@ class DocumentSyncWorkflow:
         mutable.update(await self.plan_changes(state))
         mutable.update(await self.validate_plan(state))
         route = self._route(state)
-        if route == "NO_CHANGE":
-            mutable.update(await self.finish_no_change(state))
-            return mutable
-        if route == "SUBMIT_REVIEW":
-            mutable.update(await self.submit_review(state))
-            return mutable
-        mutable.update(await self.repair_plan(state))
-        mutable.update(await self.validate_repaired_plan(state))
-        route = self._route(state)
+        if route == "REPAIR":
+            mutable.update(await self.repair_plan(state))
+            mutable.update(await self.validate_repaired_plan(state))
+            route = self._route(state)
+        if route == "BINDING":
+            mutable.update(await self.plan_bindings(state))
+            route = self._route(state)
         if route == "NO_CHANGE":
             mutable.update(await self.finish_no_change(state))
             return mutable
@@ -148,6 +165,18 @@ class DocumentSyncWorkflow:
         plan = state.get("plan")
         if not isinstance(plan, AgentPlan):
             return {"plan_outcome": "REPAIR"}
+        if plan.bindingProposals:
+            return {
+                "previous_plan": plan.model_dump(mode="json", exclude_none=True),
+                "validation_errors": [
+                    {
+                        "path": "bindingProposals",
+                        "code": "BINDING_PASS_REQUIRED",
+                        "message": "Document planning must leave bindingProposals empty",
+                    }
+                ],
+                "plan_outcome": "REPAIR",
+            }
         try:
             valid = self._validator.validate(plan, state["model_context"])
         except PlanValidationError as exc:
@@ -160,7 +189,7 @@ class DocumentSyncWorkflow:
             "plan": valid,
             "decision": valid.decision.value,
             "summary": valid.summary,
-            "plan_outcome": valid.decision.value,
+            "plan_outcome": "BINDING",
         }
 
     async def repair_plan(self, state: AgentState) -> dict[str, Any]:
@@ -203,6 +232,17 @@ class DocumentSyncWorkflow:
         plan = state.get("plan")
         if not isinstance(plan, AgentPlan):
             return {"plan_outcome": "INVALID"}
+        if plan.bindingProposals:
+            return {
+                "validation_errors": [
+                    {
+                        "path": "bindingProposals",
+                        "code": "BINDING_PASS_REQUIRED",
+                        "message": "Document planning must leave bindingProposals empty",
+                    }
+                ],
+                "plan_outcome": "INVALID",
+            }
         try:
             valid = self._validator.validate(plan, state["model_context"])
         except PlanValidationError as exc:
@@ -214,8 +254,78 @@ class DocumentSyncWorkflow:
             "plan": valid,
             "decision": valid.decision.value,
             "summary": valid.summary,
-            "plan_outcome": valid.decision.value,
+            "plan_outcome": "BINDING",
         }
+
+    async def plan_bindings(self, state: AgentState) -> dict[str, Any]:
+        await self._on_status("PLANNING_BINDINGS", "plan_bindings", {})
+        document_plan = cast(AgentPlan, state["plan"])
+        candidates = self._binding_candidates.build(
+            state["model_context"], document_plan
+        )
+        await self._on_status(
+            "PLANNING_BINDINGS",
+            "binding_candidates",
+            {
+                "codeCandidateCount": len(candidates.code),
+                "documentCandidateCount": len(candidates.documents),
+            },
+        )
+        if not candidates.code or not candidates.documents:
+            return {
+                "plan": document_plan,
+                "decision": document_plan.decision.value,
+                "summary": document_plan.summary,
+                "plan_outcome": document_plan.decision.value,
+            }
+
+        payload = candidates.model_payload()
+        previous: dict[str, Any] | None = None
+        errors: list[dict[str, str]] | None = None
+        for attempt in range(2):
+            try:
+                binding_plan = await traced(
+                    cast(dict[str, Any], state),
+                    "plan_bindings" if attempt == 0 else "repair_bindings",
+                    None,
+                    partial(
+                        self._provider.plan_block_bindings,
+                        payload,
+                        previous_plan=previous,
+                        validation_errors=errors,
+                    ),
+                    len(str(payload if attempt == 0 else errors)),
+                )
+                expanded = self._binding_expander.expand(
+                    document_plan, binding_plan, candidates
+                )
+                valid = self._validator.validate(
+                    expanded, state["model_context"]
+                )
+                return {
+                    "plan": valid,
+                    "decision": valid.decision.value,
+                    "summary": valid.summary,
+                    "plan_outcome": valid.decision.value,
+                    "trace_events": state["trace_events"],
+                }
+            except ModelProviderError as exc:
+                if exc.code != "MODEL_INVALID_RESPONSE" or attempt == 1:
+                    raise
+                previous = exc.raw_plan or {}
+                errors = [
+                    {
+                        "path": "$",
+                        "code": "MODEL_INVALID_RESPONSE",
+                        "message": "Return a complete BindingPlan matching the schema",
+                    }
+                ]
+            except BindingPlanValidationError as exc:
+                if attempt == 1:
+                    raise
+                previous = binding_plan.model_dump(mode="json")
+                errors = exc.issues
+        raise AssertionError("binding repair loop must return or raise")
 
     async def finish_no_change(self, state: AgentState) -> dict[str, Any]:
         plan = cast(AgentPlan, state["plan"])

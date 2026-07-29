@@ -66,11 +66,44 @@ class BindingProposal(StrictModel):
     sequenceNumber: int = Field(ge=1)
     action: BindingAction
     repositoryId: UUID
+    revision: str | None = Field(default=None, max_length=255)
     filePath: str = Field(min_length=1, max_length=1_000)
+    anchorKind: Literal["FILE", "RANGE", "SYMBOL"] = "FILE"
+    symbolKey: str | None = Field(default=None, max_length=1_000)
+    startLine: int | None = Field(default=None, ge=1)
+    endLine: int | None = Field(default=None, ge=1)
     documentId: UUID | None = None
     createdDocumentClientOperationId: str | None = Field(default=None, max_length=100)
+    blockId: UUID | None = None
+    createdBlockClientOperationId: str | None = Field(default=None, max_length=100)
     bindingId: UUID | None = None
+    candidateId: str | None = Field(default=None, max_length=100)
+    documentAnchorCandidateId: str | None = Field(default=None, max_length=100)
     reason: str = Field(min_length=1, max_length=1_000)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def valid_anchor_and_targets(self) -> "BindingProposal":
+        if (self.startLine is None) != (self.endLine is None):
+            raise ValueError("startLine and endLine must appear together")
+        if self.startLine is not None and self.endLine is not None:
+            if self.endLine < self.startLine:
+                raise ValueError("endLine must not be before startLine")
+        if self.anchorKind == "FILE":
+            if self.symbolKey is not None or self.startLine is not None:
+                raise ValueError("FILE binding cannot contain symbol or range")
+        elif self.anchorKind == "RANGE":
+            if not self.revision or self.startLine is None or self.symbolKey is not None:
+                raise ValueError("RANGE binding requires revision and range")
+        elif not self.revision or not self.symbolKey:
+            raise ValueError("SYMBOL binding requires revision and symbolKey")
+        if (self.documentId is None) == (
+            self.createdDocumentClientOperationId is None
+        ):
+            raise ValueError("binding must target one existing or created document")
+        if self.blockId is not None and self.createdBlockClientOperationId is not None:
+            raise ValueError("binding cannot target existing and created block")
+        return self
 
 
 class PlanEvidence(StrictModel):
