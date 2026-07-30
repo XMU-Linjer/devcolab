@@ -124,11 +124,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance, CSSProperties } from 'vue';
 import {
   createAgentJob,
-  getAgentJob,
   readableAgentError,
   type AgentJobPhase,
   type AgentJobStatus,
 } from '@/api/agent';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue } from '@/types/linkedWorkbench';
 import {
   buildCodeRangePresentation,
@@ -197,10 +197,13 @@ const agentDialogOpen = ref(false);
 const creatingRun = ref(false);
 const userInstruction = ref('');
 const jobId = ref<string | null>(null);
-const agentStatus = ref<AgentJobStatus | null>(null);
-const agentPhase = ref<AgentJobPhase | null>(null);
-const changeRequestId = ref<string | null>(null);
-let pollTimer: number | null = null;
+const backgroundActivity = useBackgroundActivityStore();
+const agentJob = computed(() => backgroundActivity.getJobSnapshot(jobId.value));
+const agentStatus = computed<AgentJobStatus | null>(() => (
+  agentJob.value?.status ?? (jobId.value ? 'QUEUED' : null)
+));
+const agentPhase = computed<AgentJobPhase | null>(() => agentJob.value?.phase ?? null);
+const changeRequestId = computed(() => agentJob.value?.reviewRequestIds[0] ?? null);
 let codeViewportObserver: ResizeObserver | null = null;
 
 const terminalStatuses = new Set<AgentJobStatus>([
@@ -272,7 +275,6 @@ watch(
   { flush: 'post' },
 );
 onBeforeUnmount(() => {
-  stopPolling();
   codeViewportObserver?.disconnect();
   window.removeEventListener('resize', measureCodeViewport);
 });
@@ -390,13 +392,17 @@ async function startAgentCheck() {
       userInstruction: userInstruction.value.trim() || null,
     });
     jobId.value = queued.jobId;
-    agentStatus.value = queued.status;
-    agentPhase.value = null;
-    changeRequestId.value = null;
-    localStorage.setItem(activeJobStorageKey(), queued.jobId);
+    backgroundActivity.registerJob({
+      jobId: queued.jobId,
+      workspaceId: props.workspaceId,
+      repositoryId: props.repositoryId,
+      label: props.path,
+      filePath: props.path,
+      createdAt: queued.createdAt,
+      lastKnownStatus: queued.status,
+    });
     agentDialogOpen.value = false;
     ElMessage.success('Agent 已在后台开始处理，可以关闭当前窗口。');
-    await pollAgentJob();
   } catch (error) {
     ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
   } finally {
@@ -404,69 +410,14 @@ async function startAgentCheck() {
   }
 }
 
-async function pollAgentJob() {
-  if (!jobId.value) return;
-  try {
-    const job = await getAgentJob(jobId.value);
-    agentStatus.value = job.status;
-    agentPhase.value = job.phase;
-    changeRequestId.value = job.reviewRequestIds[0] ?? null;
-    if (job.status === 'COMPLETED' && job.result === 'NO_CHANGE') {
-      stopPolling();
-      clearActiveJob();
-      ElMessage.success('当前代码与相关文档一致，无需更新。');
-      return;
-    }
-    if (job.status === 'COMPLETED' && job.result === 'REVIEW_SUBMITTED') {
-      stopPolling();
-      clearActiveJob();
-      return;
-    }
-    if (job.status === 'FAILED' || job.status === 'CANCELLED') {
-      stopPolling();
-      clearActiveJob();
-      ElMessage.error(job.errorMessage || 'Agent 检查失败');
-      return;
-    }
-    schedulePoll();
-  } catch (error) {
-    stopPolling();
-    clearActiveJob();
-    agentStatus.value = 'FAILED';
-    ElMessage.error(readableAgentError(error, 'Agent 状态读取失败'));
-  }
-}
-
-function schedulePoll() {
-  stopPolling();
-  pollTimer = window.setTimeout(() => void pollAgentJob(), 5000);
-}
-
-function stopPolling() {
-  if (pollTimer !== null) {
-    window.clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
 function restoreAgentJob() {
-  stopPolling();
-  jobId.value = localStorage.getItem(activeJobStorageKey());
-  agentStatus.value = null;
-  agentPhase.value = null;
-  changeRequestId.value = null;
   agentDialogOpen.value = false;
   resetAgentDialog();
-  if (jobId.value) void pollAgentJob();
-}
-
-function activeJobStorageKey() {
-  return `devcollab.agent.active-job:${props.workspaceId}:${props.repositoryId}:${props.path}`;
-}
-
-function clearActiveJob() {
-  localStorage.removeItem(activeJobStorageKey());
-  jobId.value = null;
+  jobId.value = backgroundActivity.findActiveJob({
+    workspaceId: props.workspaceId,
+    repositoryId: props.repositoryId,
+    filePath: props.path,
+  })?.jobId ?? null;
 }
 
 function focusAnchor(anchorId: string) {

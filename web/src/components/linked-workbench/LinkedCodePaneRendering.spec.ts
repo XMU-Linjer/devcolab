@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CodeAnchor, CodeDocumentLink } from '@/types/linkedWorkbench';
@@ -224,6 +225,7 @@ function mountPane(overrides: Record<string, unknown> = {}) {
       ...overrides,
     },
     global: {
+      plugins: [createPinia()],
       stubs: {
         ElButton: { template: '<button><slot /></button>' },
         ElDialog: true,

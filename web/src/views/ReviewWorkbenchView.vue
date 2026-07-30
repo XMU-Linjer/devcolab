@@ -6,7 +6,7 @@
       :workspace-id="workspaceId"
       linked-navigation-active="review"
       :linked-count="0"
-      :review-count="statusCounts.pending"
+      :review-count="backgroundActivity.pendingReviewCount"
       :review-status="routeStatus"
       :review-status-counts="statusCounts"
       :drift-count="0"
@@ -350,6 +350,7 @@ import {
   type AppliedReviewNavigationTarget,
 } from '@/utils/linkedReviewNavigation';
 import { buildRepositoryTree } from '@/utils/repositoryTree';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 
 type ReviewRouteStatus = 'pending' | 'applied' | 'rejected' | 'stale';
 type ReviewDetailViewState =
@@ -361,6 +362,7 @@ type ReviewDetailViewState =
 
 const route = useRoute();
 const router = useRouter();
+const backgroundActivity = useBackgroundActivityStore();
 const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const requestId = computed(() => String(route.params.requestId || ''));
 const routeStatus = computed<ReviewRouteStatus>(() => (
@@ -414,6 +416,9 @@ let detailRequestGeneration = 0;
 let operationDocumentGeneration = 0;
 let appliedTargetGeneration = 0;
 const linkedNavigation = useLinkedWorkbenchNavigation(() => null);
+const globalReviewRefreshVersion = computed(() => (
+  backgroundActivity.reviewRefreshVersion(workspaceId.value)
+));
 
 const fileTree = computed(() => buildRepositoryTree(files.value));
 const activeRepository = computed(() =>
@@ -452,7 +457,11 @@ const shortCommit = computed(() => (
   || '尚无 Commit'
 ).slice(0, 10));
 
-onMounted(() => void loadInitialState());
+onMounted(() => {
+  backgroundActivity.setActiveWorkspace(workspaceId.value);
+  void backgroundActivity.refreshPendingReviewCount(workspaceId.value);
+  void loadInitialState();
+});
 
 onUnmounted(() => {
   detailRequestGeneration++;
@@ -509,6 +518,11 @@ watch(sort, () => {
     page.value = 0;
     void loadListAndCounts();
   }
+});
+watch(globalReviewRefreshVersion, (next, previous) => {
+  if (next === previous) return;
+  if (requestId.value) void loadCounts();
+  else void loadListAndCounts();
 });
 
 async function loadInitialState() {
@@ -825,7 +839,10 @@ async function applyRequest() {
   try {
     detail.value = await applyDocumentChange(workspaceId.value, detail.value.request.id);
     applyDialogOpen.value = false;
-    await loadCounts();
+    await Promise.all([
+      loadCounts(),
+      backgroundActivity.refreshPendingReviewCount(workspaceId.value),
+    ]);
     await loadOperationDocument();
     await refreshAppliedNavigationTargets(detail.value);
     if (detail.value.request.status === 'STALE') {
@@ -888,7 +905,10 @@ async function rejectRequest() {
       rejectReason.value.trim(),
     );
     rejectDialogOpen.value = false;
-    await loadCounts();
+    await Promise.all([
+      loadCounts(),
+      backgroundActivity.refreshPendingReviewCount(workspaceId.value),
+    ]);
     ElMessage.success('文档变更已拒绝');
     openStatus(routeStatus.value);
   } catch (error) {

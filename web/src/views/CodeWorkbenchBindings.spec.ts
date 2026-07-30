@@ -1,4 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
@@ -390,6 +391,7 @@ describe('CodeWorkbenchView formal bindings', () => {
 function mountView() {
   return shallowMount(CodeWorkbenchView, {
     global: {
+      plugins: [createPinia()],
       stubs: {
         AppSidebar: { template: '<aside><slot name="workspace-panel" /></aside>' },
         LinkedRepositoryContext: {

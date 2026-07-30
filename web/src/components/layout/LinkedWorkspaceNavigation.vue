@@ -19,12 +19,18 @@
       class="nav-item"
       :class="{ 'is-active': activeItem === 'review' }"
       type="button"
-      title="待我评审"
+      :title="reviewNavigationLabel"
+      :aria-label="reviewNavigationLabel"
       @click="emit('open-review')"
     >
       <Check class="nav-icon" />
-      <span v-if="!collapsed" class="sidebar-label">待我评审</span>
-      <span v-if="!collapsed" class="sidebar-nav-badge">{{ reviewCount }}</span>
+      <span v-if="!collapsed" class="sidebar-label">待我审批</span>
+      <span
+        v-if="reviewCount > 0"
+        class="sidebar-nav-badge is-review-count"
+        :class="{ 'is-collapsed': collapsed }"
+        data-testid="pending-review-badge"
+      >{{ formattedReviewCount }}</span>
     </button>
     <div v-if="!collapsed && activeItem === 'review'" class="review-status-navigation">
       <button
@@ -54,8 +60,9 @@
 
 <script setup lang="ts">
 import { Check, Connection, House, Warning } from '@element-plus/icons-vue';
+import { computed } from 'vue';
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   collapsed?: boolean;
   activeItem?: 'linked' | 'review' | 'drift';
   linkedCount?: number;
@@ -92,6 +99,15 @@ const reviewStatuses = [
   { value: 'rejected' as const, label: '已拒绝' },
   { value: 'stale' as const, label: '已失效' },
 ];
+
+const formattedReviewCount = computed(() => (
+  props.reviewCount >= 100 ? '99+' : String(props.reviewCount)
+));
+const reviewNavigationLabel = computed(() => (
+  props.reviewCount > 0
+    ? `待我审批，${props.reviewCount}项待处理`
+    : '待我审批，暂无待处理项'
+));
 </script>
 
 <style scoped>
@@ -100,6 +116,10 @@ const reviewStatuses = [
   flex: 0 0 auto;
   gap: 3px;
   padding: 12px 8px 10px;
+}
+
+.linked-workspace-navigation .nav-item {
+  position: relative;
 }
 
 .sidebar-nav-badge {
@@ -118,6 +138,32 @@ const reviewStatuses = [
 .nav-item.is-active .sidebar-nav-badge {
   background: #fff;
   color: #315ee8;
+}
+
+.sidebar-nav-badge.is-review-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.nav-item.is-active .sidebar-nav-badge.is-review-count {
+  background: #d92d36;
+  color: #fff;
+}
+
+.sidebar-nav-badge.is-review-count.is-collapsed {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  line-height: 16px;
 }
 
 .review-status-navigation {

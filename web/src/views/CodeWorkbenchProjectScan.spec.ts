@@ -1,16 +1,19 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { ElMessageBox } from 'element-plus';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia, type Pinia } from 'pinia';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createAgentJob,
   getAgentJob,
   listAgentJobUnits,
 } from '@/api/agent';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 import CodeWorkbenchView from './CodeWorkbenchView.vue';
 
 const replace = vi.fn();
 const push = vi.fn();
+let pinia: Pinia;
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
@@ -75,8 +78,9 @@ vi.mock('@/composables/useDocumentCollaboration', () => ({
 }));
 
 describe('CodeWorkbenchView project scan', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    sessionStorage.clear();
     vi.clearAllMocks();
     vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({} as never);
     vi.mocked(createAgentJob).mockResolvedValue({
@@ -92,7 +96,14 @@ describe('CodeWorkbenchView project scan', () => {
       total: 0,
       units: [],
     });
+    pinia = createPinia();
+    setActivePinia(pinia);
+    const backgroundActivity = useBackgroundActivityStore();
+    backgroundActivity.setActiveWorkspace('workspace-1');
+    await backgroundActivity.startPolling('user-1');
   });
+
+  afterEach(() => useBackgroundActivityStore().stopPolling(false));
 
   it('creates PROJECT_INITIALIZATION and reports structure-only progress', async () => {
     const wrapper = mountView();
@@ -116,11 +127,26 @@ describe('CodeWorkbenchView project scan', () => {
     wrapper.unmount();
   });
 
-  it('restores a background project job from localStorage after repository load', async () => {
-    localStorage.setItem(
-      'devcollab.project-scan.workspace-1.repository-1',
-      'restored-job',
-    );
+  it('restores a background project job from sessionStorage after repository load', async () => {
+    const backgroundActivity = useBackgroundActivityStore();
+    backgroundActivity.stopPolling(false);
+    vi.mocked(getAgentJob).mockResolvedValue({
+      ...readyJob(),
+      jobId: 'restored-job',
+    });
+    sessionStorage.setItem('devcollab.background-activity:user-1', JSON.stringify({
+      watchedJobs: [{
+        jobId: 'restored-job',
+        workspaceId: 'workspace-1',
+        repositoryId: 'repository-1',
+        label: 'devcollab',
+        filePath: null,
+        createdAt: '2026-07-28T00:00:00Z',
+        lastKnownStatus: 'QUEUED',
+      }],
+      notifiedTerminalKeys: [],
+    }));
+    await backgroundActivity.startPolling('user-1');
     const wrapper = mountView();
     await flushPromises();
 
@@ -152,6 +178,7 @@ function mountView() {
           template: '<button @click="$emit(\'click\')"><slot /></button>',
         },
       },
+      plugins: [pinia],
     },
   });
 }

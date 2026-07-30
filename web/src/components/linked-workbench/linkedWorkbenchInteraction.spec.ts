@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { describe, expect, it } from 'vitest';
 import CodeAnchorRail from './CodeAnchorRail.vue';
 import LinkedCodePane from './LinkedCodePane.vue';
@@ -16,7 +17,7 @@ const links = [{
 
 describe('linked workbench interactions', () => {
   it('emits the linked id when a code range is clicked', async () => {
-    const wrapper = mount(LinkedCodePane, { props: { workspaceId: 'w', repositoryId: 'r', content: 'one\ntwo\nthree', path: 'A.java', anchors, links, issues: [], activeLinkId: null }, global: { stubs: { ElTag: true, ElSkeleton: true, ElEmpty: true } } });
+    const wrapper = mount(LinkedCodePane, { props: { workspaceId: 'w', repositoryId: 'r', content: 'one\ntwo\nthree', path: 'A.java', anchors, links, issues: [], activeLinkId: null }, global: { plugins: [createPinia()], stubs: { ElTag: true, ElSkeleton: true, ElEmpty: true } } });
     await wrapper.findAll('.code-line')[1].trigger('click');
     expect(wrapper.emitted('activate')?.[0]).toEqual(['l1']);
   });

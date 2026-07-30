@@ -2,6 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { createRouter, createMemoryHistory, type Router } from 'vue-router';
 import ElementPlus from 'element-plus';
+import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { ref } from 'vue';
 
 import ReviewWorkbenchView from './ReviewWorkbenchView.vue';
@@ -14,6 +15,7 @@ import {
   resetLinkedWorkbenchNavigationMemoryForTests,
   useLinkedWorkbenchNavigation,
 } from '@/composables/useLinkedWorkbenchNavigation';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 
 // Mock dependencies
 vi.mock('@/api/documentChange');
@@ -38,6 +40,7 @@ function createDeferred<T = any>() {
 
 describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
   let router: Router;
+  let pinia: Pinia;
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -49,6 +52,9 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     vi.mocked(gitApi.listGitRepositories).mockResolvedValue([]);
     vi.mocked(gitApi.listGitRepositoryFiles).mockResolvedValue([]);
     vi.mocked(documentChangeApi.listDocumentChanges).mockResolvedValue({ items: [], totalElements: 0, page: 0, size: 20, totalPages: 0 });
+    vi.mocked(documentChangeApi.getPendingDocumentChangeCount).mockResolvedValue(0);
+    pinia = createPinia();
+    setActivePinia(pinia);
 
     router = createRouter({
       history: createMemoryHistory(),
@@ -79,7 +85,7 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     await router.isReady();
     const wrapper = mount(ReviewWorkbenchView, {
       global: {
-        plugins: [router, ElementPlus],
+        plugins: [router, pinia, ElementPlus],
         stubs: {
           AppSidebar: true,
           LinkedRepositoryContext: true,
@@ -453,7 +459,9 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     expect(navigation.restoreCurrent()).toEqual(snapshotA);
     expect((wrapper.vm as any).appliedNavigationTargets).toHaveLength(1);
 
+    vi.mocked(documentChangeApi.getPendingDocumentChangeCount).mockClear();
     await (wrapper.vm as any).applyRequest();
+    expect(documentChangeApi.getPendingDocumentChangeCount).toHaveBeenCalledWith('w1');
     expect(navigation.restoreCurrent()).toEqual(snapshotA);
 
     await (wrapper.vm as any).viewAppliedTarget(
@@ -487,5 +495,64 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     expect(router.currentRoute.value.name).toBe('workspace-code');
     expect(router.currentRoute.value.query).toEqual({});
     expect(navigation.restoreCurrent()).toEqual(snapshotA);
+  });
+
+  it('refreshes the current review list when the global job signal changes', async () => {
+    const wrapper = await mountView('/workspaces/w1/reviews/pending');
+    vi.mocked(documentChangeApi.listDocumentChanges).mockClear();
+
+    useBackgroundActivityStore().requestReviewRefresh('w1');
+    await flushPromises();
+
+    expect(documentChangeApi.listDocumentChanges).toHaveBeenCalledWith(
+      'w1',
+      expect.objectContaining({ status: 'PENDING' }),
+    );
+    expect(router.currentRoute.value.params.requestId).toBeFalsy();
+    wrapper.unmount();
+  });
+
+  it('keeps the selected detail open when the global job signal refreshes counts', async () => {
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('request-kept') as any,
+    );
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/request-kept');
+    vi.mocked(documentChangeApi.getDocumentChange).mockClear();
+
+    useBackgroundActivityStore().requestReviewRefresh('w1');
+    await flushPromises();
+
+    expect(router.currentRoute.value.params.requestId).toBe('request-kept');
+    expect((wrapper.vm as any).detail.request.id).toBe('request-kept');
+    expect(documentChangeApi.getDocumentChange).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('refreshes the real pending count after a successful rejection', async () => {
+    const pending = mockRequestDetail('request-rejected') as any;
+    const rejected = {
+      ...pending,
+      request: {
+        ...pending.request,
+        status: 'REJECTED',
+        rejectionReason: '内容需要修订',
+      },
+    };
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(pending);
+    vi.mocked(documentChangeApi.rejectDocumentChange).mockResolvedValue(rejected);
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/request-rejected');
+    vi.mocked(documentChangeApi.getPendingDocumentChangeCount).mockClear();
+    (wrapper.vm as any).rejectReason = '内容需要修订';
+
+    await (wrapper.vm as any).rejectRequest();
+    await flushPromises();
+
+    expect(documentChangeApi.rejectDocumentChange).toHaveBeenCalledWith(
+      'w1',
+      'request-rejected',
+      '内容需要修订',
+    );
+    expect(documentChangeApi.getPendingDocumentChangeCount).toHaveBeenCalledWith('w1');
+    wrapper.unmount();
   });
 });

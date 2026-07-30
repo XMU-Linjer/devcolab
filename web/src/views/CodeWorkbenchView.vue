@@ -207,19 +207,17 @@
 <script setup lang="ts">
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import {
   createAgentJob,
-  getAgentJob,
   listAgentJobUnits,
   readableAgentError,
   type AgentJob,
   type AgentSemanticUnit,
 } from '@/api/agent';
-import { getPendingDocumentChangeCount } from '@/api/documentChange';
 import {
   getDocument,
   listDocumentTree,
@@ -248,6 +246,7 @@ import LinkedRepositoryContext from '@/components/linked-workbench/LinkedReposit
 import LinkedWorkbenchShell from '@/components/linked-workbench/LinkedWorkbenchShell.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 import {
   createLinkedWorkbenchSnapshot,
   useLinkedWorkbenchNavigation,
@@ -290,10 +289,10 @@ const documentLoading = ref(false);
 const isRestoringNavigation = ref(false);
 const syncing = ref(false);
 const projectScanStarting = ref(false);
+const projectScanJobId = ref<string | null>(null);
 const projectScanJob = ref<AgentJob | null>(null);
 const projectScanUnits = ref<AgentSemanticUnit[]>([]);
 const projectScanDrawerOpen = ref(false);
-let projectScanPollTimer: number | null = null;
 let sourceRequestSequence = 0;
 let documentRequestSequence = 0;
 let reverseBindingRequestSequence = 0;
@@ -304,6 +303,7 @@ const errorMessage = ref('');
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
 const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
 const workbenchShellRef = ref<InstanceType<typeof LinkedWorkbenchShell> | null>(null);
+const backgroundActivity = useBackgroundActivityStore();
 
 const state = useLinkedWorkbenchState();
 const {
@@ -343,7 +343,10 @@ const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
         }
       : item);
 });
-const pendingReviewCount = ref(0);
+const pendingReviewCount = computed(() => backgroundActivity.pendingReviewCount);
+const projectScanSnapshot = computed(() => (
+  backgroundActivity.getJobSnapshot(projectScanJobId.value)
+));
 const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
   ? {
       [selectedFilePath.value]: links.value.filter(
@@ -420,6 +423,7 @@ const {
 } = useDocumentCollaboration(workspaceId, selectedDocumentId);
 
 onMounted(() => {
+  backgroundActivity.setActiveWorkspace(workspaceId.value);
   void initializeWorkbench();
 });
 const pollTimer = window.setInterval(() => {
@@ -434,8 +438,9 @@ onBeforeUnmount(() => {
   reverseBindingRequestSequence += 1;
   focusRequestSequence += 1;
   window.clearInterval(pollTimer);
-  if (projectScanPollTimer !== null) window.clearTimeout(projectScanPollTimer);
 });
+
+watch(projectScanSnapshot, job => void updateProjectScanSnapshot(job));
 
 async function initializeWorkbench() {
   isRestoringNavigation.value = true;
@@ -451,11 +456,10 @@ async function loadWorkbench() {
   if (!workspaceId.value) { errorMessage.value = '工作区地址无效'; return; }
   contextLoading.value = true;
   try {
-    [workspace.value, repositories.value, documentTree.value, pendingReviewCount.value] = await Promise.all([
+    [workspace.value, repositories.value, documentTree.value] = await Promise.all([
       getWorkspace(workspaceId.value),
       listGitRepositories(workspaceId.value),
       listDocumentTree(workspaceId.value),
-      getPendingDocumentChangeCount(workspaceId.value).catch(() => 0),
     ]);
     const queryRepositoryId = typeof route.query.repositoryId === 'string' ? route.query.repositoryId : '';
     const lastScope = linkedNavigation.restoreLastScope(workspaceId.value);
@@ -1068,11 +1072,19 @@ async function startProjectScan() {
       scope: { type: 'PROJECT_INITIALIZATION' },
       userInstruction: null,
     });
-    localStorage.setItem(projectScanStorageKey(), queued.jobId);
+    projectScanJobId.value = queued.jobId;
+    backgroundActivity.registerJob({
+      jobId: queued.jobId,
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      label: activeRepository.value?.name ?? '项目扫描',
+      filePath: null,
+      createdAt: queued.createdAt,
+      lastKnownStatus: queued.status,
+    });
     projectScanUnits.value = [];
     projectScanDrawerOpen.value = true;
     ElMessage.success('项目扫描已在后台启动，可以关闭当前窗口。');
-    await pollProjectScan(queued.jobId);
   } catch (error) {
     ElMessage.error(readableAgentError(error, '项目扫描启动失败'));
   } finally {
@@ -1081,37 +1093,26 @@ async function startProjectScan() {
 }
 
 function restoreProjectScan() {
-  const jobId = localStorage.getItem(projectScanStorageKey());
-  if (jobId) void pollProjectScan(jobId);
+  projectScanJobId.value = backgroundActivity.findActiveJob({
+    workspaceId: workspaceId.value,
+    repositoryId: selectedRepositoryId.value,
+    filePath: null,
+  })?.jobId ?? null;
 }
 
-async function pollProjectScan(jobId: string) {
-  if (projectScanPollTimer !== null) window.clearTimeout(projectScanPollTimer);
-  try {
-    projectScanJob.value = await getAgentJob(jobId);
-    if (projectScanJob.value.plannedUnitCount > 0) {
-      const page = await listAgentJobUnits(jobId, 0, 20);
+async function updateProjectScanSnapshot(job: AgentJob | null) {
+  if (!job || job.jobId !== projectScanJobId.value) return;
+  projectScanJob.value = job;
+  if (job.plannedUnitCount > 0) {
+    try {
+      const page = await listAgentJobUnits(job.jobId, 0, 20);
       projectScanUnits.value = page.units;
       projectScanDrawerOpen.value = true;
+    } catch {
+      // The global poller owns retry behavior; the drawer keeps its last good data.
     }
-    if (projectJobTerminal.value) {
-      localStorage.removeItem(projectScanStorageKey());
-      return;
-    }
-    if (projectScanJob.value.status === 'FAILED' || projectScanJob.value.status === 'CANCELLED') {
-      projectScanDrawerOpen.value = true;
-      localStorage.removeItem(projectScanStorageKey());
-      return;
-    }
-    projectScanPollTimer = window.setTimeout(() => void pollProjectScan(jobId), 5000);
-  } catch (error) {
-    localStorage.removeItem(projectScanStorageKey());
-    ElMessage.error(readableAgentError(error, '项目扫描状态读取失败'));
   }
-}
-
-function projectScanStorageKey() {
-  return `devcollab.project-scan.${workspaceId.value}.${selectedRepositoryId.value}`;
+  if (projectJobTerminal.value) projectScanDrawerOpen.value = true;
 }
 
 async function refreshSyncState() {

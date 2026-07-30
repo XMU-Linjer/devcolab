@@ -1,9 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { ElMessage } from 'element-plus';
+import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { defineComponent } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAgentJob, getAgentJob, type AgentJobStatus } from '@/api/agent';
+import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 import LinkedCodePane from './LinkedCodePane.vue';
 
 vi.mock('@/api/agent', () => ({
@@ -11,6 +13,11 @@ vi.mock('@/api/agent', () => ({
   getAgentJob: vi.fn(),
   readableAgentError: (_error: unknown, fallback: string) => fallback,
 }));
+vi.mock('@/api/documentChange', () => ({
+  getPendingDocumentChangeCount: vi.fn().mockResolvedValue(0),
+}));
+
+let pinia: Pinia;
 
 const ElButtonStub = defineComponent({
   inheritAttrs: false,
@@ -85,6 +92,7 @@ function mountPane(overrides: Record<string, unknown> = {}) {
         ElSkeleton: true,
         ElEmpty: true,
       },
+      plugins: [pinia],
     },
   });
 }
@@ -96,7 +104,7 @@ async function startCheck(wrapper: ReturnType<typeof mountPane>) {
 }
 
 describe('LinkedCodePane Agent check', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     localStorage.clear();
@@ -107,9 +115,15 @@ describe('LinkedCodePane Agent check', () => {
       status: 'QUEUED',
       createdAt: '2026-07-28T00:00:00Z',
     });
+    pinia = createPinia();
+    setActivePinia(pinia);
+    const backgroundActivity = useBackgroundActivityStore();
+    backgroundActivity.setActiveWorkspace('workspace-1');
+    await backgroundActivity.startPolling('user-1');
   });
 
   afterEach(() => {
+    useBackgroundActivityStore().stopPolling(false);
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -153,11 +167,11 @@ describe('LinkedCodePane Agent check', () => {
     expect(getAgentJob).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBeGreaterThan(0);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(4000);
     await flushPromises();
 
     expect(getAgentJob).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(getAgentJob).toHaveBeenCalledTimes(2);
     expect(wrapper.get('[data-testid="agent-check-button"]').text()).toContain('Agent 检查');
   });
@@ -172,7 +186,7 @@ describe('LinkedCodePane Agent check', () => {
 
     await startCheck(wrapper);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(getAgentJob).toHaveBeenCalledTimes(1);
     expect(wrapper.get('[data-testid="agent-review-button"]').text()).toContain('查看评审');
     await wrapper.get('[data-testid="agent-review-button"]').trigger('click');
@@ -192,10 +206,10 @@ describe('LinkedCodePane Agent check', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(getAgentJob).toHaveBeenCalledTimes(1);
     expect(wrapper.get('[data-testid="agent-check-button"]').attributes('disabled')).toBeUndefined();
-    expect(ElMessage.error).toHaveBeenCalledWith('Agent 服务暂时不可用');
+    expect(ElMessage.error).toHaveBeenCalledWith('Agent 处理失败，请查看任务详情。');
   });
 
-  it('clears a pending poll when the component is unmounted', async () => {
+  it('keeps the single global poll alive when the component is unmounted', async () => {
     vi.mocked(getAgentJob).mockResolvedValue({
       ...agentJob('RUNNING'),
       phase: 'MODEL_RUNNING',
@@ -206,8 +220,8 @@ describe('LinkedCodePane Agent check', () => {
     expect(vi.getTimerCount()).toBeGreaterThan(0);
 
     wrapper.unmount();
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(getAgentJob).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(getAgentJob).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -6,7 +6,9 @@ import { appRoutes } from './index';
 function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: appRoutes,
+    routes: appRoutes.map(route => route.component
+      ? { ...route, component: { template: '<div />' } }
+      : route),
   });
 }
 

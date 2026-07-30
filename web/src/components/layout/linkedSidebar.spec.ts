@@ -84,6 +84,28 @@ describe('linked workbench sidebar', () => {
     expect(wrapper.emitted('open-review-status')).toEqual([['stale']]);
   });
 
+  it.each([
+    [1, '1'],
+    [99, '99'],
+    [100, '99+'],
+  ])('renders the real pending review badge for count %s', (reviewCount, label) => {
+    const wrapper = mount(LinkedWorkspaceNavigation, {
+      props: { reviewCount },
+    });
+    expect(wrapper.get('[data-testid="pending-review-badge"]').text()).toBe(label);
+    expect(wrapper.get('button[aria-label*="待我审批"]').attributes('aria-label'))
+      .toContain(`${reviewCount}项待处理`);
+  });
+
+  it('hides the pending review badge when the real count is zero', () => {
+    const wrapper = mount(LinkedWorkspaceNavigation, {
+      props: { reviewCount: 0 },
+    });
+    expect(wrapper.find('[data-testid="pending-review-badge"]').exists()).toBe(false);
+    expect(wrapper.get('button[aria-label*="待我审批"]').attributes('aria-label'))
+      .toContain('暂无待处理项');
+  });
+
   it('keeps selection outside the sidebar when collapsed', async () => {
     const router = testRouter();
     await router.push('/workspaces/w1/code');
