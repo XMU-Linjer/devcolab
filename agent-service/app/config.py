@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +55,11 @@ class Settings(BaseSettings):
     agent_project_unit_concurrency: int = Field(2, ge=1, le=16)
     agent_project_execution_limit: int = Field(0, ge=0, le=500)
     agent_project_max_tool_calls: int = Field(24, ge=5, le=100)
+    devcollab_memory_profile_enabled: bool = False
+    devcollab_memory_profile_run_id: str = ""
+    devcollab_memory_profile_output_dir: Path = Path(".data/memory-profile")
+    devcollab_memory_profile_interval_ms: int = Field(1000, ge=500, le=60_000)
+    devcollab_memory_profile_queue_capacity: int = Field(1024, ge=1, le=65_536)
 
 
 @lru_cache

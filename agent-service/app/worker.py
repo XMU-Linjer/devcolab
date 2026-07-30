@@ -24,6 +24,7 @@ from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobR
 from app.planning.deepseek_unit_planner import DeepSeekUnitPlanner
 from app.planning.unit_plan_validator import UnitPlanValidationError
 from app.planning.validator import PlanValidationError
+from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
@@ -57,6 +58,7 @@ class AgentWorker:
         settings: Settings,
         *,
         worker_id: str | None = None,
+        memory_profiler: RuntimeMemoryProfiler | None = None,
     ) -> None:
         self._repository = repository
         self._mcp_client = mcp_client
@@ -68,6 +70,7 @@ class AgentWorker:
             or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:12]}"
         )
         self._stopping = asyncio.Event()
+        self._memory_profiler = memory_profiler
 
     def stop(self) -> None:
         self._stopping.set()
@@ -151,7 +154,17 @@ class AgentWorker:
 
         async def run_workflow() -> dict[str, Any]:
             workflow = DocumentSyncWorkflow(
-                delegated, self._provider, self._settings, on_status
+                delegated,
+                self._provider,
+                self._settings,
+                on_status,
+                memory_profiler=self._memory_profiler,
+                profile_context={
+                    "job_id": str(job_id),
+                    "repository_id": str(job["repository_id"]),
+                    "revision": str(job["revision"]),
+                    "unit_id": str(unit_id),
+                },
             )
             scope = job["scope_payload"]
             selected_paths: list[str]
@@ -194,19 +207,30 @@ class AgentWorker:
                 "errors": [],
             }
             if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
-                initial_state = await ProjectUnitContextBuilder(
-                    delegated, self._settings
-                ).build(
-                    run_id=run_id,
-                    workspace_id=str(job["workspace_id"]),
-                    repository_id=str(job["repository_id"]),
-                    revision=str(job["revision"]),
-                    selected_paths=selected_paths,
-                    preferred_document_ids=preferred_document_ids,
-                    user_instruction=user_instruction,
-                )
-                return await workflow.execute_context_bundle(initial_state)
-            return await workflow.graph.ainvoke(initial_state)
+                with self._profile_stage(
+                    "CANDIDATE_BUILD", job, job_id, unit_id
+                ) as candidate_stage:
+                    initial_state = await ProjectUnitContextBuilder(
+                        delegated, self._settings
+                    ).build(
+                        run_id=run_id,
+                        workspace_id=str(job["workspace_id"]),
+                        repository_id=str(job["repository_id"]),
+                        revision=str(job["revision"]),
+                        selected_paths=selected_paths,
+                        preferred_document_ids=preferred_document_ids,
+                        user_instruction=user_instruction,
+                    )
+                    candidate_stage.attribute("fileCount", len(selected_paths))
+                    candidate_stage.attribute(
+                        "documentCount", len(preferred_document_ids)
+                    )
+                with self._profile_stage(
+                    "UNIT_EXECUTION", job, job_id, unit_id
+                ):
+                    return await workflow.execute_context_bundle(initial_state)
+            with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
+                return await workflow.graph.ainvoke(initial_state)
 
         async def run_project_discovery() -> None:
             async def on_phase(phase: str) -> None:
@@ -217,18 +241,29 @@ class AgentWorker:
                     raise RuntimeError("Agent unit lease was lost")
 
             service = ProjectDiscoveryService(delegated, self._settings, on_phase)
-            (
-                files,
-                project_files,
-                planner_batches,
-                project_index,
-                stats,
-            ) = await service.execute(
-                job_id=job_id,
-                workspace_id=UUID(str(job["workspace_id"])),
-                repository_id=UUID(str(job["repository_id"])),
-                revision=str(job["revision"]),
-            )
+            with self._profile_stage(
+                "PROJECT_INDEX", job, job_id, unit_id
+            ) as index_stage:
+                (
+                    files,
+                    project_files,
+                    planner_batches,
+                    project_index,
+                    stats,
+                ) = await service.execute(
+                    job_id=job_id,
+                    workspace_id=UUID(str(job["workspace_id"])),
+                    repository_id=UUID(str(job["repository_id"])),
+                    revision=str(job["revision"]),
+                )
+                index_stage.attribute("fileCount", len(files))
+                index_stage.attribute(
+                    "sourceBytes",
+                    sum(
+                        int(item.get("sizeBytes") or 0)
+                        for item in project_index.get("files", [])
+                    ),
+                )
             execution_limit = self._settings.agent_project_execution_limit
             planner_limit = self._settings.agent_max_analysis_units
             project_index["requestedMaxUnits"] = planner_limit
@@ -246,14 +281,19 @@ class AgentWorker:
                 max_units=planner_limit,
                 on_phase=on_phase,
             )
-            unit_plan = (
-                await planner.plan(planner_batches[0])
-                if len(planner_batches) == 1
-                else await planner.plan(
-                    planner_batches,
-                    validation_index=project_index,
+            with self._profile_stage(
+                "PLANNER", job, job_id, unit_id
+            ) as planner_stage:
+                unit_plan = (
+                    await planner.plan(planner_batches[0])
+                    if len(planner_batches) == 1
+                    else await planner.plan(
+                        planner_batches,
+                        validation_index=project_index,
+                    )
                 )
-            )
+                planner_stage.attribute("batchCount", len(planner_batches))
+                planner_stage.attribute("unitCount", len(unit_plan.units))
             units = materialize_deepseek_units(
                 unit_plan,
                 project_files,
@@ -349,6 +389,23 @@ class AgentWorker:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
+    def _profile_stage(
+        self,
+        name: str,
+        job: dict[str, Any],
+        job_id: UUID,
+        unit_id: UUID,
+    ) -> Any:
+        if self._memory_profiler is None:
+            return _NoopProfileStage()
+        return self._memory_profiler.stage(
+            name,
+            job_id=str(job_id),
+            repository_id=str(job["repository_id"]),
+            revision=str(job["revision"]),
+            unit_id=str(unit_id),
+        )
+
     async def _heartbeat(self, unit_id: UUID) -> None:
         while True:
             await asyncio.sleep(self._settings.agent_worker_heartbeat_seconds)
@@ -400,6 +457,16 @@ async def main() -> None:
     settings = get_settings()
     logging.basicConfig(level=logging.INFO)
     repository = await PostgresAgentJobRepository.connect(settings.agent_database_url)
+    profiler = RuntimeMemoryProfiler(
+        MemoryProfileConfig(
+            enabled=settings.devcollab_memory_profile_enabled,
+            run_id=settings.devcollab_memory_profile_run_id,
+            output_dir=settings.devcollab_memory_profile_output_dir,
+            interval_ms=settings.devcollab_memory_profile_interval_ms,
+            queue_capacity=settings.devcollab_memory_profile_queue_capacity,
+        ),
+        "agent-worker",
+    )
     worker = AgentWorker(
         repository,
         OfficialMcpClient(settings.mcp_base_url, settings.agent_request_timeout_seconds),
@@ -416,6 +483,7 @@ async def main() -> None:
             request_timeout_seconds=settings.agent_model_request_timeout_seconds,
         ),
         settings,
+        memory_profiler=profiler,
     )
     loop = asyncio.get_running_loop()
     for name in ("SIGINT", "SIGTERM"):
@@ -424,7 +492,21 @@ async def main() -> None:
     try:
         await worker.run()
     finally:
-        await repository.close()
+        try:
+            await repository.close()
+        finally:
+            profiler.close()
+
+
+class _NoopProfileStage:
+    def __enter__(self) -> _NoopProfileStage:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def attribute(self, _key: str, _value: object) -> _NoopProfileStage:
+        return self
 
 
 if __name__ == "__main__":

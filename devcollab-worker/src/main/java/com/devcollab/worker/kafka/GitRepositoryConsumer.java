@@ -2,11 +2,13 @@ package com.devcollab.worker.kafka;
 
 import com.devcollab.worker.consumerinbox.ConsumerInboxRepository;
 import com.devcollab.worker.git.GitRepositoryStorageService;
+import com.devcollab.worker.observability.RuntimeMemoryProfiler;
 import com.devcollab.worker.observability.WorkerEventMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +32,7 @@ public class GitRepositoryConsumer {
     private final GitRepositoryStorageService storageService;
     private final WorkerEventMetrics metrics;
     private final ObjectMapper objectMapper;
+    private RuntimeMemoryProfiler memoryProfiler;
 
     public GitRepositoryConsumer(
             ConsumerInboxRepository inboxRepository,
@@ -40,6 +43,11 @@ public class GitRepositoryConsumer {
         this.storageService = storageService;
         this.metrics = metrics;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    }
+
+    @Autowired(required = false)
+    void setMemoryProfiler(RuntimeMemoryProfiler memoryProfiler) {
+        this.memoryProfiler = memoryProfiler;
     }
 
     @KafkaListener(
@@ -67,7 +75,12 @@ public class GitRepositoryConsumer {
 
         UUID workspaceId = UUID.fromString(required(payload, "workspaceId"));
         UUID repositoryId = UUID.fromString(required(payload, "repositoryId"));
+        RuntimeMemoryProfiler.Stage stage = memoryProfiler == null ? null : memoryProfiler.stage(
+                "JOB", event.eventId().toString(), repositoryId.toString(),
+                payload.path("revision").asText(null), null
+        );
         try {
+            if (stage != null) stage.attribute("eventType", event.eventType());
             if (SYNC_REQUESTED.equals(event.eventType())) {
                 storageService.synchronize(
                         workspaceId,
@@ -79,8 +92,11 @@ public class GitRepositoryConsumer {
                 storageService.delete(workspaceId, repositoryId);
             }
         } catch (RuntimeException exception) {
+            if (stage != null) stage.failed(exception);
             metrics.projectionFailed(CONSUMER_NAME, event.eventType());
             throw exception;
+        } finally {
+            if (stage != null) stage.close();
         }
         inboxRepository.markConsumed(CONSUMER_NAME, event.eventId());
         metrics.projectionSucceeded(CONSUMER_NAME, event.eventType());

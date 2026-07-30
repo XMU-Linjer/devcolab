@@ -23,6 +23,12 @@ server:
   shutdown: graceful
 
 devcollab:
+  memory-profile:
+    enabled: ${DEVCOLLAB_MEMORY_PROFILE_ENABLED:false}
+    run-id: ${DEVCOLLAB_MEMORY_PROFILE_RUN_ID:}
+    output-dir: ${DEVCOLLAB_MEMORY_PROFILE_OUTPUT_DIR:.data/memory-profile}
+    interval-ms: ${DEVCOLLAB_MEMORY_PROFILE_INTERVAL_MS:1000}
+    queue-capacity: ${DEVCOLLAB_MEMORY_PROFILE_QUEUE_CAPACITY:1024}
   worker:
     kafka:
       document-topic: ${DEVCOLLAB_KAFKA_DOCUMENT_TOPIC:devcollab.document.events}

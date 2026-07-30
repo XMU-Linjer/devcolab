@@ -1,5 +1,6 @@
 package com.devcollab.worker.git;
 
+import com.devcollab.worker.observability.RuntimeMemoryProfiler;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.ResetCommand;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -15,6 +16,7 @@ import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.util.io.DisabledOutputStream;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -44,6 +46,7 @@ public class GitRepositoryStorageService {
     private final GitRepositoryStorageProperties properties;
     private final GitRepositoryProjectionStore store;
     private final JavaCodeGraphAnalyzer codeGraphAnalyzer;
+    private RuntimeMemoryProfiler memoryProfiler;
 
     public GitRepositoryStorageService(
             GitRepositoryStorageProperties properties,
@@ -53,6 +56,11 @@ public class GitRepositoryStorageService {
         this.properties = properties;
         this.store = store;
         this.codeGraphAnalyzer = codeGraphAnalyzer;
+    }
+
+    @Autowired(required = false)
+    void setMemoryProfiler(RuntimeMemoryProfiler memoryProfiler) {
+        this.memoryProfiler = memoryProfiler;
     }
 
     public void synchronize(
@@ -65,6 +73,9 @@ public class GitRepositoryStorageService {
             return;
         }
         Path repositoryDirectory = repositoryDirectory(workspaceId, repositoryId);
+        RuntimeMemoryProfiler.Stage syncStage = stage(
+                "REPOSITORY_SYNC", repositoryId, null
+        );
         try {
             validateRemote(remoteUrl);
             Files.createDirectories(repositoryDirectory.getParent());
@@ -73,24 +84,73 @@ public class GitRepositoryStorageService {
             )) {
                 verifyRepositorySize(repositoryDirectory);
                 Repository repository = git.getRepository();
-                List<GitRepositoryFileProjection> files = scanFiles(repository);
-                List<GitCommitProjection> commits = scanCommits(git, repository);
-                CodeGraphProjection codeGraph = codeGraphAnalyzer.analyze(
-                        repositoryDirectory, files
-                );
                 String head = repository.resolve("HEAD").name();
+                List<GitRepositoryFileProjection> files;
+                RuntimeMemoryProfiler.Stage scanStage = stage(
+                        "FILE_SCAN", repositoryId, head
+                );
+                try {
+                    files = scanFiles(repository);
+                    if (scanStage != null) {
+                        scanStage.attribute("fileCount", files.size());
+                        scanStage.attribute("sourceBytes", files.stream()
+                                .mapToLong(GitRepositoryFileProjection::sizeBytes).sum());
+                    }
+                } catch (RuntimeException | IOException exception) {
+                    if (scanStage != null) scanStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (scanStage != null) scanStage.close();
+                }
+                List<GitCommitProjection> commits = scanCommits(git, repository);
+                CodeGraphProjection codeGraph;
+                RuntimeMemoryProfiler.Stage graphStage = stage(
+                        "CODE_GRAPH", repositoryId, head
+                );
+                try {
+                    codeGraph = codeGraphAnalyzer.analyze(repositoryDirectory, files);
+                    if (graphStage != null) {
+                        graphStage.attribute("fileCount", files.size());
+                        graphStage.attribute("symbolCount", codeGraph.symbols().size());
+                        graphStage.attribute("dependencyCount",
+                                codeGraph.fileDependencies().size()
+                                        + codeGraph.symbolDependencies().size());
+                    }
+                } catch (RuntimeException exception) {
+                    if (graphStage != null) graphStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (graphStage != null) graphStage.close();
+                }
                 store.replaceFiles(repositoryId, files);
                 store.saveCommits(repositoryId, commits);
                 store.replaceCodeGraph(repositoryId, codeGraph);
                 store.markReady(repositoryId, head);
+                if (syncStage != null) {
+                    syncStage.attribute("fileCount", files.size());
+                    syncStage.attribute("commitCount", commits.size());
+                }
             }
         } catch (Exception exception) {
+            if (syncStage != null) syncStage.failed(exception);
             store.markFailed(repositoryId, rootMessage(exception));
             throw new IllegalStateException(
                     "Git repository synchronization failed repository=" + repositoryId,
                     exception
             );
+        } finally {
+            if (syncStage != null) syncStage.close();
         }
+    }
+
+    private RuntimeMemoryProfiler.Stage stage(
+            String name,
+            UUID repositoryId,
+            String revision
+    ) {
+        return memoryProfiler == null ? null : memoryProfiler.stage(
+                name, null, repositoryId.toString(), revision, null
+        );
     }
 
     public void delete(UUID workspaceId, UUID repositoryId) {

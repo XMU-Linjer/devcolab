@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from functools import partial
 from typing import Any, cast
 
@@ -15,6 +16,7 @@ from app.planning.binding_candidates import (
 )
 from app.planning.context_serializer import build_model_context
 from app.planning.validator import AgentPlanValidator, PlanValidationError
+from app.profiling import ProfileStage, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.schemas.plans import AgentPlan, Decision
 from app.tracing.trace_logger import traced
@@ -33,11 +35,16 @@ class DocumentSyncWorkflow:
         provider: ModelProvider,
         settings: Settings,
         on_status: StatusCallback,
+        *,
+        memory_profiler: RuntimeMemoryProfiler | None = None,
+        profile_context: dict[str, str] | None = None,
     ) -> None:
         self._client = client
         self._provider = provider
         self._settings = settings
         self._on_status = on_status
+        self._memory_profiler = memory_profiler
+        self._profile_context = profile_context or {}
         self._validator = AgentPlanValidator(
             settings.agent_review_max_operations,
             settings.agent_review_max_evidence,
@@ -130,13 +137,18 @@ class DocumentSyncWorkflow:
         if input_characters > self._settings.agent_model_max_input_characters:
             raise ValueError("Model context exceeds configured input limit")
         try:
-            plan = await traced(
-                cast(dict[str, Any], state),
-                "plan_changes",
-                None,
-                lambda: self._provider.plan_document_sync(model_context),
-                input_characters,
-            )
+            with self._profile_stage("DOCUMENT_PROPOSAL") as profile_stage:
+                profile_stage.attribute("promptCharacters", input_characters)
+                plan = await traced(
+                    cast(dict[str, Any], state),
+                    "plan_changes",
+                    None,
+                    lambda: self._provider.plan_document_sync(model_context),
+                    input_characters,
+                )
+                profile_stage.attribute(
+                    "documentOperationCount", len(plan.operations)
+                )
             return {
                 "model_context": model_context,
                 "plan": plan,
@@ -284,18 +296,26 @@ class DocumentSyncWorkflow:
         errors: list[dict[str, str]] | None = None
         for attempt in range(2):
             try:
-                binding_plan = await traced(
-                    cast(dict[str, Any], state),
-                    "plan_bindings" if attempt == 0 else "repair_bindings",
-                    None,
-                    partial(
-                        self._provider.plan_block_bindings,
-                        payload,
-                        previous_plan=previous,
-                        validation_errors=errors,
-                    ),
-                    len(str(payload if attempt == 0 else errors)),
-                )
+                with self._profile_stage("BINDING_PROPOSAL") as profile_stage:
+                    profile_stage.attribute(
+                        "candidateCount",
+                        len(candidates.code) + len(candidates.documents),
+                    )
+                    binding_plan = await traced(
+                        cast(dict[str, Any], state),
+                        "plan_bindings" if attempt == 0 else "repair_bindings",
+                        None,
+                        partial(
+                            self._provider.plan_block_bindings,
+                            payload,
+                            previous_plan=previous,
+                            validation_errors=errors,
+                        ),
+                        len(str(payload if attempt == 0 else errors)),
+                    )
+                    profile_stage.attribute(
+                        "bindingCount", len(binding_plan.selections)
+                    )
                 expanded = self._binding_expander.expand(
                     document_plan, binding_plan, candidates
                 )
@@ -350,18 +370,23 @@ class DocumentSyncWorkflow:
         )
         plan = cast(AgentPlan, state["plan"])
         try:
-            result = await traced(
-                cast(dict[str, Any], state),
-                "submit_review",
-                "devcollab.review.submit_document_change",
-                lambda: self._client.submit_document_change(
-                    plan,
-                    workspace_id=state["workspace_id"],
-                    run_id=state["run_id"],
-                    authorization=state["authorization"],
-                ),
-                len(str(plan.model_dump(exclude_none=True))),
-            )
+            with self._profile_stage("REVIEW_BUILD") as profile_stage:
+                profile_stage.attribute(
+                    "reviewOperationCount", len(plan.operations)
+                )
+                profile_stage.attribute("bindingCount", len(plan.bindingProposals))
+                result = await traced(
+                    cast(dict[str, Any], state),
+                    "submit_review",
+                    "devcollab.review.submit_document_change",
+                    lambda: self._client.submit_document_change(
+                        plan,
+                        workspace_id=state["workspace_id"],
+                        run_id=state["run_id"],
+                        authorization=state["authorization"],
+                    ),
+                    len(str(plan.model_dump(exclude_none=True))),
+                )
         except Exception as exc:
             if hasattr(exc, "code"):
                 raise
@@ -383,6 +408,11 @@ class DocumentSyncWorkflow:
             "summary": plan.summary,
             "change_request_id": str(change_request_id),
         }
+
+    def _profile_stage(self, name: str) -> Any:
+        if self._memory_profiler is None:
+            return nullcontext(ProfileStage.noop())
+        return self._memory_profiler.stage(name, **self._profile_context)
 
     async def fail_run(self, state: AgentState) -> dict[str, Any]:
         raise PlanValidationError(

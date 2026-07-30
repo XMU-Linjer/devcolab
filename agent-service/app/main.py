@@ -10,6 +10,7 @@ from app.clients.mcp_client import OfficialMcpClient
 from app.clients.run_store import RedisRunStore
 from app.config import Settings, get_settings
 from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
+from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.executor import AgentRunExecutor
@@ -28,6 +29,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = configured
+        app.state.memory_profiler = RuntimeMemoryProfiler(
+            MemoryProfileConfig(
+                enabled=configured.devcollab_memory_profile_enabled,
+                run_id=configured.devcollab_memory_profile_run_id,
+                output_dir=configured.devcollab_memory_profile_output_dir,
+                interval_ms=configured.devcollab_memory_profile_interval_ms,
+                queue_capacity=configured.devcollab_memory_profile_queue_capacity,
+            ),
+            "agent-service",
+        )
         app.state.mcp_client = mcp_client or OfficialMcpClient(
             configured.mcp_base_url,
             configured.agent_request_timeout_seconds,
@@ -55,9 +66,12 @@ def create_app(
             configured.agent_delegation_timeout_seconds,
         )
         yield
-        await app.state.run_executor.close()
-        if job_repository is None:
-            await app.state.job_repository.close()
+        try:
+            await app.state.run_executor.close()
+            if job_repository is None:
+                await app.state.job_repository.close()
+        finally:
+            app.state.memory_profiler.close()
 
     app = FastAPI(
         title="DevCollab Agent Service",
