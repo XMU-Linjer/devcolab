@@ -3,9 +3,10 @@ package com.devcollab.knowledgecore.git.application;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.BindingRole;
 
+import java.util.List;
 import java.util.UUID;
 
-public record CodeBindingQueryItem(
+public record CodeBindingContextItem(
         UUID bindingId,
         UUID workspaceId,
         UUID repositoryId,
@@ -21,7 +22,7 @@ public record CodeBindingQueryItem(
         String targetKey,
         String pathPattern,
         String documentTitle,
-        String matchedFilePath,
+        List<String> matchingFilePaths,
         boolean blockExists
 ) {
 }

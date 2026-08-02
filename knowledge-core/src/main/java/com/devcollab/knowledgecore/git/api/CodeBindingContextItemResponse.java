@@ -1,11 +1,13 @@
 package com.devcollab.knowledgecore.git.api;
 
-import com.devcollab.knowledgecore.git.application.CodeBindingQueryItem;
+import com.devcollab.knowledgecore.git.application.CodeBindingContextItem;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.BindingRole;
+
+import java.util.List;
 import java.util.UUID;
 
-public record CodeBindingQueryItemResponse(
+public record CodeBindingContextItemResponse(
         UUID bindingId,
         UUID workspaceId,
         UUID repositoryId,
@@ -21,11 +23,11 @@ public record CodeBindingQueryItemResponse(
         String targetKey,
         String pathPattern,
         String documentTitle,
-        String matchedFilePath,
+        List<String> matchingFilePaths,
         boolean blockExists
 ) {
-    public static CodeBindingQueryItemResponse from(CodeBindingQueryItem item) {
-        return new CodeBindingQueryItemResponse(
+    public static CodeBindingContextItemResponse from(CodeBindingContextItem item) {
+        return new CodeBindingContextItemResponse(
                 item.bindingId(),
                 item.workspaceId(),
                 item.repositoryId(),
@@ -41,7 +43,7 @@ public record CodeBindingQueryItemResponse(
                 item.targetKey(),
                 item.pathPattern(),
                 item.documentTitle(),
-                item.matchedFilePath(),
+                item.matchingFilePaths(),
                 item.blockExists()
         );
     }
